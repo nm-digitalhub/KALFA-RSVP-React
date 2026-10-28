@@ -86,15 +86,15 @@ package payment is not collected.
 - **WHEN** a staff member revives a paused RSVP service whose event date has passed
 - **THEN** it is refused with the past-event message, and nothing is written
 
-### Requirement: Closing from a cancellation request checks every authority before money moves
-When a staff member resolves a customer's cancellation request with a close, the system SHALL verify that the actor
-may close the event's RSVP service. It SHALL do so before any refund or customer email is sent. The close SHALL be
-accepted only while the request is pending and belongs to the same event. A resolution that closes nothing SHALL NOT
-need the close authority.
+### Requirement: Closing from a cancellation request needs only the authority to resolve cancellations
+When a staff member resolves a customer's cancellation request with a close, the authority to resolve cancellations
+SHALL be enough to close the event's RSVP service (owner decision C-O5: no, 2026-10-27). The close SHALL go through the
+cancellation request, and SHALL be accepted only while the request is pending and belongs to the same event.
 
 #### Scenario: Billing staff without close authority
-- **WHEN** a staff member who may resolve cancellations but may not close the RSVP service accepts a cancellation
-- **THEN** it is refused before any refund or email, and the request stays pending
+- **WHEN** a staff member who may resolve cancellations but holds no run-state action accepts a cancellation of a
+  running RSVP service
+- **THEN** the service is closed through the cancellation request, the event is closed, and the request is resolved
 
 #### Scenario: Billing staff declines
 - **WHEN** a staff member who may resolve cancellations but may not close the RSVP service declines a cancellation
@@ -112,6 +112,15 @@ need the close authority.
 - **WHEN** a resolve is retried after its close succeeded and its own record failed
 - **THEN** the close answers that the service is already closed, no second audit row is written, and the resolve
   completes
+
+### Requirement: A cancellation resolve checks its later steps before money moves
+Before any refund or customer email, the system SHALL verify that every later step of the resolve can complete,
+closing the event included. A resolve that would fail after the money or the email SHALL be refused with nothing moved.
+
+#### Scenario: An operational campaign the resolve does not close
+- **WHEN** a cancellation is accepted for an event that also has a campaign the resolve does not close, such as one
+  still awaiting approval
+- **THEN** it is refused before any refund or email, because the event cannot be closed, and the request stays pending
 
 ### Requirement: The console API keeps its run-state contract
 The console API's run-state endpoint SHALL keep its request body and its answers, so that its client needs no change:

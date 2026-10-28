@@ -473,6 +473,11 @@ Live state (MEASURED: function definition):
 - it re-checks no key and records no channel;
 - it writes its row into `activity_log`.
 
+A sibling plan, separate-event-setup-from-management D7, first called `cancel_campaign(v.id, p_owner)` with the customer
+as the actor; after task 3.4 that call raises 42501. Resolved 2026-10-28: D7 retires the unpaid service inline in its own
+customer function, `close_event_retiring_setup` (migration `20261027211431`), authorized by the customer permission
+`events.close`. `cancel_campaign` stays staff-only and is not called by it.
+
 It is amended, not folded into `campaign_runstate`. Its cancellable predicate (no billed result, no payment
 activity) and the payment evidence in its row are its own, and they are tested. The two functions share the actor,
 the key re-check and the audit contract.
@@ -528,6 +533,17 @@ third actor builder, so the request checks hold either way. C-O5 picks only the 
 - no: `manage_billing` (`Cancellation.settle`) is enough. Every resolver already holds it (:472), so no pre-check
   exists to add. The defect is fixed in task 3.5, when the close runs through `campaign_runstate` under that key.
   An interim close path in TS would be a second close path without atomic audit, which 3.5 would then retire.
+
+**Decided: no (owner, 2026-10-27).** Until task 3.5 the close still runs through `closeCampaign`, which requires
+`campaigns.runstate`. An interim guard, added the same day (uncommitted at the time of writing), stops the money-back,
+service-still-sending state without a second close path: before any refund or email, `resolveCancellationRequest`
+refuses, with a `CancellationResolveError`, a resolve whose later steps would fail:
+- the resolver lacks the run-state key and the resolve would close a package campaign. Task 3.5 replaces this check
+  with the cancellation channel;
+- a campaign the resolve does not close is still operational, so R7 (`events_guard_update`) would refuse the event
+  close after the email. Examples are a package awaiting approval and a campaign of the earlier model. This check
+  stays after 3.5. Neither plan covered it before (MEASURED: the live trigger counts draft, pending_approval, approved,
+  scheduled, active and paused).
 
 ### D7. UI matches the server
 Today the campaign page's staff branch is chosen by `hasPlatformPermission('manage_billing')`. The ability replaces
@@ -681,7 +697,7 @@ recommended answers; a different answer changes the scenario named in the decisi
 | # | Decision | Recommendation | Live effect | Blocks |
 |---|---|---|---|---|
 | C-O1 | Console call data comes from `manage_voice`, not membership (supersedes harden D3)? | yes | the billing clerk keeps its own call (C-O23). It loses other agents' calls, the AI call feed, dispatch status and their Realtime delivery. In practice the billing clerk has made 0 console calls (MEASURED 2026-10-27) | 6.4, 6.5, 6.7 |
-| C-O5 | Must a cancellation resolve that closes the RSVP service also hold `Event.close_rsvp`? If no, `manage_billing` is enough for that close, still through `via='cancellation_request'` (spec scenario "Billing staff without close authority" flips) | yes: closing is a run-state action, and money moves only after every authority is checked | the billing clerk is refused, before money moves, on a resolve that would close a running RSVP service; declines are unaffected | 2.3, 3.3, 3.5 |
+| C-O5 | Must a cancellation resolve that closes the RSVP service also hold `Event.close_rsvp`? If no, `manage_billing` is enough for that close, still through `via='cancellation_request'` (spec scenario "Billing staff without close authority" flips) | yes: closing is a run-state action, and money moves only after every authority is checked. **Decided: no (owner, 2026-10-27)**, see D6 | the billing clerk is refused, before money moves, on a resolve that would close a running RSVP service; declines are unaffected | 2.3, 3.3, 3.5 |
 | C-O6 | Does a holder of a run-state action without billing reach the campaign page's staff branch, its four staff readers included (D7)? | yes: the page must offer what the server allows | none live (the ops-engineer role has no member) | 3.2 |
 | C-O7 | May web staff revive from the campaign page? | yes: a web pause has no web undo today, and revive uses the same key and RPC | holders of `revive_rsvp` gain a web revive. Today only the owner role holds `campaigns.runstate` (1 person, MEASURED 2026-10-27) | 3.8 |
 | C-O9a | Is `manage_voice` the key of the console work-data views: the 5 event-scoped views (`console_events`, `console_event_guests`, `console_campaign_targets`, `console_rsvp_results`, `console_call_analysis`) and `console_campaigns`, which lists every customer's campaigns? If no, the owner names the key. `console_agents_roster` and `console_me` stay operational either way (D4) | yes: the views serve live call handling; phones stay behind `view_customer_data` | the billing clerk loses the six views, in Android too, except its own live call's guest in `console_event_guests` (C-O23); it keeps the roster | 6.4, 6.5, 6.7 |
@@ -746,7 +762,11 @@ recommended answers; a different answer changes the scenario named in the decisi
 - the event is the subject in both maps (~21:30): D14;
 - split into three changes and apply the review fixes (~21:52): D0 and the reclassifications above.
 
-Not approved: any migration push, any access change, any commit, and every decision in the table.
+**Approved by the owner (2026-10-27):**
+- C-O5 is no: `manage_billing` is enough for the close of a cancellation resolve, through `via='cancellation_request'`
+  (D6, tasks 2.3 and 3.5). The spec scenario "Billing staff without close authority" is flipped.
+
+Not approved: any migration push, any access change, any commit, and every other decision in the table.
 
 **Outside this change** (Workflow follow-up):
 - C-O4, splitting `manage_voice`: decided after the map exists, in its own change.

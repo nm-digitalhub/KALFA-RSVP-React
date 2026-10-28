@@ -6749,6 +6749,8 @@ export type Database = {
       support_access_log: {
         Row: {
           accessed_at: string
+          action: string | null
+          details: Json | null
           event_id: string | null
           id: string
           owner_id: string | null
@@ -6757,9 +6759,12 @@ export type Database = {
           staff_id: string
           subject_id: string | null
           subject_type: string | null
+          via: string | null
         }
         Insert: {
           accessed_at?: string
+          action?: string | null
+          details?: Json | null
           event_id?: string | null
           id?: string
           owner_id?: string | null
@@ -6768,9 +6773,12 @@ export type Database = {
           staff_id: string
           subject_id?: string | null
           subject_type?: string | null
+          via?: string | null
         }
         Update: {
           accessed_at?: string
+          action?: string | null
+          details?: Json | null
           event_id?: string | null
           id?: string
           owner_id?: string | null
@@ -6779,6 +6787,7 @@ export type Database = {
           staff_id?: string
           subject_id?: string | null
           subject_type?: string | null
+          via?: string | null
         }
         Relationships: [
           {
@@ -8002,12 +8011,23 @@ export type Database = {
         Args: { p_campaign: string }
         Returns: boolean
       }
+      campaign_runstate: {
+        Args: {
+          p_action: string
+          p_actor: string
+          p_campaign: string
+          p_cancellation_request?: string
+          p_reason?: string
+          p_via: string
+        }
+        Returns: string
+      }
       can_access_event: {
         Args: { _action?: string; _event_id: string; _resource?: string }
         Returns: boolean
       }
       cancel_campaign: {
-        Args: { p_actor?: string; p_campaign: string }
+        Args: { p_actor: string; p_campaign: string; p_via?: string }
         Returns: string
       }
       cardcom_api_password: { Args: never; Returns: string }
@@ -8118,6 +8138,10 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      close_event_retiring_setup: {
+        Args: { p_actor: string; p_event: string }
+        Returns: string
       }
       console_agent_provisioned: {
         Args: { p_user_id: string }

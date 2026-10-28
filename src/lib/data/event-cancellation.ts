@@ -16,8 +16,13 @@ import {
   packageRefundRetry,
   planPackageRefund,
 } from '@/lib/data/package-cancellation';
-import { closeCampaign } from '@/lib/data/campaigns';
-import { CLOSEABLE_CAMPAIGN_STATUSES, liveCampaignOf } from '@/lib/data/campaign-status';
+import {
+  CLOSEABLE_CAMPAIGN_STATUSES,
+  isOperationalCampaignStatus,
+  liveCampaignOf,
+  type CampaignStatus,
+} from '@/lib/data/campaign-status';
+import { CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
 import {
   checkPackageRefund,
   packagePaymentRecord,
@@ -469,7 +474,7 @@ export async function resolveCancellationRequest(
   requestId: string,
   input: ResolveInput,
 ): Promise<void> {
-  await requirePlatformPermission('manage_billing');
+  const staff = await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
 
   // Supabase's typed client cannot infer a return shape for a 3-level-deep
@@ -487,7 +492,7 @@ export async function resolveCancellationRequest(
       owner_id: string;
       campaigns: {
         id: string;
-        status: string;
+        status: CampaignStatus;
         created_at: string;
       }[];
     } | null;
@@ -555,6 +560,33 @@ export async function resolveCancellationRequest(
     if (resolutionAmount <= 0) throw new Error('הסכום שחושב מהאחוז קטן מדי — הזינו אחוז גבוה יותר או סכום בשקלים');
   }
 
+  // What this resolve does AFTER the money and the e-mail is checked here, before either. A step that is bound to fail later
+  // leaves the money back with the customer, the request open and the service still sending - and every retry e-mails the
+  // customer again. Checked on the FINAL resolution (a resumed refund rewrites it above), and only when the resolve closes
+  // something, so a decline needs nothing beyond manage_billing:
+  //   - the database refuses to close the event (R7, events_guard_update) while any of its campaigns is still operational.
+  //     One the resolve does not close itself - a package still awaiting approval, a campaign of the earlier model - has to
+  //     be cancelled first.
+  if (resolution !== 'declined') {
+    const closesCampaign =
+      isPackage && campaign !== null && (CLOSEABLE_CAMPAIGN_STATUSES as readonly string[]).includes(campaign.status);
+    const nothingMoved = resumed
+      ? 'ההחזר ללקוח כבר בוצע בניסיון קודם, ולא נשלח מייל נוסף.'
+      : 'לא הוחזר כסף ולא נשלח מייל ללקוח.';
+    const keepsEventOpen =
+      event.status === 'closed'
+        ? undefined
+        : event.campaigns.find(
+            (c) => isOperationalCampaignStatus(c.status) && !(closesCampaign && c.id === campaign?.id),
+          );
+    if (keepsEventOpen) {
+      throw new CancellationResolveError(
+        `לא ניתן לסגור את האירוע: יש לו קמפיין במצב "${CAMPAIGN_STATUS_LABELS[keepsEventOpen.status]}" שאישור הביטול אינו סוגר. ${nothingMoved} בטלו את הקמפיין, ואז אשרו את הבקשה שוב.`,
+        'allowed',
+      );
+    }
+  }
+
   const { data: owner } = await admin.auth.admin.getUserById(event.owner_id);
   const { data: prof } = await admin
     .from('profiles')
@@ -580,6 +612,35 @@ export async function resolveCancellationRequest(
         cancellationRequestId: requestId,
       });
       if (blocked && blocked.status !== 'refunded') throw new CancellationResolveError(packageRefundMessage(blocked), packageRefundRetry(blocked));
+    }
+  }
+
+  // Close through the cancellation-request RPC before any refund or customer message.
+  // Include an already-closed package campaign so the RPC still validates the pending request.
+  const shouldCloseCampaign =
+    isPackage &&
+    campaign !== null &&
+    resolution !== 'declined' &&
+    (
+      campaign.status === 'closed' ||
+      (CLOSEABLE_CAMPAIGN_STATUSES as readonly string[]).includes(campaign.status)
+    );
+
+  if (shouldCloseCampaign) {
+    const { data: runState, error: runStateError } = await admin.rpc('campaign_runstate', {
+      p_campaign: campaign.id,
+      p_action: 'close',
+      p_actor: staff.id,
+      p_via: 'cancellation_request',
+      p_cancellation_request: requestId,
+    });
+
+    if (runStateError) {
+      throw new Error('סגירת הקמפיין נכשלה — לא בוצע ההחזר');
+    }
+
+    if (runState !== 'done' && runState !== 'already_closed') {
+      throw new Error(`לא ניתן להשלים את ביטול הקמפיין: ${runState}`);
     }
   }
 
@@ -683,17 +744,6 @@ export async function resolveCancellationRequest(
     } catch {
       // Nothing is recorded here — never rethrown.
     }
-  }
-
-  // A cancelled package campaign is closed so it stops sending, before the event is (the event cannot close while a
-  // campaign is still operational). An already closed or never-started one is left as it is.
-  if (
-    isPackage &&
-    campaign &&
-    resolution !== 'declined' &&
-    (CLOSEABLE_CAMPAIGN_STATUSES as readonly string[]).includes(campaign.status)
-  ) {
-    await closeCampaign(campaign.id);
   }
 
   if (resolution !== 'declined' && event.status !== 'closed') {
