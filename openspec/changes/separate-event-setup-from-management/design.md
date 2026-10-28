@@ -50,28 +50,30 @@ See proposal.md (Why). The current state that shapes the approach:
 ## Decisions
 
 ### D1. The boundary is `isFunded`, exposed as `eventMode()`
-Add `eventMode(stage)` in `setup-steps.ts`, returning `'setup' | 'management' | 'readonly_setup'`:
+`eventMode(snapshot)` in `event-lifecycle.ts` (owner, 2026-10-28) returns `'setup' | 'management' | 'unavailable'`. It is a projection of the event lifecycle model's snapshot (D7a), which carries exactly one `mode.*` tag on every configuration, not a second mapping of the campaign stage:
 
-| Stage | Mode |
+| Service state (D7a) | Mode |
 |---|---|
-| `not_set`, `awaiting_signature`, `awaiting_payment` | `setup` |
-| `awaiting_activation`, `active`, `paused`, `closed` | `management` |
-| `cancelled` | never reached: `liveCampaignOf` skips cancelled rows, so a reset event reads `not_set` |
+| `none` (no live campaign; a reset event, whose only campaign is cancelled, reads `none`), `setup` (unpaid, declined), `paymentInFlight` (pending, review) | `setup` |
+| `paid` (real or test, not yet running), `running`, `finished`, and a `closed` event | `management` |
+| `moneyMoved` (a hold, a released hold, a refund: D6 `bad_state`), `unavailable` (the ledger cannot be read, or the viewer cannot see the campaigns) | `unavailable` |
 
-`POST_ACTIVATION_STAGES` is replaced by this mode. With D4, a paid package no longer stays in `awaiting_activation`; the row stays in the table for the pay-per-result model and for an activation that failed for a technical reason (shown to staff, not as a customer state).
+`unavailable` is its own mode and never folds into the other two: a failed read, money that support has to look at, or campaigns the viewer cannot see must never redirect anyone. Every route renders it in place (D2, task 3.8).
 
-The viewer decides between `setup` and `readonly_setup`. The owner gets `setup`. A non-owner with `campaigns.view` gets `readonly_setup`. A viewer without `campaigns.view` gets neither and keeps the current permission-limited card.
+`POST_ACTIVATION_STAGES` is replaced by this mode in the routes (tasks 3.1, 3.2). With D4, a paid package no longer stays in `awaiting_activation`; it is management as soon as the ledger shows it paid.
+
+The viewer decides between setup and read-only setup. The owner in `setup` mode is redirected to `/setup`. A non-owner with `campaigns.view` gets the read-only card. A viewer without `campaigns.view` reads `unavailable` and keeps the current permission-limited card.
 
 **Alternative:** a new stored column `events.setup_completed_at`. Rejected: it duplicates what the ledger already says and can drift from it.
 
 ### D2. Routing
-- **`/app/events/[id]`:** compute the mode with the same reads the page already makes. On `setup` (owner), `redirect('/app/events/[id]/setup')`. On `readonly_setup`, render a read-only card (event header, "בהקמה", current step name). On `management`, render today's management page, minus `SetupSteps`.
+- **`/app/events/[id]`:** compute the mode with the same reads the page already makes. On `setup`, the owner is redirected (`redirect('/app/events/[id]/setup')`) and another viewer gets a read-only card (event header, "בהקמה", current step name). On `management`, render today's management page, minus `SetupSteps`. On `unavailable`, render in place with no redirect (3.8).
 - **`/setup`:** on `management`, `redirect('/app/events/[id]`)`. A closed event keeps today's redirect.
 - **Payment route:** for a package campaign in `setup` mode, render inside the setup shell (D3). In `management` mode it redirects to the event page.
 - **Campaign results page (`campaign/[campaignId]/page.tsx`):** for an owner in `setup` mode it redirects to `/setup`. Today it has no stage gate and is reachable by URL before payment.
 - **Landing after payment:** the purchase route (`api/campaigns/[id]/purchase/route.ts:109-118`) and `cardcom-open-fields-form.tsx:170` redirect to the event page, which is now management, instead of `payment?paid=1`.  The success screen in `package-payment-view.tsx` no longer says "מעבר לניהול הקמפיין".
 - **Unreadable ledger, no redirect loop:** `packagePaymentOf` returns `null` when the ledger cannot be read (`package-paid.ts:27-33`). Every route treats `null` the same way: the mode is `unavailable`, and the route renders an "המצב אינו זמין כרגע" notice in place, with no redirect. A paid customer is then never bounced between the event page and `/setup`.
-- **Redirect only for viewers who can see setup:** `/setup` throws `notFound` for a viewer without `campaigns.view` (`getCampaignForEvent`). The event-page redirect therefore applies only to the owner. Other viewers get `readonly_setup` or the permission-limited card.
+- **Redirect only for viewers who can see setup:** `/setup` throws `notFound` for a viewer without `campaigns.view` (`getCampaignForEvent`). The event-page redirect therefore applies only to the owner. Other viewers get the read-only card in `setup`, or the permission-limited card (`unavailable`).
 - **`/app`, login and verify:** no change. They land on the event page, which picks the mode. A user with no event still gets "בואו נתחיל".
 
 ### D3. One setup shell, flat content
@@ -187,7 +189,7 @@ The switch itself is kept for the pay-per-result paths; removing it entirely is 
 ## Risks / Trade-offs
 
 - [The customer cannot prepare the guest list before paying] → accepted by the owner's decision (D4). Guests are the first task on the management page after payment.
-- [An org member is redirected into actions they cannot run] → mode `readonly_setup` for non-owners (D1). `permission-separation.test.ts` covers the owner and non-owner branches.
+- [An org member is redirected into actions they cannot run] → in `setup` mode non-owners get the read-only card instead of a redirect (D1). `permission-separation.test.ts` covers the owner and non-owner branches.
 - [Close retires a campaign at the same moment a payment arrives] → the RPC locks the campaign row first, as the ledger insert trigger does. A concurrent `pending` row makes `cancel_campaign` refuse, so the close is blocked, not lost.
 - [The vocabulary scan is brittle] → an explicit allowlist with a reason per entry. It scans text, not identifiers.
 - [`campaignStage` labels are shared with staff screens] → the customer variant is a separate map, so staff wording is unchanged.

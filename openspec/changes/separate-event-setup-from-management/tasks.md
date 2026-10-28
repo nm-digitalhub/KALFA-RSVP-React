@@ -2,9 +2,11 @@
 
 ## 1. Domain: the setup/management boundary
 
-- [ ] 1.1 Add `eventMode(stage)` to `src/lib/data/setup-steps.ts` and replace `POST_ACTIVATION_STAGES`. Verify with unit tests covering every `CampaignStage`: `awaiting_activation` is management, and a reset event (only a cancelled campaign) is `setup` at the package step.
+- [x] 1.1 Add `eventMode(snapshot)` to the event lifecycle model (`src/lib/data/event-lifecycle.ts`, D1/D7a, owner 2026-10-28): `mode.*` tags on its states, `setup | management | unavailable`, `unavailable` never folded into the other two. `POST_ACTIVATION_STAGES` is replaced in the routes by 3.1 and 3.2. Verify with unit tests covering every service state × event status: paid but not running (`awaiting_activation`) is management, a reset event (no live campaign) is setup, a closed event is management, an unreadable ledger and money that moved are unavailable; and a model test that every configuration carries exactly one mode tag.
+  - Done: `event-lifecycle.test.ts` and `event-lifecycle.model.test.ts`, 297 passing; mapping `unavailable` to setup fails 4 of them.
 - [ ] 1.2 For a package campaign, change `activateCampaign` to set `active` once the ledger shows `collected`, without refusing an empty list. Retire `PACKAGE_NO_CONTACTS_ERROR` and its screens. **Status: implemented in `16413312`** (`requirePackageFunding`, the deleted `PACKAGE_NO_CONTACTS_ERROR` / `PACKAGE_SUPPORT_ERROR`, `activateAfterPayment` answering `started | failed`). **Re-verification still open:** re-run `campaigns.test.ts` and confirm it covers paid with 0 contacts → active, unpaid → refused, ledger unreadable → refused, and that `activateAfterPayment` sends the staff alert on a refusal; confirm no reference to the retired constants or `?activate=no_contacts` remains outside tests. Tick this box only after that re-run.
-- [ ] 1.3 Change `setupBackTarget` so the package step returns `/setup?step=details`. Verify with a `setup-steps` test.
+- [x] 1.3 Change `setupBackTarget` so the package step returns `/setup?step=details`. Verify with a `setup-steps` test.
+  - Done with 2.7 (`setup-steps.test.ts`, `setup/page.test.tsx`).
 - [ ] 1.4 Add a regression test that each guest-add path calls the reconcile with `add` for a running package: single add (`guests-actions.ts`), the bulk insert (`guests.ts`), CSV import and WhatsApp import (a new `whatsapp/actions.test.ts`); and that `quota_full` leaves the guest added. Record in design.md which scheduled messages a late guest receives. Verify that the tests pass.
 - [ ] 1.5 Worker link repair and top-up (design D9 b): add a request-free link-repair function (admin client, the pure `deriveContacts`, only guests with a valid phone and a null `contact_id`, never clears a link); in `handleArm` (`worker/main.ts`), for each running campaign with a quota, call it and then `fillAuthorizedSet(event_id, campaign_id, 'arm_topup')` before `seedOutreachState`; log and continue on failure. Verify with worker tests: an unlinked guest is linked and admitted on the next tick with the switch off; a campaign without a quota is untouched; a failing step does not stop the tick.
 - [ ] 1.6 Order of addition inside the RPC (design D9 a): create a migration with `npx supabase migration new reconcile_admit_by_order < /dev/null` that adds one shared internal admission function (eligibility and smallest-`seq` rank as `fill_authorized_set` defines them) and replaces `reconcile_authorized_set` (same signature and results): with a quota, `add` and an adding `repoint` admit by `seq` up to the quota and answer `added` only if `p_contact` is on the list; a `delete` that removes a member admits the first waiting contact in the same transaction; audit rows use the existing `reason` values. `fill_authorized_set` calls the shared function. Include the verification block and the manual rollback. Verify that the file contains only these functions, their grants and the verification.
@@ -42,12 +44,13 @@
 
 ## 3. Routing
 
-- [ ] 3.1 Event page (`events/[id]/page.tsx`):
-  - owner in `setup` → redirect to `/setup`;
-  - `readonly_setup` → read-only card;
+- [x] 3.1 Event page (`events/[id]/page.tsx`):
+  - `setup`: the owner → redirect to `/setup`; another viewer → read-only card;
   - `management` → today's page without `SetupSteps`;
+  - `unavailable` → rendered in place, no redirect;
 
   Verify with page tests per mode, and run `permission-separation.test.ts`.
+  - Done 2026-10-28: the mode comes from `eventMode(resolveEventLifecycle(...))` before any other read; the owner is decided by `isEventOwner` (routing only). New `page.test.tsx`, 16 tests: every setup case redirects the owner, a non-owner gets the read-only card, management shows the service card and the details form, and an unreadable ledger, money that moved and invisible campaigns render in place. Making `unavailable` redirect fails 3 of them. `permission-separation.test.ts` passes.
 - [ ] 3.2 `/setup`: `management` → redirect to the event page, and allow `editingDetails` for a confirmed event in setup. Verify with page tests: paid → event page, closed → event page, confirmed and unpaid → details form reachable.
 - [ ] 3.3 Package payment page: in `setup` mode render inside `SetupShell`. Verify with payment page tests: shell present, paid → event page.
 - [ ] 3.6 Campaign results page: for an owner in `setup` mode, redirect to `/setup`. Verify with a page test that it is unreachable by URL before payment.
@@ -59,7 +62,7 @@
 ## 4. Setup shell and flat content
 
 - [ ] 4.1 Create `SetupShell` (header, one stepper, close control with confirmation, one content surface) and use it in `/setup` and the payment page. Verify with a render test: exactly one stepper and one close control.
-- [ ] 4.2 Delete `setup-steps.tsx` (the event-page card) and its usages. Verify that `tsc --noEmit` passes and no import remains.
+- [x] 4.2 Delete `setup-steps.tsx` (the event-page card) and its usages. Verify that `tsc --noEmit` passes and no import remains.
 - [ ] 4.3 Flatten `PackageTermsStep`, the package payment view panels and the confirm step into sections inside the surface. Verify with component tests asserting no bordered container nested inside the step surface, and keep `package-terms-step.test.tsx` green.
 - [ ] 4.4 Follow the `building-rtl-ui` skill for RTL, focus and mobile width. Verify with eslint and `tsc --noEmit` on touched files.
 

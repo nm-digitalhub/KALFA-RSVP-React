@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { cache } from 'react';
 import type { Metadata } from 'next';
 
@@ -9,6 +10,7 @@ import {
   eventDatesLocked,
   getEvent,
   getEventClosureReason,
+  isEventOwner,
   type EventDetail,
 } from '@/lib/data/events';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
@@ -21,11 +23,18 @@ import {
   type ThankyouSchedule,
 } from '@/lib/data/campaigns';
 import { hasAnyOperationalCampaign } from '@/lib/data/campaign-status';
-import { closeControlOf, resolveEventLifecycle } from '@/lib/data/event-lifecycle';
+import { closeControlOf, eventMode, resolveEventLifecycle } from '@/lib/data/event-lifecycle';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { getEventStats } from '@/lib/data/event-stats';
-import { EVENT_TYPE_LABELS, eventStatusLabel } from '@/lib/data/event-labels';
+import {
+  CAMPAIGN_STAGE_LABELS,
+  CAMPAIGN_STAGE_VARIANTS,
+  EVENT_TYPE_LABELS,
+  campaignStage,
+  eventStatusLabel,
+} from '@/lib/data/event-labels';
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
+import { computeSetupSteps, SETUP_STEP_LABELS, toSetupEvent } from '@/lib/data/setup-steps';
 import {
   getCancellationRequestForEvent,
   type OwnCancellationRequest,
@@ -34,7 +43,6 @@ import { EditEventForm } from './edit-event-form';
 import { EventStatusActions } from './event-status-actions';
 import { EventSummary } from './event-summary';
 import { closeEventAction } from './campaign/campaign-actions';
-import { SetupSteps } from './setup-steps';
 import { CancellationRequestForm } from './cancellation-request-form';
 import { createCancellationRequestAction } from './actions';
 
@@ -228,8 +236,22 @@ export default async function EventPage({
   }
 
   const isPast = isPastEventDay(event.event_date);
-  // The setup flow (/setup) hosts the details form while it is in progress.
-  const setupInProgress = canViewCampaigns && event.status === 'draft' && !isPast;
+
+  // The event's mode (design D1/D2), from the event lifecycle model, before any other
+  // read: the owner of an event still in setup is sent into the setup flow, the one
+  // place setup happens. The ledger is read ONCE here, for the mode, the close and
+  // the cancellation request. `unavailable` (a ledger that cannot be read, money that
+  // support has to look at, campaigns this viewer cannot see) never redirects.
+  const payment = campaign ? await packagePaymentOf(campaign) : null;
+  const lifecycle = resolveEventLifecycle({
+    eventStatus: event.status,
+    campaignsVisible: canViewCampaigns,
+    campaign,
+    payment,
+  });
+  const mode = eventMode(lifecycle);
+  if (mode === 'setup' && (await isEventOwner(id))) redirect(`/app/events/${id}/setup`);
+
   // Locked by the first send (or by the event being closed), not by leaving draft.
   // A draft never queries; an active event costs one indexed lookup.
   const datesLocked = await eventDatesLocked(id, event.status);
@@ -277,23 +299,14 @@ export default async function EventPage({
   const hasOperationalCampaign =
     allCampaigns === null ? true : hasAnyOperationalCampaign(allCampaigns);
 
-  // The close and the cancellation request (design D5/D7). The ledger is read ONCE
-  // here and handed to SetupSteps too. The event lifecycle model decides what is
-  // OFFERED — the close while nothing was paid, the cancellation request once it
-  // was — and fails closed for a viewer who cannot see the campaigns or a ledger
-  // that cannot be read. The control is rendered only for a viewer holding
+  // The close and the cancellation request (design D5/D7). The event lifecycle model
+  // decides what is OFFERED — the close while nothing was paid, the cancellation
+  // request once it was — and fails closed for a viewer who cannot see the campaigns
+  // or a ledger that cannot be read. The control is rendered only for a viewer holding
   // `events.close` (the owner always; another member only through the protected
   // permission); closeEvent checks the same permission again and the database
   // function decides the money for real.
-  const payment = campaign ? await packagePaymentOf(campaign) : null;
-  const closeControl = closeControlOf(
-    resolveEventLifecycle({
-      eventStatus: event.status,
-      campaignsVisible: canViewCampaigns,
-      campaign,
-      payment,
-    }),
-  );
+  const closeControl = closeControlOf(lifecycle);
   const canClose = await canAccessEvent(id, 'events', 'close');
   const closeAction = closeEventAction.bind(null, event.id);
   const createCancellationAction = createCancellationRequestAction.bind(null, event.id);
@@ -316,6 +329,24 @@ export default async function EventPage({
     .filter(Boolean)
     .join(' · ');
   const celebrantsText = celebrantsSummary(event.event_type, event.celebrants);
+
+  // A viewer who is not the owner, on an event still in setup (D1/D2): read-only. The
+  // setup's actions are the owner's, so this viewer sees where the setup stands, not
+  // a way into it; the details form and the service's controls stay on the owner's side.
+  const readOnlySetup = mode === 'setup';
+  const setupStepLabel = readOnlySetup
+    ? (() => {
+        const { steps } = computeSetupSteps({
+          event: toSetupEvent(event),
+          campaign: campaign && { status: campaign.status, price: campaign.price, payment },
+          isPast,
+        });
+        const step = steps.find((s) => s.state === 'current') ?? steps.find((s) => s.state === 'blocked');
+        return step ? SETUP_STEP_LABELS[step.key] : null;
+      })()
+    : null;
+  // In management the service is shown by its stage, with the way to its own page.
+  const stage = campaignStage(campaign && { status: campaign.status, price: campaign.price, payment });
 
   return (
     <div className="space-y-6">
@@ -366,15 +397,11 @@ export default async function EventPage({
         </Link>
       </div>
 
-      {canViewCampaigns ? (
-        <SetupSteps event={event} campaign={campaign} payment={payment} isPast={isPast} />
-      ) : (
+      {!canViewCampaigns ? (
         // Without campaigns.view `campaign` is null for a PERMISSION reason, not
-        // because no campaign exists. Rendering SetupSteps with it would state
-        // the opposite ("טרם הוקם") and offer a "המשך הקמה" link into a flow the
-        // viewer cannot complete. Same permission_limited card the stats page
-        // uses (stats/page.tsx SectionCard), so the state reads identically
-        // across the app.
+        // because no campaign exists (the model reads `unavailable`). Same
+        // permission_limited card the stats page uses (stats/page.tsx SectionCard),
+        // so the state reads identically across the app.
         <section className="space-y-3 rounded-lg border border-border bg-card p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">אישורי הגעה</h2>
@@ -382,7 +409,46 @@ export default async function EventPage({
           </div>
           <p className="text-sm text-muted-foreground">אין לך הרשאה לצפות בנתונים אלו.</p>
         </section>
-      )}
+      ) : mode === 'unavailable' ? (
+        // In place, never a redirect (D2): the ledger could not be read, or money
+        // moved in a way support has to look at.
+        <section className="space-y-3 rounded-lg border border-border bg-card p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">אישורי הגעה</h2>
+            <Badge variant="warning">לא זמין כרגע</Badge>
+          </div>
+          <p role="status" className="text-sm text-muted-foreground">
+            {lifecycle.matches({ open: { service: 'moneyMoved' } })
+              ? 'יש באישורי ההגעה תנועת כסף שדורשת בדיקה של התמיכה. לעזרה יש לפנות לתמיכה.'
+              : 'לא ניתן להציג כרגע את מצב אישורי ההגעה. נסו שוב מאוחר יותר.'}
+          </p>
+        </section>
+      ) : readOnlySetup ? (
+        <section className="space-y-3 rounded-lg border border-border bg-card p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">אישורי הגעה</h2>
+            <Badge variant="warning">בהקמה</Badge>
+          </div>
+          {setupStepLabel ? (
+            <p className="text-sm">השלב הנוכחי: {setupStepLabel}</p>
+          ) : null}
+          <p className="text-sm text-muted-foreground">את ההקמה משלים בעל האירוע.</p>
+        </section>
+      ) : campaign ? (
+        // Management: the service by its stage, and the way to its own page.
+        <section className="space-y-4 rounded-lg border border-border bg-card p-6">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold">הקמפיין</h2>
+            <Badge variant={CAMPAIGN_STAGE_VARIANTS[stage]}>{CAMPAIGN_STAGE_LABELS[stage]}</Badge>
+          </div>
+          <Link
+            href={`/app/events/${event.id}/campaign/${campaign.id}`}
+            className={buttonVariants()}
+          >
+            ניהול הקמפיין
+          </Link>
+        </section>
+      ) : null}
 
       {canClose ? (
         <EventStatusActions
@@ -400,12 +466,11 @@ export default async function EventPage({
         />
       ) : null}
 
-      {/* While the setup flow is in progress (a draft event the viewer can set
-          up, not yet past) the details are edited INSIDE the flow (/setup), so
-          this page offers one way forward instead of two buttons that both save.
-          Once setup is over, or when the viewer has no access to it, this is the
-          ordinary edit form. */}
-      {setupInProgress ? null : (
+      {/* While the event is in setup its details are edited INSIDE the flow
+          (/setup), where the owner already is; another viewer of a setup event
+          gets the read-only card above. In management, and when the service's
+          state is unavailable, this is the ordinary edit form. */}
+      {readOnlySetup ? null : (
         <section className="space-y-4 rounded-lg border border-border bg-card p-6">
           <h2 className="text-lg font-semibold">עריכת פרטי האירוע</h2>
           <EditEventForm

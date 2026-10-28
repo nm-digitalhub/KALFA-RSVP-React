@@ -53,6 +53,23 @@ export async function requireOwnedEvent(eventId: string): Promise<OwnedEvent> {
   return data;
 }
 
+// Non-throwing sibling of requireOwnedEvent: is the signed-in user this event's
+// owner? For ROUTING only (design D1/D2: only the owner is sent into the setup
+// flow, whose actions are owner-only), never as authorization — every action and
+// page still checks its own rule.
+export async function isEventOwner(eventId: string): Promise<boolean> {
+  const user = await getUser();
+  if (!user) return false;
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('events')
+    .select('id')
+    .eq('id', eventId)
+    .eq('owner_id', user.id)
+    .maybeSingle();
+  return !error && data !== null;
+}
+
 // Org-aware access gate: verify the current user may perform `action` on
 // `resource` for `eventId` — owner OR an org member holding the permission —
 // via the can_access_event() DB function (single source of truth). notFound()
