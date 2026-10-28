@@ -396,6 +396,9 @@ describe('CardcomOpenFieldsForm', () => {
     cardcomMessage({ action: 'HandleEror', ResponseCode: 400, message: ['invalid card'] });
     expect((await screen.findByRole('alert')).textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_declined);
     expect(callsTo(SETTLE_URL)).toHaveLength(1);
+    // The old session's frames are gone: nothing on this page can pay it any more, so "try again" cannot become a second payment on it.
+    expect(frame(OPEN_FIELDS_FRAME_ID.master)).toBeNull();
+    expect(frame(OPEN_FIELDS_FRAME_ID.cardNumber)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'ניסיון נוסף' }));
     await waitFor(() => expect(callsTo(START_URL)).toHaveLength(2));
   });

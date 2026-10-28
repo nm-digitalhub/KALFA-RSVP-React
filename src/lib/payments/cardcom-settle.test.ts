@@ -448,6 +448,21 @@ describe('settleCardcomSession: money that arrives after the row was closed as f
     expect(ledger().outcome).toBe('failed');
   });
 
+  // The buyer pressed "try again" and the old session was closed as REPLACED (CardCom said pending, nothing paid). If money still lands
+  // on it (another tab, a bank that answered late), the ledger cannot take it — the campaign may already be paid by the new session —
+  // so a person must hear. CardCom's webhook for the old session asks exactly as below (webhook/route.ts).
+  it.each([['ChargeOnly'], ['ChargeAndCreateToken']])('a REPLACED %s session that CardCom later reports paid raises the alert when the webhook asks', async (operation) => {
+    fake = createFakeTableClient({
+      payment_operations: [op({ outcome: 'failed', provider_operation: operation, note: 'not paid at CardCom; the buyer opened a new payment form, so this session was replaced; nothing was charged' })],
+      cardcom_payment_sessions: [session()],
+      activity_log: [],
+    });
+    answer({ ...PAID_WITH_CARD, Operation: operation });
+    await expect(settleCardcomSession(LP, { finalizeUnpaid: true, afterSubmit: true })).resolves.toEqual({ status: 'settled', outcome: 'failed', alreadyDone: true });
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'error', fields: expect.objectContaining({ operation_id: 'op1' }) }));
+    expect(ledger().outcome).toBe('failed');
+  });
+
   it('says nothing when CardCom reports a different operation than the row asked for (the success gate decides the same way)', async () => {
     fake = createFakeTableClient({ payment_operations: [op({ outcome: 'failed', provider_operation: 'ChargeAndCreateToken' })], cardcom_payment_sessions: [session()], activity_log: [] });
     answer(PAID); // Operation: 'ChargeOnly'
