@@ -1,27 +1,96 @@
+# E2E (Playwright) against an isolated stack on the runner: the local Supabase stack started from this repo's
+# migrations + supabase/seed.sql, and the app's E2E build (npm run e2e:build / e2e:start, started by playwright.config.ts).
+# No secrets and no hosted project: every value comes from the stack started here.
+#
+# Steps follow the official docs:
+#   - Playwright on GitHub Actions (playwright.dev/docs/ci-intro): install deps, install browsers --with-deps, run,
+#     upload the HTML report;
+#   - supabase/setup-cli README: with no `version` it installs the `supabase` version pinned in package-lock.json,
+#     then `supabase start`, then "Export local Supabase env vars for app tests" with `supabase status -o env
+#     --override-name`.
 name: Playwright Tests
+
 on:
   push:
-    branches: [ main, master ]
+    branches: [main]
   pull_request:
-    branches: [ main, master ]
+
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: lts/*
-    - name: Install dependencies
-      run: npm ci
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
-    - name: Run Playwright tests
-      run: npx playwright test
-    - uses: actions/upload-artifact@v4
-      if: ${{ !cancelled() }}
-      with:
-        name: playwright-report
-        path: playwright-report/
-        retention-days: 30
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          # Matches the beta server runtime (node v24).
+          node-version: 24
+          cache: npm
+
+      # package.json `patchedDependencies` and the lockfile format (v4) are npm 12 features; Node 24 ships npm 11.
+      - name: Use npm 12
+        run: npm install -g npm@12
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: supabase/setup-cli@v3
+
+      # supabase/config.toml enables the send-SMS auth hook with secrets = "env(SEND_SMS_HOOK_SECRETS)". Locally the CLI
+      # finds it in the root .env.local; here there is no such file, and every CLI command that loads the config
+      # (`supabase status` below and in tests/global-setup.ts, `supabase stop`) rejects it without a valid secret. The OS
+      # environment comes first in the CLI's env() resolution, so a throwaway value for this run goes to GITHUB_ENV,
+      # generated the way the Supabase auth-hooks guide does and masked in the log (GitHub workflow commands). The hook's
+      # edge function is not started here (edge-runtime is excluded) and no SMS is sent.
+      - name: Throwaway send-SMS hook secret for the local stack
+        run: |
+          secret="v1,whsec_$(openssl rand -base64 32)"
+          echo "::add-mask::$secret"
+          echo "SEND_SMS_HOOK_SECRETS=$secret" >> "$GITHUB_ENV"
+
+      # The full stack minus the services the customer flows never call (Auth, PostgREST, Kong, Storage and Mailpit stay).
+      # `supabase init` is skipped: supabase/config.toml is in the repo.
+      - name: Start the local Supabase stack
+        run: supabase start -x studio,postgres-meta,imgproxy,edge-runtime,logflare,vector,supavisor,realtime
+
+      # Next.js reads .env.test.local when NODE_ENV=test (the e2e:* scripts), and the e2e:* scripts unset these names
+      # from the process env, so they go to the file only. NEXT_PUBLIC_* are inlined at build time: this runs before the
+      # build. The SUPABASE_DB_* parts (the queue's Postgres connection, src/lib/queue/web-sender.ts) come from DB_URL.
+      - name: Point the E2E build at the local stack (.env.test.local)
+        run: |
+          supabase status -o env \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
+            --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            --override-name auth.publishable_key=NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY \
+            --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY \
+            > .env.test.local
+          node -e '
+            const env = require("node:fs").readFileSync(".env.test.local", "utf8");
+            const db = new URL(env.match(/^DB_URL="?([^"\n]*)"?$/m)[1]);
+            console.log([
+              `SUPABASE_DB_HOST=${db.hostname}`,
+              `SUPABASE_DB_PORT=${db.port}`,
+              `SUPABASE_DB_NAME=${db.pathname.slice(1)}`,
+              `SUPABASE_DB_USER=${db.username}`,
+              `SUPABASE_DB_PASSWORD=${db.password}`,
+            ].join("\n"));
+          ' >> .env.test.local
+
+      # Chromium only: the one project in playwright.config.ts.
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
