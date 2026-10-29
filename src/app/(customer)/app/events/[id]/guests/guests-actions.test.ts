@@ -30,7 +30,7 @@ vi.mock('@/lib/data/guests', () => ({
   updateGroup: vi.fn(),
   deleteGroup: vi.fn(),
 }));
-vi.mock('@/lib/data/contacts', () => ({ linkGuestContact: vi.fn() }));
+vi.mock('@/lib/data/contacts', () => ({ linkGuestContact: vi.fn(), reconcileCampaignSetForContact: vi.fn() }));
 // rsvp-links.ts is `server-only`; mock it so importing the action module under
 // test doesn't pull the server-only guard into the Node test env.
 vi.mock('@/lib/data/rsvp-links', () => ({
@@ -38,8 +38,8 @@ vi.mock('@/lib/data/rsvp-links', () => ({
   regenerateRsvpToken: vi.fn(),
 }));
 
-import { createGuest, updateGuest, PHONE_TAKEN_ERROR } from '@/lib/data/guests';
-import { linkGuestContact } from '@/lib/data/contacts';
+import { createGuest, deleteGuest, updateGuest, PHONE_TAKEN_ERROR } from '@/lib/data/guests';
+import { linkGuestContact, reconcileCampaignSetForContact } from '@/lib/data/contacts';
 import { createGuestAction, updateGuestAction, createGroupAction, updateGroupAction } from './guests-actions';
 import { createGroup, updateGroup } from '@/lib/data/guests';
 
@@ -83,6 +83,48 @@ describe('createGuestAction → contact sync', () => {
     ).rejects.toThrow('NEXT_REDIRECT');
 
     errSpy.mockRestore();
+  });
+});
+
+// Admission (package-outreach-admission-safety, task 1.1): a single add puts the guest's contact up for the outreach list
+// of a running package through reconcileCampaignSetForContact(…, 'add'). That function resolves on every answer, a full
+// package (quota_full) included, and only logs it (src/lib/data/reconcile.test.ts), so the guest stays added.
+describe('createGuestAction → outreach list admission', () => {
+  it('asks to admit the new guest\'s contact (op add) once it is linked', async () => {
+    vi.mocked(createGuest).mockResolvedValue({ id: 'g-3' } as unknown as Awaited<ReturnType<typeof createGuest>>);
+    vi.mocked(linkGuestContact).mockResolvedValue({ contactId: 'c-3', prevContactId: null });
+
+    await expect(
+      createGuestAction('e-1', null, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(reconcileCampaignSetForContact).toHaveBeenCalledTimes(1);
+    expect(reconcileCampaignSetForContact).toHaveBeenCalledWith('e-1', 'add', 'c-3');
+  });
+
+  it('keeps the guest when the package is full: the admission resolves, nothing is undone, the owner lands on the list', async () => {
+    vi.mocked(createGuest).mockResolvedValue({ id: 'g-4' } as unknown as Awaited<ReturnType<typeof createGuest>>);
+    vi.mocked(linkGuestContact).mockResolvedValue({ contactId: 'c-4', prevContactId: null });
+    // reconcileCampaignSetForContact's own contract on quota_full: warn and resolve.
+    vi.mocked(reconcileCampaignSetForContact).mockResolvedValue(undefined);
+
+    await expect(
+      createGuestAction('e-1', null, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(reconcileCampaignSetForContact).toHaveBeenCalledWith('e-1', 'add', 'c-4');
+    expect(deleteGuest).not.toHaveBeenCalled();
+  });
+
+  it('asks for nothing when the guest has no phone (no contact to admit)', async () => {
+    vi.mocked(createGuest).mockResolvedValue({ id: 'g-5' } as unknown as Awaited<ReturnType<typeof createGuest>>);
+    vi.mocked(linkGuestContact).mockResolvedValue({ contactId: null, prevContactId: null });
+
+    await expect(
+      createGuestAction('e-1', null, fd({ full_name: 'דנה', phone: '', group_id: '', note: '' })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(reconcileCampaignSetForContact).not.toHaveBeenCalled();
   });
 });
 

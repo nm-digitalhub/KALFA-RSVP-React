@@ -36,7 +36,7 @@ vi.mock('@/lib/data/events', () => ({ requireEventAccess: vi.fn() }));
 
 import { bulkInsertGuests, createGroup, listGroups } from '@/lib/data/guests';
 import { requireEventAccess } from '@/lib/data/events';
-import { buildContactsForEvent } from '@/lib/data/contacts';
+import { buildContactsForEvent, reconcileCampaignSetForContact } from '@/lib/data/contacts';
 import { importGuestsAction } from './import-actions';
 import { buildTemplateCsv } from '@/lib/guests/import-template';
 
@@ -136,6 +136,40 @@ const ascii = (s: string) => new TextEncoder().encode(s);
 function fileOf(parts: BlobPart[], name = 'guests.csv'): File {
   return new File(parts, name, { type: 'text/csv' });
 }
+
+// Admission (package-outreach-admission-safety, task 1.1): after the rows are inserted and the contacts rebuilt, every
+// imported contact is put up for a running package's outreach list (op add). reconcileCampaignSetForContact resolves on
+// every answer, a full package (quota_full) included, so the import still reports the guests as imported.
+describe('importGuestsAction — outreach list admission', () => {
+  beforeEach(() => {
+    vi.mocked(listGroups).mockResolvedValue([]);
+    vi.mocked(bulkInsertGuests).mockImplementation(async (_eventId, rows) => rows.length);
+    vi.mocked(buildContactsForEvent).mockResolvedValue({
+      guests: 2,
+      withValidPhone: 2,
+      uniqueContacts: 2,
+      invalid: 0,
+      contactIds: ['c1', 'c2'],
+    });
+  });
+
+  it('asks to admit every contact of the event after the import (op add)', async () => {
+    const result = await importGuestsAction('e-1', null, fd(csvFile()));
+
+    expect(result).toMatchObject({ done: true, imported: 1, failed: [] });
+    expect(reconcileCampaignSetForContact).toHaveBeenCalledTimes(2);
+    expect(reconcileCampaignSetForContact).toHaveBeenNthCalledWith(1, 'e-1', 'add', 'c1');
+    expect(reconcileCampaignSetForContact).toHaveBeenNthCalledWith(2, 'e-1', 'add', 'c2');
+  });
+
+  it('still reports the guests as imported when the package is full (the admission resolves)', async () => {
+    vi.mocked(reconcileCampaignSetForContact).mockResolvedValue(undefined);
+
+    const result = await importGuestsAction('e-1', null, fd(csvFile()));
+
+    expect(result).toMatchObject({ done: true, imported: 1, failed: [] });
+  });
+});
 
 describe('importGuestsAction — Excel traps', () => {
   beforeEach(() => {

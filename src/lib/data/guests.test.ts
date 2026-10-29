@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '@supabase/supabase-js';
 
 import { createMockSupabase } from '@/test/supabase-mock';
@@ -30,6 +30,17 @@ vi.mock('@/lib/auth/dal', () => ({ requireUser: vi.fn() }));
 // tests assert only on the guest queries.
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
 import { logActivity } from '@/lib/data/activity';
+// The real contact functions, observable: the admission tests below replace one answer at a time, every other test runs
+// the real code as before.
+vi.mock('@/lib/data/contacts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/data/contacts')>();
+  return {
+    ...actual,
+    linkGuestContact: vi.fn(actual.linkGuestContact),
+    reconcileCampaignSetForContact: vi.fn(actual.reconcileCampaignSetForContact),
+  };
+});
+import { linkGuestContact, reconcileCampaignSetForContact } from '@/lib/data/contacts';
 
 const USER_ID = 'user-123';
 const EVENT_ID = 'event-1';
@@ -638,6 +649,41 @@ describe('bulkInsertGuests', () => {
       expect(r).not.toHaveProperty('rsvp_token');
       expect(r).not.toHaveProperty('extras');
     }
+  });
+
+  // Admission (package-outreach-admission-safety, task 1.1): the bulk insert behind the CSV and WhatsApp imports links each
+  // new guest that has a phone and asks to admit its contact (op add) to a running package's outreach list. It runs
+  // while RECONCILE_AUTHORIZED_SET_ENABLED is on (the gate this change keeps for the add path).
+  describe('admission to a running package', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    function insertTwoGuests() {
+      const { client, builder } = createMockSupabase<{ id: string }[]>({ data: [{ id: 'g1' }, { id: 'g2' }], error: null });
+      passGate(builder);
+      vi.mocked(createClient).mockResolvedValue(client as unknown as Awaited<ReturnType<typeof createClient>>);
+      client.rpc.mockResolvedValue({ data: true, error: null });
+      return bulkInsertGuests(EVENT_ID, [{ full_name: 'א', phone: '+972501111111' }, { full_name: 'ב' }]);
+    }
+
+    it('links each new guest with a phone and asks to admit its contact (op add)', async () => {
+      vi.stubEnv('RECONCILE_AUTHORIZED_SET_ENABLED', 'true');
+      vi.mocked(linkGuestContact).mockResolvedValueOnce({ contactId: 'c1', prevContactId: null });
+      vi.mocked(reconcileCampaignSetForContact).mockResolvedValueOnce(undefined);
+
+      expect(await insertTwoGuests()).toBe(2);
+      expect(linkGuestContact).toHaveBeenCalledTimes(1);
+      expect(linkGuestContact).toHaveBeenCalledWith(EVENT_ID, 'g1', '+972501111111');
+      expect(reconcileCampaignSetForContact).toHaveBeenCalledTimes(1);
+      expect(reconcileCampaignSetForContact).toHaveBeenCalledWith(EVENT_ID, 'add', 'c1');
+    });
+
+    it('keeps every inserted guest when the package is full (the admission resolves, quota_full is only logged)', async () => {
+      vi.stubEnv('RECONCILE_AUTHORIZED_SET_ENABLED', 'true');
+      vi.mocked(linkGuestContact).mockResolvedValueOnce({ contactId: 'c1', prevContactId: null });
+      vi.mocked(reconcileCampaignSetForContact).mockResolvedValueOnce(undefined);
+
+      expect(await insertTwoGuests()).toBe(2);
+    });
   });
 
   it('returns 0 and does not insert for an empty list', async () => {

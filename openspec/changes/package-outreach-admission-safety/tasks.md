@@ -4,7 +4,7 @@ Extracted from `separate-event-setup-from-management` tasks 1.4 to 1.12, on the 
 
 ## 1. Guest-add paths and visible failures
 
-- [ ] 1.1 (was 1.4) Add a regression test that each guest-add path calls the reconcile with `add` for a running package:
+- [x] 1.1 (was 1.4) Add a regression test that each guest-add path calls the reconcile with `add` for a running package:
   - single add (`guests-actions.ts`);
   - the bulk insert (`guests.ts`);
   - CSV import;

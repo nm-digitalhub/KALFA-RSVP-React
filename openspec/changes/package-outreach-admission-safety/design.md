@@ -42,6 +42,15 @@ See proposal.md (Why) for the motivation. The current state that shapes the appr
   - 4 package campaigns are in `approved`, `scheduled`, `active` or `paused`. Together they have 1 guest, and that guest is on the list.
   - 0 eligible contacts are off the list, and 0 guests with a phone are unlinked.
   - So no missed admission has been observed. But the sample is one guest, so the nets rest on the structural gaps above, not on measured failures.
+- **Which scheduled messages a guest admitted late receives (task 1.1, read from the code on 29.10.2026, not measured on a run).**
+  - On the next arm tick, `seedOutreachState` (`outreach-engine.ts:76`) gives the new list member an `outreach_state` row. Its cursor starts at step 0 (`current_step_index default 0`, `202606290032_outreach_state.sql:18`).
+  - `ensureCurrentStep` (`outreach-engine.ts:780`) then walks one step at a time, and `evaluateStep` (`send-window.ts`) decides each step:
+    - a step whose NEXT step is already due is skipped (`superseded_by_later_touchpoint`);
+    - an overdue step whose legal slot falls on a later Israel day is skipped (`missed_touchpoint`);
+    - an overdue step still legal on its own day is sent at once; a future step is deferred to its slot.
+  - So a late guest receives the steps whose time has not passed, plus at most the latest overdue step if it is still the same day. Earlier steps, the invitation included, are not sent.
+  - Example on the production package's schedule (invite 10 days before, reminders 6 and 3 days before, a call 2 days before, a final message 1 day before): a guest added 4 days before the event receives only the 3-day reminder, the call and the final message. That guest never receives the invitation.
+  - The unit tests of both skips are in `send-window.test.ts` ("SKIPS superseded_by_later_touchpoint …", "SKIPS missed_touchpoint …"). Changing this behavior is outside this change (Non-goals, and Open Questions below).
 
 ## Goals / Non-Goals
 
@@ -133,4 +142,4 @@ The switch itself is kept for the pay-per-result paths. Removing it entirely is 
 
 - Whether `RECONCILE_AUTHORIZED_SET_ENABLED` should stop gating admission at add time for package campaigns too. D2 and D3 already remove the dependency for the top-up and the guards. The owner's call.
 - The Hebrew wording of the per-guest statuses in D4.
-- Which scheduled messages a guest admitted late receives (`ensureCurrentStep` starts from the current step). Task 1.1 records the existing behavior. Changing it is a separate decision.
+- Whether a guest admitted late should receive an invitation first. Today such a guest receives only the steps still due (Context: "Which scheduled messages a guest admitted late receives"), so a guest added after the invitation day never gets the invitation. Changing it is a separate decision.
