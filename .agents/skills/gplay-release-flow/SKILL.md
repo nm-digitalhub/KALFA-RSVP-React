@@ -49,6 +49,23 @@ restarting from zero. Automatic, no flag.
 `upload` also takes a legacy `.apk` (`[experimental]`, same pipeline;
 `--format apk|bundle` overrides an ambiguous extension).
 
+### Several artifacts, one release
+
+```bash
+gplay releases upload phone.aab wear.aab --track beta --retain-version-code 41
+```
+
+Several positional artifacts (per-ABI APKs, a phone plus a Wear bundle) land in
+one Edit and one release listing every versionCode, all or nothing: any failure
+discards the Edit. `--retain-version-code` keeps an already-uploaded build
+serving alongside them; gplay passes it unchecked, so a wrong code fails with
+Google's error. `--mapping` takes a single artifact: for a multi-artifact
+release, attach mappings afterwards with `releases mappings upload`.
+
+`--externally-hosted <file.json>` (`[experimental]`) registers an APK served
+from your own host instead of uploading one: Managed Play private apps only
+(see `gplay-customapps`), shape in `gplay schema ExternallyHostedApk`.
+
 ### Local preflight
 
 Before any byte leaves, gplay checks the artifact by structure (container
@@ -73,10 +90,10 @@ gplay releases promote --from beta --to production --staged 0.1 --confirm
 These four act on the **latest** release of `--track`.
 
 ```bash
-gplay releases rollout  --track production --to 0.25 --confirm   # set fraction → inProgress
-gplay releases halt     --track production --confirm             # freeze at current fraction
-gplay releases resume   --track production --confirm             # un-freeze, continue
-gplay releases complete --track production --confirm             # ramp to 1.0 → completed
+gplay releases rollout  --track production --staged 0.25 --confirm   # set fraction → inProgress
+gplay releases halt     --track production --confirm                 # freeze at current fraction
+gplay releases resume   --track production --confirm                 # un-freeze, continue
+gplay releases complete --track production --confirm                 # ramp to 1.0 → completed
 ```
 
 ## Inspect what is on a track
@@ -93,7 +110,7 @@ APK/AAB attached to the app with the versionCode `promote` and `rollout`
 accept:
 
 ```bash
-gplay releases artifacts list --kind bundle
+gplay releases artifacts list --format bundle
 ```
 
 ## Generated APKs (what Play signs from your AAB)

@@ -34,9 +34,12 @@ gplay vitals stuckbgwakelock   # stuck background wakelock rate
 All presets share the same knobs:
 
 ```bash
-gplay vitals crashes --by versionCode --version 123   # slice, then filter to one build
-gplay vitals anr --since 7d --period HOURLY           # window: 28d default; HOURLY opt-in
+gplay vitals crashes --by versionCode --version-code 123   # slice, then filter to one build
+gplay vitals anr --since 7d --period HOURLY                # window: 28d default; HOURLY opt-in
 ```
+
+`--version-code` takes the codes `gplay vitals releases` lists (the tracks and
+serving releases the Reporting service knows), `[experimental]`.
 
 ## `vitals query`: full control
 
