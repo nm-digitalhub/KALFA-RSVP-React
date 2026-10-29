@@ -24,7 +24,7 @@ export function ApprovePackageTermsForm({
       <input type="hidden" name="terms_version" value={termsVersion} />
       <FieldError errors={state?.fieldErrors?.tos_version} />
 
-      <fieldset className="space-y-2 rounded-md border border-border p-3">
+      <fieldset className="space-y-2 border-t border-border pt-4">
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" name="terms_accepted" className="mt-1" />
           <span>

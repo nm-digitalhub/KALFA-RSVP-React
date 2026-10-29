@@ -35,10 +35,9 @@ import {
 import { PackageTermsStep } from '../campaign/[campaignId]/approve/package-terms-step';
 import { BenefitAcceptBanner } from '../benefit-accept-banner';
 import { EditEventForm } from '../edit-event-form';
-import { EventStatusActions } from '../event-status-actions';
 import { PackageChoiceForm, type PackageChoiceBenefit } from '../package-choice-form';
 import { SetupConfirmForm } from '../setup-confirm-form';
-import { SetupStepper } from '../setup-stepper';
+import { SetupShell } from '../setup-shell';
 
 export const metadata: Metadata = { title: 'הקמת אישורי הגעה' };
 
@@ -211,39 +210,38 @@ export default async function SetupPage({
   );
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold">הקמת אישורי הגעה</h1>
-        <Link
-          href={`/app/events/${id}`}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <span aria-hidden="true">→</span>
-          חזרה לאירוע
-        </Link>
-      </div>
-      <p className="text-sm text-muted-foreground">{event.name}</p>
-
-      <section className="rounded-lg border border-border bg-card p-6">
-        <SetupStepper steps={steps.map((s) => ({ ...s, label: labels[s.key] }))} back={back} />
-      </section>
-
+    <SetupShell
+      eventId={id}
+      eventName={event.name}
+      steps={steps.map((s) => ({ ...s, label: labels[s.key] }))}
+      back={back}
+      close={
+        canClose
+          ? {
+              status: event.status,
+              closeAllowed: closeControl.allowed,
+              blockedHint: closeControl.hint,
+              closeAction: closeEventAction.bind(null, id),
+            }
+          : null
+      }
+    >
       {mode === 'unavailable' ? (
         // In place, never a redirect and never the payment link (D2, task 3.8): the ledger could not be read, or money
         // moved in a way support has to look at. It is shown even for a past event and on ?step=details, because the
         // state is not known; the details form stays reachable there, since it does not depend on the ledger.
-        <section className="space-y-4 rounded-lg border border-border bg-card p-6">
+        <>
           <p role="status" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
             {unavailableNoticeOf(lifecycle)}
           </p>
           {editingDetails ? detailsView : null}
-        </section>
+        </>
       ) : isPast ? (
         <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
           מועד האירוע כבר חלף — לא ניתן להפעיל או להמשיך אישורי הגעה לאירוע שעבר.
         </p>
       ) : (
-        <section className="space-y-4 rounded-lg border border-border bg-card p-6">
+        <>
           {current === 'details' ? detailsView : null}
 
           {current === 'confirm' ? (
@@ -344,17 +342,8 @@ export default async function SetupPage({
               )}
             </>
           ) : null}
-        </section>
+        </>
       )}
-
-      {canClose ? (
-        <EventStatusActions
-          status={event.status}
-          closeAllowed={closeControl.allowed}
-          blockedHint={closeControl.hint}
-          closeAction={closeEventAction.bind(null, id)}
-        />
-      ) : null}
-    </div>
+    </SetupShell>
   );
 }

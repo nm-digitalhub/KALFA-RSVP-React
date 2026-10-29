@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PackagePaymentScreen } from '@/lib/payments/package-payment-screen';
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
+import { framedPanels } from '@/test/framed-panels';
 
 // The card form itself needs payments.js, jQuery and next/script; here it is a marker that records what it was given.
 const formProps = vi.fn();
@@ -202,5 +203,15 @@ describe('PackagePaymentView — which form', () => {
   it('names no payment provider in what the customer reads', () => {
     render(<PackagePaymentView {...base} provider="cardcom" screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
     expect(document.body.textContent).not.toMatch(/cardcom|sumit|קארדקום|סאמיט/i);
+  });
+});
+
+// The payment renders inside the setup shell's one content surface (design D3, task 4.3): the payment details and the
+// card form are sections with headings, never frames of their own.
+describe('PackagePaymentView — flat inside the step surface', () => {
+  it.each(['sumit', 'cardcom'] as const)('the %s form screen draws no framed panel', (provider) => {
+    const { container } = render(<PackagePaymentView {...base} provider={provider} screen={{ kind: 'form', amount: 120 }} errorMessage={null} />);
+    expect(framedPanels(container.innerHTML)).toEqual([]);
+    expect(Array.from(container.querySelectorAll('section h3')).map((h) => h.textContent)).toEqual(['פרטי התשלום', 'פרטי כרטיס אשראי']);
   });
 });

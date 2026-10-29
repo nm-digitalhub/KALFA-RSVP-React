@@ -111,10 +111,11 @@ export function PackagePaymentView({
           </p>
         );
       }
+      // Sections of the setup shell's one surface (design D3): headings and top dividers, never frames of their own.
       return (
         <div className="space-y-6">
-          <section className="space-y-3 rounded-lg border border-border bg-card p-4 text-sm">
-            <h2 className="font-semibold">פרטי התשלום</h2>
+          <section className="space-y-3 border-t border-border pt-4 text-sm">
+            <h3 className="font-semibold">פרטי התשלום</h3>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
               <dt className="text-muted-foreground">חבילה</dt>
               <dd>חבילת אישורי הגעה לאירוע</dd>
@@ -133,8 +134,8 @@ export function PackagePaymentView({
             </p>
           ) : null}
 
-          <section className="space-y-4 rounded-lg border border-border bg-card p-4">
-            <h2 className="text-sm font-semibold">פרטי כרטיס אשראי</h2>
+          <section className="space-y-4 border-t border-border pt-4">
+            <h3 className="text-sm font-semibold">פרטי כרטיס אשראי</h3>
             {screen.testTerminal ? (
               <p role="status" className={NOTICE_CLASS}>
                 {TEST_TERMINAL_NOTICE}

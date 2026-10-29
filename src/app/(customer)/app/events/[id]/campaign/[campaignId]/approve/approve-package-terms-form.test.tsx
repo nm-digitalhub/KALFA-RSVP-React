@@ -2,6 +2,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { framedPanels } from '@/test/framed-panels';
+
 import { ApprovePackageTermsForm } from './approve-package-terms-form';
 
 // The package is approved by ticking two boxes — no signature pad, no phone code. The form also carries WHICH version
@@ -40,5 +42,13 @@ describe('ApprovePackageTermsForm', () => {
   it('the one button says what happens next: approve and continue to payment', () => {
     form();
     expect(screen.getByRole('button', { name: 'אישור והמשך לתשלום' })).toBeTruthy();
+  });
+});
+
+describe('ApprovePackageTermsForm — flat inside the step surface (design D3, task 4.3)', () => {
+  it('groups the two boxes under a top divider, not inside a frame of their own', () => {
+    const { container } = form();
+    expect(framedPanels(container.innerHTML)).toEqual([]);
+    expect(container.querySelector('fieldset')?.className).toContain('border-t');
   });
 });

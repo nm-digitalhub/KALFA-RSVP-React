@@ -18,6 +18,7 @@ vi.mock('./approve-package-terms-form', () => ({
 import { getAgreementConfigTokens } from '@/lib/data/agreement-config';
 import { getApprovedPackageAgreementDoc } from '@/lib/data/agreements-doc';
 import { getCompanyLegal } from '@/lib/data/company';
+import { framedPanels } from '@/test/framed-panels';
 import { PackageTermsStep } from './package-terms-step';
 
 // The "אישור תנאי החבילה" step: the key terms, the full terms to read, and the two-box approval. It shows the terms of
@@ -97,5 +98,15 @@ describe('PackageTermsStep', () => {
     const html = await render({ eventDate: PAST });
     expect(html).not.toContain('data-marker="approve-form"');
     expect(html).toContain('מועד האירוע כבר חלף');
+  });
+});
+
+// The step renders inside the setup shell's one content surface (design D3, task 4.3): the key terms, the full terms and
+// the approval are sections with headings, never frames of their own.
+describe('PackageTermsStep — flat inside the step surface', () => {
+  it('draws no framed panel: the key terms are a section with a heading and a top divider', async () => {
+    const html = await render();
+    expect(framedPanels(html)).toEqual([]);
+    expect(html).toMatch(/<section class="[^"]*\bborder-t\b[^"]*"><h3[^>]*>עיקרי התנאים<\/h3>/);
   });
 });

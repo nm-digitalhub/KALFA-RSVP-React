@@ -13,7 +13,19 @@ vi.mock('next/navigation', async (importOriginal) => ({
   }),
 }));
 vi.mock('@/lib/data/campaigns', () => ({ getCampaign: vi.fn() }));
-vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn() }));
+vi.mock('@/lib/data/events', () => ({ requireOwnedEvent: vi.fn(), getEvent: vi.fn(), canAccessEvent: vi.fn() }));
+vi.mock('../../campaign-actions', () => ({ closeEventAction: vi.fn() }));
+// The setup shell is real; its two client parts are markers, so the page's arrangement is observable.
+vi.mock('../../../setup-stepper', () => ({
+  SetupStepper: ({ steps }: { steps: Array<{ key: string; state: string }> }) => (
+    <div data-marker="stepper" data-steps={steps.map((s) => `${s.key}:${s.state}`).join(',')} />
+  ),
+}));
+vi.mock('../../../event-status-actions', () => ({
+  EventStatusActions: ({ closeAllowed, blockedHint }: { closeAllowed: boolean; blockedHint: string | null }) => (
+    <div data-marker="close-control" data-allowed={String(closeAllowed)} data-hint={blockedHint ?? ''} />
+  ),
+}));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
 vi.mock('@/lib/data/payments', () => ({
   getPaymentsEnabled: vi.fn(),
@@ -53,7 +65,8 @@ vi.mock('./package-payment-view', () => ({
 import { redirect } from 'next/navigation';
 
 import { getCampaign } from '@/lib/data/campaigns';
-import { requireOwnedEvent } from '@/lib/data/events';
+import { canAccessEvent, getEvent, requireOwnedEvent } from '@/lib/data/events';
+import { CLOSE_BLOCKED_MONEY_ERROR } from '@/lib/data/event-lifecycle';
 import { getProfile } from '@/lib/data/profiles';
 import { getPackageModelEnabled, getPaymentsEnabled, getSumitPublicConfig } from '@/lib/data/payments';
 import { hasPlatformPermission, requireUser } from '@/lib/auth/dal';
@@ -63,10 +76,14 @@ import { getPackagePaymentState } from '@/lib/payments/package-purchase';
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
 import CampaignPaymentPage from './page';
 
-// The payment step: a package campaign is paid by one purchase, decided from the payment ledger.
+// The payment step: a package campaign is paid by one purchase, decided from the payment ledger. It is a setup step
+// (design D2/D3, task 3.3): it renders inside the setup shell, and once the event is in management the owner is sent to
+// the event page.
 
 const EVENT_ID = 'e1';
 const CAMPAIGN_ID = 'c1';
+const EVENT_PAGE = `/app/events/${EVENT_ID}`;
+const EVENT_DATE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
 function campaign(over: Record<string, unknown> = {}) {
   return {
@@ -91,9 +108,21 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.mocked(requireOwnedEvent).mockResolvedValue({
     id: EVENT_ID,
+    name: 'החתונה',
     status: 'active',
-    event_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    event_date: EVENT_DATE,
   } as never);
+  vi.mocked(getEvent).mockResolvedValue({
+    id: EVENT_ID,
+    name: 'החתונה',
+    status: 'active',
+    event_type: 'wedding',
+    event_date: EVENT_DATE,
+    venue_name: 'אולם',
+    venue_address: 'הרצל 1',
+    celebrants: { groom: 'דני', bride: 'דנה' },
+  } as never);
+  vi.mocked(canAccessEvent).mockResolvedValue(true);
   vi.mocked(getProfile).mockResolvedValue({ id: 'u1', full_name: 'דנה כהן', phone: '0501234567', updated_at: null } as never);
   vi.mocked(getPaymentsEnabled).mockResolvedValue(true);
   vi.mocked(getPackageModelEnabled).mockResolvedValue(true);
@@ -116,28 +145,47 @@ describe('payment page — a package campaign', () => {
     expect(getPackagePaymentState).toHaveBeenCalledWith(CAMPAIGN_ID);
   });
 
-  it('decides "paid" from the ledger, not from a query string', async () => {
+  it('decides "paid" from the ledger, not from a query string: paid is management, so the event page', async () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
-    expect(await render()).toContain('data-screen="paid"');
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT');
+    expect(redirect).toHaveBeenCalledWith(EVENT_PAGE);
     // ...and a forged ?paid=1 with nothing recorded does not pretend
+    vi.mocked(redirect).mockClear();
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'none', collected: 0, credit: 0, committed: 0 });
     expect(await render({ paid: '1' })).toContain('data-screen="form"');
+    expect(redirect).not.toHaveBeenCalled();
   });
 
-  it('a paid, approved package campaign is being started: the page passes no start control (D23)', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status: 'approved' }) as never);
-    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
-    // `?activate=failed` from an older link changes nothing on the screen.
-    const html = await render({ paid: '1', activate: 'failed' });
-    expect(html).toContain('data-screen="paid"');
-    expect(html).toContain('data-activation="starting"');
+  it.each([
+    ['paid, not running yet', 'approved', {}],
+    ['paid with test money', 'approved', { testMoney: true }],
+    ['running', 'active', {}],
+    ['paused', 'paused', {}],
+  ] as const)('%s → the event page, whatever an older link says (D2)', async (_label, status, money) => {
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status }) as never);
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0, ...money });
+    await expect(render({ paid: '1', activate: 'failed' })).rejects.toThrow('NEXT_REDIRECT');
+    expect(redirect).toHaveBeenCalledWith(EVENT_PAGE);
   });
 
-  it('a paid package campaign that is already running says so', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status: 'active' }) as never);
-    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
-    expect(await render()).toContain('data-activation="active"');
+  it('a closed event, or a cancelled campaign, is not a payment step: the event page', async () => {
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
+    vi.mocked(requireOwnedEvent).mockResolvedValue({ id: EVENT_ID, name: 'החתונה', status: 'closed', event_date: EVENT_DATE } as never);
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT');
+    expect(redirect).toHaveBeenLastCalledWith(EVENT_PAGE);
+
+    vi.mocked(requireOwnedEvent).mockResolvedValue({ id: EVENT_ID, name: 'החתונה', status: 'active', event_date: EVENT_DATE } as never);
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status: 'cancelled' }) as never);
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT');
+    expect(redirect).toHaveBeenLastCalledWith(EVENT_PAGE);
+  });
+
+  it('money that support has to look at stays here and says so, with no redirect', async () => {
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'refunded', collected: 0, credit: 0, committed: 0 });
+    expect(await render()).toContain('data-screen="unavailable"');
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it('an unreadable ledger is "unavailable", not an empty form, and in place: no redirect (task 3.8)', async () => {
@@ -167,6 +215,35 @@ describe('payment page — a package campaign', () => {
   it('a campaign whose terms are not approved yet goes back to the approval step', async () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status: 'pending_approval' }) as never);
     await expect(render()).rejects.toThrow('NEXT_REDIRECT');
+  });
+});
+
+describe('payment page — inside the setup shell (task 3.3)', () => {
+  beforeEach(() => {
+    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
+  });
+
+  it('shows the step list once, with the payment as the current step, above the payment screen', async () => {
+    const html = await render();
+    expect(html.split('data-marker="stepper"').length - 1).toBe(1);
+    expect(html).toContain('pay:current');
+    expect(html.indexOf('data-marker="stepper"')).toBeLessThan(html.indexOf('data-marker="package-view"'));
+    expect(html).toContain('הקמת אישורי הגעה');
+  });
+
+  it('offers the close inside the shell, as the event lifecycle model decides, to a viewer who may close', async () => {
+    let html = await render();
+    expect(html.split('data-marker="close-control"').length - 1).toBe(1);
+    expect(html).toContain('data-allowed="true"');
+    expect(canAccessEvent).toHaveBeenCalledWith(EVENT_ID, 'events', 'close');
+
+    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'pending', collected: 0, credit: 0, committed: 0 });
+    html = await render();
+    expect(html).toContain('data-allowed="false"');
+    expect(html).toContain(`data-hint="${CLOSE_BLOCKED_MONEY_ERROR}"`);
+
+    vi.mocked(canAccessEvent).mockResolvedValue(false);
+    expect(await render()).not.toContain('data-marker="close-control"');
   });
 });
 
@@ -240,14 +317,6 @@ describe('payment page — the CardCom pilot', () => {
   it('never says it for SUMIT\'s form, whatever terminal CardCom is configured with', async () => {
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000, enabled: false }) as never);
     expect(await render()).toContain('data-test-terminal="no"');
-  });
-
-  it('a payment that is test money says so on the paid screen; real money does not', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
-    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0, testMoney: true });
-    expect(await render()).toContain('data-test-money="yes"');
-    vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
-    expect(await render()).toContain('data-test-money="no"');
   });
 
   it('a closed gate still closes the CardCom form', async () => {

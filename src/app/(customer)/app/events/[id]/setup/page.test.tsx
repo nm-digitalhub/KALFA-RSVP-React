@@ -130,6 +130,17 @@ beforeEach(() => {
   vi.mocked(eventDatesLocked).mockResolvedValue(false);
 });
 
+describe('setup page — the setup shell (task 4.1)', () => {
+  it('renders the step list once, one close control, and the step inside one content surface', async () => {
+    const html = await render();
+    expect(html.split('data-marker="stepper"').length - 1).toBe(1);
+    expect(html.split('data-marker="close-control"').length - 1).toBe(1);
+    // The stepper's frame and the content surface; the step itself adds no frame of its own.
+    expect(html.match(/<section[^>]*>/g)).toHaveLength(2);
+    expect(html.slice(html.lastIndexOf('<section'))).toContain('data-marker="package-form"');
+  });
+});
+
 describe('setup page — nothing on offer (the package switch is off)', () => {
   it('confirmed, no campaign → the package step is current, and its form says no package is available', async () => {
     const html = await render();

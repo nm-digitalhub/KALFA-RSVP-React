@@ -64,8 +64,9 @@ export async function PackageTermsStep({
       {/* Global CSS for the terms — styles the (portaled) sheet content too. */}
       <style dangerouslySetInnerHTML={{ __html: AGREEMENT_CSS }} />
 
-      <section className="space-y-3 rounded-lg border border-border bg-card p-4 text-sm">
-        <h2 className="font-semibold">עיקרי התנאים</h2>
+      {/* A section of the step's one surface (design D3): a heading and a top divider, never a frame of its own. */}
+      <section className="space-y-3 border-t border-border pt-4 text-sm">
+        <h3 className="font-semibold">עיקרי התנאים</h3>
         <dl className="grid grid-cols-1 gap-y-1 sm:grid-cols-2 sm:gap-y-1.5">
           <dt className="text-muted-foreground">מחיר החבילה</dt>
           <dd>

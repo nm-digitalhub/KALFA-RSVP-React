@@ -3,6 +3,8 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { framedPanels } from '@/test/framed-panels';
+
 import { SetupConfirmForm } from './setup-confirm-form';
 
 afterEach(cleanup);
@@ -65,5 +67,14 @@ describe('SetupConfirmForm', () => {
     await user.click(screen.getByRole('button', { name: 'אישור פרטי האירוע והמשך' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('יש להשלים לפני האישור: שעת האירוע');
+  });
+});
+
+describe('SetupConfirmForm — flat inside the step surface (design D3, task 4.3)', () => {
+  it('draws no framed panel: only the lock warning is a notice', () => {
+    const { container } = render(
+      <SetupConfirmForm action={vi.fn(async () => null)} items={items} warning="אזהרת הנעילה" submitLabel="אישור" />,
+    );
+    expect(framedPanels(container.innerHTML)).toEqual([]);
   });
 });
