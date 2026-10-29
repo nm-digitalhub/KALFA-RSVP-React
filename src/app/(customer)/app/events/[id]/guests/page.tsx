@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Pagination } from '@/components/pagination';
 import { buttonVariants } from '@/components/ui/button';
-import { getCampaignStageForEvent } from '@/lib/data/campaigns';
+import { campaignStage } from '@/lib/data/event-labels';
+import { redirectOwnerInSetup } from '@/lib/data/event-mode';
 import { requireEventAccess } from '@/lib/data/events';
 import {
   listGuests,
@@ -229,6 +230,8 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   // requireEventAccess here too so the page title can show the event name and the
   // 404 happens before any list query if the user has no access to the event.
   const event = await requireEventAccess(eventId, 'guests', 'view');
+  // Guests are managed after payment (design D4): the owner of an event still in setup is sent to the setup flow.
+  const { campaignsVisible, campaign, payment } = await redirectOwnerInSetup(event);
 
   const page = Number(first(sp.page)) || 1;
   const search = first(sp.search) ?? '';
@@ -269,12 +272,13 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
   });
 
   // FIRST RUN: the whole content area becomes "how do you want to add guests?".
-  // The campaign is loaded ONLY here, so the populated list costs no extra query.
+  // The stage comes from the campaign the mode was read from; null when the viewer
+  // may see guests but not campaigns (the badge is then omitted).
   if (view === 'onboarding') {
-    const [stage, importChannel] = await Promise.all([
-      getCampaignStageForEvent(eventId),
-      getWhatsAppImportChannel(),
-    ]);
+    const importChannel = await getWhatsAppImportChannel();
+    const stage = campaignsVisible
+      ? campaignStage(campaign && { status: campaign.status, price: campaign.price, payment })
+      : null;
     return (
       <AddGuestsOnboarding
         eventId={eventId}

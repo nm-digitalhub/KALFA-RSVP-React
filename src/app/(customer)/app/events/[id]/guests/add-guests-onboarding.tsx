@@ -23,7 +23,7 @@ import type { WhatsAppImportChannel } from '@/lib/data/whatsapp-import-channel';
 // search there would trap an owner behind their own filter.
 //
 // `stage` is null when the viewer may see guests but not campaigns
-// (getCampaignStageForEvent) — the badge is then simply omitted.
+// (readEventMode, page.tsx) — the badge is then simply omitted.
 interface AddGuestsOnboardingProps {
   eventId: string;
   eventName: string;

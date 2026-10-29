@@ -7,6 +7,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getEventStats, type EventStatsResult } from '@/lib/data/event-stats';
 import { requireEventAccess } from '@/lib/data/events';
+import { redirectOwnerInSetup } from '@/lib/data/event-mode';
 import {
   CAMPAIGN_STAGE_LABELS,
   EVENT_STATUS_LABELS,
@@ -73,7 +74,9 @@ export default async function EventStatsPage({
 }) {
   const { id } = await params;
   // Mandatory page gate — throws notFound() if reports.view is absent.
-  await requireEventAccess(id, 'reports', 'view');
+  const event = await requireEventAccess(id, 'reports', 'view');
+  // Statistics are management (design D4): the owner of an event still in setup is sent to the setup flow.
+  await redirectOwnerInSetup(event);
   const stats = await getEventStats(id);
   const campaignDisplayStage = stats.campaign.status
     ? campaignStage({

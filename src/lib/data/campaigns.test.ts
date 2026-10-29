@@ -57,7 +57,6 @@ vi.mock('@/lib/data/campaign-pricing', () => ({
 
 vi.mock('@/lib/payments/package-paid', () => ({
   getPackagePaymentState: vi.fn(),
-  packagePaymentOf: vi.fn().mockResolvedValue(null),
 }));
 
 import { createMockSupabase, type QueryResult } from '@/test/supabase-mock';
@@ -105,7 +104,6 @@ import {
   cancelCampaign,
   getThankyouSchedule,
   updateThankyouSchedule,
-  getCampaignStageForEvent,
 } from '@/lib/data/campaigns';
 import {
   activateCampaignAfterPayment,
@@ -119,7 +117,7 @@ import {
   PACKAGE_NOT_PAID_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
 } from '@/lib/data/package-activation-errors';
-import { getPackagePaymentState, packagePaymentOf } from '@/lib/payments/package-paid';
+import { getPackagePaymentState } from '@/lib/payments/package-paid';
 
 function adminWith<T>(result: QueryResult<T>) {
   const { client, builder } = createMockSupabase<T>(result);
@@ -955,62 +953,6 @@ describe('activateCampaign — auditability', () => {
   });
 });
 
-// The guests page's first-run screen shows the campaign stage next to a resource
-// the viewer may hold WITHOUT ('campaigns','view'), so this reader degrades to
-// null instead of notFound()-ing the page around it.
-describe('getCampaignStageForEvent', () => {
-  it('returns null and reads nothing when the viewer lacks campaigns.view', async () => {
-    const { client } = serverWith({ data: null, error: null });
-    client.rpc.mockResolvedValue({ data: false, error: null });
-
-    expect(await getCampaignStageForEvent('e1')).toBeNull();
-    // The RPC is the gate: a denied viewer must not reach the campaigns table.
-    expect(client.from).not.toHaveBeenCalled();
-  });
-
-  it('gates on ("campaigns","view") for the event', async () => {
-    const { client } = serverWith({ data: null, error: null });
-    client.rpc.mockResolvedValue({ data: true, error: null });
-
-    await getCampaignStageForEvent('e1');
-
-    expect(client.rpc).toHaveBeenCalledWith('can_access_event', {
-      _event_id: 'e1',
-      _resource: 'campaigns',
-      _action: 'view',
-    });
-  });
-
-  it('derives the stage rather than returning the raw status', async () => {
-    // approved + the package paid is "ממתין להפעלה", not "מאושר".
-    const { client } = serverWith({
-      data: { id: 'c1', status: 'approved', package_price: 150 },
-      error: null,
-    });
-    client.rpc.mockResolvedValue({ data: true, error: null });
-    vi.mocked(packagePaymentOf).mockResolvedValueOnce({ status: 'collected', collected: 150, credit: 0, committed: 0 });
-
-    expect(await getCampaignStageForEvent('e1')).toBe('awaiting_activation');
-  });
-
-  it('returns not_set when the event has no campaign yet', async () => {
-    const { client } = serverWith({ data: null, error: null });
-    client.rpc.mockResolvedValue({ data: true, error: null });
-
-    expect(await getCampaignStageForEvent('e1')).toBe('not_set');
-  });
-
-  it('excludes cancelled campaigns, like getCampaignForEvent', async () => {
-    const { client, builder } = serverWith({ data: null, error: null });
-    client.rpc.mockResolvedValue({ data: true, error: null });
-
-    await getCampaignStageForEvent('e1');
-
-    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
-    expect(builder.neq).toHaveBeenCalledWith('status', 'cancelled');
-  });
-});
-
 // ---- the fixed-price package model (docs/superpowers/plans/2026-10-04-package-payment-plan.md, P-F) ----------------
 // A package with a contact quota is offered and snapshotted onto a campaign ONLY while the package switch is on, and
 // only a quota package (never a pay-per-result one, never a mix) is ever an offer.
@@ -1420,28 +1362,5 @@ describe('activateCampaign — a campaign without a package', () => {
     await expect(activateCampaign('c1', CONSOLE_ACTOR)).rejects.toThrow(NO_PACKAGE_ERROR);
     expect(getPackagePaymentState).not.toHaveBeenCalled();
     expect(b.campaigns.update).not.toHaveBeenCalled();
-  });
-});
-
-describe('getCampaignStageForEvent — a package campaign is funded by its payment', () => {
-  it('reads the ledger for a package campaign: paid + approved is "awaiting activation"', async () => {
-    const { packagePaymentOf } = await import('@/lib/payments/package-paid');
-    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
-    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved' }, error: null });
-    server.client.rpc.mockResolvedValue({ data: true, error: null });
-    vi.mocked(createClient).mockResolvedValue(server.client as never);
-    vi.mocked(packagePaymentOf).mockResolvedValue({ status: 'collected', collected: 150, credit: 0, committed: 0 });
-    expect(await getCampaignStageForEvent('e1')).toBe('awaiting_activation');
-    expect(packagePaymentOf).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1', price: 150 }));
-  });
-
-  it('an unpaid package campaign is still "awaiting payment"', async () => {
-    const { packagePaymentOf } = await import('@/lib/payments/package-paid');
-    vi.mocked(requireUser).mockResolvedValue({ id: 'u1' } as never);
-    const server = createMockSupabase<unknown>({ data: { id: 'c1', status: 'approved' }, error: null });
-    server.client.rpc.mockResolvedValue({ data: true, error: null });
-    vi.mocked(createClient).mockResolvedValue(server.client as never);
-    vi.mocked(packagePaymentOf).mockResolvedValue(null);
-    expect(await getCampaignStageForEvent('e1')).toBe('awaiting_payment');
   });
 });

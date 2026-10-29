@@ -26,6 +26,7 @@ import { CampaignPayments } from '@/components/payments/campaign-payments';
 import { campaignPaymentsView } from '@/lib/payments/campaign-payments-view';
 import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { requireEventAccess } from '@/lib/data/events';
+import { redirectOwnerInSetup } from '@/lib/data/event-mode';
 import {
   cancelCampaignAction,
   closeCampaignAction,
@@ -60,6 +61,10 @@ export default async function CampaignManagePage({
   const event = admin
     ? await getEventForAdminView(eventId)
     : await requireEventAccess(eventId, 'campaigns', 'view');
+  // The results are management (design D2): the owner of an event still in setup is sent to the setup flow, so this
+  // page is not reachable by URL before payment. The mode is the event's (its live campaign), not the campaign in the
+  // URL. Staff are never redirected: they open a customer's campaign at any stage.
+  if (!admin) await redirectOwnerInSetup(event);
   const isPast = isPastEventDay(event.event_date);
 
   // Same admin branch the event read above takes. The owner path reads through
