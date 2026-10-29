@@ -807,7 +807,7 @@ export async function readCitizenId(admin: AdminClient, operationId: string): Pr
 
 **Files:**
 - Create: `scripts/payments-backfill.ts`, `scripts/payments-backfill.test.ts`
-- Modify: `package.json`: `"payments:backfill": "esbuild scripts/payments-backfill.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/payments-backfill.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/payments-backfill.cjs"` (אותם aliases כמו `owner-agent:smoke`; `--apply` מועבר אחרי `--`)
+- Modify: `package.json`: `"payments:backfill": "esbuild scripts/payments-backfill.ts --bundle --platform=node --format=cjs --target=node26 --outfile=dist/payments-backfill.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/payments-backfill.cjs"` (אותם aliases כמו `owner-agent:smoke`; `--apply` מועבר אחרי `--`)
 
 **Interfaces:**
 - Consumes: Task 1, Task 3 (`saveCitizenId`).
@@ -1011,7 +1011,7 @@ if (require.main === module) main().catch((e) => { console.error(e.message); pro
 
 ```bash
 npx vitest run scripts/payments-backfill.test.ts
-npx esbuild scripts/payments-backfill.ts --bundle --platform=node --format=cjs --target=node24 --outfile=dist/payments-backfill.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native
+npx esbuild scripts/payments-backfill.ts --bundle --platform=node --format=cjs --target=node26 --outfile=dist/payments-backfill.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native
 node --env-file=.env.local dist/payments-backfill.cjs
 node --env-file=.env.local dist/payments-backfill.cjs --apply
 ```

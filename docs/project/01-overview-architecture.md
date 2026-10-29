@@ -70,7 +70,7 @@ KALFA היא פלטפורמת RSVP מסוג B2C, במודל **פר-אירוע** 
 | `esbuild` | `^0.28.1` | bundling של ה-worker ל-`dist/worker.cjs` |
 | `supabase` (CLI) | `^2.107.0` | מיגרציות, יצירת types |
 
-Node: ‏`24`‏ (מתוך `.node-version`).
+`.node-version` מגדיר `26`; השרת מריץ Node `26.13.0`.
 
 ### סקריפטים עיקריים (`package.json → scripts`)
 

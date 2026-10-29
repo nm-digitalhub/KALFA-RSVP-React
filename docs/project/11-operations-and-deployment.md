@@ -41,7 +41,7 @@ Supabase (PostgreSQL + Auth, פרויקט חי מקושר, region ap-south-1)
 | process | script | args | interpreter |
 |---|---|---|---|
 | `kalfa-beta` | `node_modules/.bin/next` | `start -H 127.0.0.1 -p 3002` | — |
-| `kalfa-worker` | `worker/start.mjs` (env + bundle-integrity gate, then loads `dist/worker.cjs`) | — | `/opt/plesk/node/24/bin/node` (Node 24); `kill_timeout: 45000` so `boss.stop` (30s grace) completes |
+| `kalfa-worker` | `worker/start.mjs` (env + bundle-integrity gate, then loads `dist/worker.cjs`) | — | `/usr/bin/node` (Node 26.13.0); `kill_timeout: 45000` so `boss.stop` (30s grace) completes |
 
 האפליקציה מאזינה **רק** על `127.0.0.1:3002` — אין חשיפה ישירה לאינטרנט;
 כל התעבורה עוברת דרך nginx. פקודות pm2 נוחות מוגדרות ב-`package.json`:
@@ -120,7 +120,7 @@ callbacks, Voximplant, ארכיון, SEO ועוד — הרשימה המלאה ב
 - הוא נבנה עם esbuild לקובץ יחיד — סקריפט `worker:build` ב-`package.json`:
 
 ```bash
-esbuild worker/main.ts --bundle --platform=node --format=cjs --target=node20 \
+esbuild worker/main.ts --bundle --platform=node --format=cjs --target=node26 \
   --outfile=dist/worker.cjs --tsconfig=tsconfig.json \
   --alias:server-only=./worker/empty.js \
   --alias:next/headers=./worker/empty.js \

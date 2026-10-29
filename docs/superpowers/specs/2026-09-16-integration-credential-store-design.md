@@ -561,7 +561,7 @@ than a required one.
 
 **ESM-only, and the worker bundles to CJS.** `openid-client` is
 `"type": "module"` with a Node 20 baseline. `worker:build` runs
-`esbuild --bundle --platform=node --format=cjs --target=node24`, and this repo
+`esbuild --bundle --platform=node --format=cjs --target=node26`, and this repo
 has been bitten before by a dependency that does not survive that conversion
 (`worker.cjs` and `import.meta.url`). Measured with the worker's exact flags:
 

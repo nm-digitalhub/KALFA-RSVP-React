@@ -31,11 +31,12 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          # Matches the beta server runtime (node v24).
-          node-version: 24
+          # Matches the beta server runtime (Node 26).
+          node-version: 26
           cache: npm
 
-      # package.json `patchedDependencies` and the lockfile format (v4) are npm 12 features; Node 24 ships npm 11.
+      # package.json `patchedDependencies` and the lockfile format (v4) are npm 12
+      # features; Node 26 ships npm 11, which would not apply the SDK patch.
       - name: Use npm 12
         run: npm install -g npm@12
 
