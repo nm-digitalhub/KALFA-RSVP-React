@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
@@ -74,13 +74,19 @@ beforeEach(() => {
   }, {}, ledgerOptions);
 });
 
+
+afterEach(() => vi.unstubAllEnvs());
+
 describe('startCardcomPurchase: gates (all fail closed)', () => {
   it.each([
     ['payments are off', () => vi.mocked(getPaymentsEnabled).mockResolvedValue(false)],
     ['the package model is off', () => vi.mocked(getPackageModelEnabled).mockResolvedValue(false)],
     ['CardCom is not configured', () => vi.mocked(getCardcomServerConfig).mockResolvedValue(null)],
     ['the pilot switch is off', () => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1001, apiName: 'x', enabled: false , saveCardOnPurchase: false, googlePayMode: 'off' })],
-    ['it is the test terminal and the buyer is not an admin', () => vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'x', enabled: true , saveCardOnPurchase: false, googlePayMode: 'off' })],
+    ['it is the test terminal and the buyer is not an admin', () => {
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://abcdefghijklmnopqrst.supabase.co'); // the hosted project: a local one opens the test terminal
+      vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'x', enabled: true , saveCardOnPurchase: false, googlePayMode: 'off' });
+    }],
   ])('refuses when %s, and touches nothing', async (_label, arrange) => {
     arrange();
     await expect(startCardcomPurchase(input())).resolves.toEqual({ status: 'disabled' });

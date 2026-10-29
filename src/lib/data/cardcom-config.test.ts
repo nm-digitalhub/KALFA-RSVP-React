@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
@@ -7,7 +7,7 @@ import { createFakeTableClient, type FakeTableClient, type TableRow } from '@/te
 let fake: FakeTableClient;
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => fake.client }));
 
-import { CARDCOM_TEST_TERMINAL, getCardcomApiPassword, getCardcomServerConfig, isCardcomTestTerminal } from './cardcom-config';
+import { CARDCOM_TEST_TERMINAL, getCardcomApiPassword, getCardcomServerConfig, isCardcomTestTerminal, usesLocalDatabase } from './cardcom-config';
 
 // The server-side reader of the CardCom connection (the cardcom_config table, a closed table: only the service role
 // reads it). Every reader is fail-closed: any error, a missing row or a value that makes no sense resolves to "not
@@ -134,5 +134,32 @@ describe('isCardcomTestTerminal', () => {
     expect(isCardcomTestTerminal(1000)).toBe(true);
     expect(isCardcomTestTerminal(1001)).toBe(false);
     expect(isCardcomTestTerminal(1)).toBe(false);
+  });
+});
+
+// The database address decides whether the test terminal is open to every buyer: only Supabase local, on this machine.
+describe('usesLocalDatabase', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(['http://127.0.0.1:54321', 'http://localhost:54321', 'http://[::1]:54321', 'http://127.0.0.2:54321'])('is true for %s', (url) => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', url);
+    expect(usesLocalDatabase()).toBe(true);
+  });
+
+  it.each([
+    'https://abcdefghijklmnopqrst.supabase.co',
+    'http://127.0.0.1.evil.example:54321',
+    'http://localhost.evil.example:54321',
+    'http://192.168.1.10:54321',
+    'not a url',
+    '',
+  ])('is false for %j', (url) => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', url);
+    expect(usesLocalDatabase()).toBe(false);
+  });
+
+  it('is false when the address is not set at all', () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', undefined);
+    expect(usesLocalDatabase()).toBe(false);
   });
 });

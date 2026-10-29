@@ -35,10 +35,11 @@ describe('CardcomStatusCard', () => {
     expect(textOf(CardcomStatusCard({ config: config({ hasPassword: false, enabled: false }) }))).toContain('אין סיסמת API שמורה');
   });
 
-  it('warns on the test terminal that nothing is charged and only a platform admin may buy', () => {
+  it('warns on the test terminal that nothing is charged and only a platform admin may buy, except against a local database', () => {
     const text = textOf(CardcomStatusCard({ config: config({ terminalNumber: 1000, isTestTerminal: true }) }));
     expect(text).toContain('מסוף בדיקות');
     expect(text).toContain('מנהל פלטפורמה בלבד');
+    expect(text).toContain('מסד נתונים מקומי');
   });
 
   it.each([

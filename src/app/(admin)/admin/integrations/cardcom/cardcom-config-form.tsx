@@ -98,7 +98,7 @@ export function CardcomConfigForm({ values }: { values: CardcomConfigFormValues 
         <span>
           <span className="block text-sm font-medium">רכישות חבילה עוברות ל-CardCom</span>
           <span className="block text-xs text-muted-foreground">
-            כשכבוי — הרכישות נשארות אצל ספק הסליקה הקיים. מצריך סיסמת API שמורה. על מסוף הבדיקות (1000) רק מנהל פלטפורמה יכול לרכוש.
+            כשכבוי — הרכישות נשארות אצל ספק הסליקה הקיים. מצריך סיסמת API שמורה. על מסוף הבדיקות (1000) רק מנהל פלטפורמה יכול לרכוש, חוץ משרת שמחובר למסד נתונים מקומי, שבו כל לקוח יכול.
           </span>
         </span>
       </label>

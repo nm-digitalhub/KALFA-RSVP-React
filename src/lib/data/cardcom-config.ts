@@ -1,5 +1,7 @@
 import 'server-only';
 
+import ipaddr from 'ipaddr.js';
+
 import { parseGooglePayMode, type GooglePayMode } from '@/lib/cardcom/google-pay-mode';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -13,10 +15,34 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // clearing is unset, and a pilot that is not configured simply does not exist.
 
 // CardCom's published test terminal. Nothing is charged on it, so a purchase that "succeeds" there is not money: it is
-// open only to a platform admin (plan D4), whatever the switch says.
+// open only to a platform admin (plan D4), whatever the switch says, except on a server that runs against a local
+// database (usesLocalDatabase below).
 export const CARDCOM_TEST_TERMINAL = 1000;
 
 export const isCardcomTestTerminal = (terminalNumber: number): boolean => terminalNumber === CARDCOM_TEST_TERMINAL;
+
+// Does this server run against a database on this machine (Supabase local, `supabase start`)? The test server on :3999
+// does: it runs with NODE_ENV=test, so Next.js loads .env.test.local and never .env.local (docs: environment-variables,
+// "Test Environment Variables"). Such a database holds no real customer, so there the test terminal is open to every
+// buyer (owner, 29.10.2026). Production runs against the hosted project and never matches.
+//
+// NEXT_PUBLIC_SUPABASE_URL is the address every server client connects to (src/lib/supabase/admin.ts). Next.js inlines
+// it at build time, server code included (docs: "Bundling Environment Variables for the Browser"), so a production build
+// cannot be opened by a variable set at runtime. Read literally: a dynamic lookup is not inlined. Loopback only, by
+// ipaddr.js range (the same test as src/lib/voximplant/session-command.ts); a private LAN address is not "this machine".
+// A missing or unparsable address answers false.
+export function usesLocalDatabase(): boolean {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) return false;
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''); // strip IPv6 brackets
+  } catch {
+    return false;
+  }
+  if (host === 'localhost') return true;
+  return ipaddr.isValid(host) && ipaddr.process(host).range() === 'loopback';
+}
 
 export type CardcomServerConfig = {
   terminalNumber: number;

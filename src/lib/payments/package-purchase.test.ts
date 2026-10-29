@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFakeTableClient, type FakeTableClient, type TableRow } from '@/test/fake-table-client';
 import { withLedgerStamp } from '@/test/ledger-stamp-trigger';
@@ -171,6 +171,9 @@ beforeEach(() => {
 function purchaseRows(): TableRow[] {
   return db.rows('payment_operations').filter((r) => r.kind === 'package_purchase');
 }
+
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe('purchasePackage — the D15 lapse at open (task 5.3)', () => {
   function roundWithBenefit() {
@@ -576,6 +579,7 @@ describe('purchasePackage — refuses while CardCom is the provider', () => {
   });
 
   it('CardCom on its test terminal: a customer stays on SUMIT, an integration admin does not', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://abcdefghijklmnopqrst.supabase.co'); // the hosted project: a local one opens the test terminal
     vi.mocked(getCardcomServerConfig).mockResolvedValue({ terminalNumber: 1000, apiName: 'kalfa', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' });
     expect(await purchasePackage(input())).toBe('paid');
     vi.mocked(chargeSumit).mockClear();

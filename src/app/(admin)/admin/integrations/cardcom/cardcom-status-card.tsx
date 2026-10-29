@@ -52,7 +52,7 @@ export function CardcomStatusCard({ config }: { config: AdminCardcomConfig }) {
           <TriangleAlert aria-hidden />
           <AlertTitle>מסוף בדיקות של CardCom</AlertTitle>
           <AlertDescription>
-            לא מחויב עליו כסף אמיתי. רכישת חבילה דרכו פתוחה למנהל פלטפורמה בלבד, ולא ללקוחות, גם כשהמתג מופעל.
+            לא מחויב עליו כסף אמיתי. רכישת חבילה דרכו פתוחה למנהל פלטפורמה בלבד, ולא ללקוחות, גם כשהמתג מופעל. בשרת שמחובר למסד נתונים מקומי, כמו שרת הבדיקות, היא פתוחה לכל לקוח.
           </AlertDescription>
         </Alert>
       ) : null}

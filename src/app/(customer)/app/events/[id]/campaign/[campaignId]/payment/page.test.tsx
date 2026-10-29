@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('next/link', () => ({
@@ -133,6 +133,9 @@ beforeEach(() => {
   vi.mocked(getCardcomServerConfig).mockResolvedValue(null);
   vi.mocked(isCardcomPurchasePending).mockResolvedValue(false);
 });
+
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe('payment page — a package campaign', () => {
   it('shows the package screen decided from the LEDGER', async () => {
@@ -279,12 +282,21 @@ describe('payment page — the CardCom pilot', () => {
     expect(html).toContain('data-phone="0501234567"');
   });
 
-  it('keeps a customer on SUMIT when the pilot is on the TEST terminal; an admin is on CardCom', async () => {
+  it('keeps a customer on SUMIT when the pilot is on the TEST terminal against the hosted project; an admin is on CardCom', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://abcdefghijklmnopqrst.supabase.co'); // the hosted project: a local one opens the test terminal
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000 }) as never);
     expect(await render()).toContain('data-provider="sumit"');
     vi.mocked(hasPlatformPermission).mockResolvedValue(true);
     expect(await render()).toContain('data-provider="cardcom"');
     expect(hasPlatformPermission).toHaveBeenCalledWith('integrations.manage');
+  });
+
+  it('puts a customer on CardCom\'s TEST terminal when the server runs against a local database, and says it is a test', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:54321');
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000 }) as never);
+    const html = await render();
+    expect(html).toContain('data-provider="cardcom"');
+    expect(html).toContain('data-test-terminal="yes"');
   });
 
   it('a pending CardCom payment shows the form again (the same session is handed back); a pending SUMIT one stays "in progress"', async () => {

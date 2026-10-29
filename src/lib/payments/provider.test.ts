@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
@@ -13,10 +13,18 @@ import { resolvePurchaseProvider } from './provider';
 // Which clearing company takes a package purchase. SUMIT unless the CardCom pilot is explicitly on — and on CardCom's
 // published test terminal (1000), where nothing is charged, only for someone who may configure the integration:
 // everyone else keeps paying through SUMIT, never through a "payment" that moves no money and still activates a campaign.
+// The one exception is a server on a local database (no real customer there): every buyer is on the test terminal.
+
+const HOSTED_DB = 'https://abcdefghijklmnopqrst.supabase.co';
+const LOCAL_DB = 'http://127.0.0.1:54321';
 
 const cfg = (over = {}) => ({ terminalNumber: 1001, apiName: 'x', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' as const, ...over });
 
 describe('resolvePurchaseProvider', () => {
+  // The hosted project unless a case says otherwise: the database address is the one input that is not an argument.
+  beforeEach(() => vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', HOSTED_DB));
+  afterEach(() => vi.unstubAllEnvs());
+
   it('is SUMIT when CardCom is not configured', () => {
     expect(resolvePurchaseProvider(null, false)).toBe('sumit');
   });
@@ -33,6 +41,18 @@ describe('resolvePurchaseProvider', () => {
   it('on the test terminal is CardCom only for a platform admin; a customer stays on SUMIT', () => {
     expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000 }), true)).toBe('cardcom');
     expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000 }), false)).toBe('sumit');
+  });
+
+  it('on a local database the test terminal is CardCom for every buyer', () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', LOCAL_DB);
+    expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000 }), false)).toBe('cardcom');
+    expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000 }), true)).toBe('cardcom');
+  });
+
+  it('on a local database the switch still decides first', () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', LOCAL_DB);
+    expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000, enabled: false }), false)).toBe('sumit');
+    expect(resolvePurchaseProvider(null, false)).toBe('sumit');
   });
 });
 
