@@ -32,14 +32,17 @@ jobs:
           node-version: 24
           cache: npm
 
+      # Before npm 12: setup-cli resolves the version with `npm view <spec> ... --json` on the runner's npm and reads the
+      # result as an object; npm 12 returns an array there and the action fails ("Could not resolve a fixed npm version",
+      # measured 29.10.2026). It installs the CLI under its own prefix, so the npm upgrade below does not touch it.
+      - uses: supabase/setup-cli@v3
+
       # package.json `patchedDependencies` and the lockfile format (v4) are npm 12 features; Node 24 ships npm 11.
       - name: Use npm 12
         run: npm install -g npm@12
 
       - name: Install dependencies
         run: npm ci
-
-      - uses: supabase/setup-cli@v3
 
       # supabase/config.toml enables the send-SMS auth hook with secrets = "env(SEND_SMS_HOOK_SECRETS)". Locally the CLI
       # finds it in the root .env.local; here there is no such file, and every CLI command that loads the config
@@ -88,7 +91,8 @@ jobs:
       - name: Run Playwright tests
         run: npx playwright test
 
-      - uses: actions/upload-artifact@v5
+      # v7: v5 (the Playwright docs' example) still runs on the deprecated Node 20 runtime; v6+ run on Node 24.
+      - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
