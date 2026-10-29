@@ -18,7 +18,8 @@
 //   - the master script (OpenFields.js) finds this frame as `window.parent.frames.CardComCaptchaIframe` to give it the page's
 //     `reCaptchaFieldCSS`, keeps the token in its state (which it sends whole to CardCom's ChargeLowProfileDeal) and tells the
 //     page `handleValidations` with field 'reCaptcha'. Whether the token is REQUIRED is CardCom's server's decision (the
-//     account's per-language captcha setting); the page only makes sure the buyer has done it before paying.
+//     account's per-language captcha setting); the page does not hold the payment back for it (owner, 29.10.2026), as in CardCom's
+//     sample, where waiting for the captcha before enabling "pay" is optional.
 // Google Pay (openspec/changes/add-google-pay-cardcom) is a fifth frame, `CardComGooglePay`, carrying `allow="payment"`. It pays
 // WITHOUT doTransaction and answers through the same HandleSubmit / HandleEror messages as a card, so the settlement path is the
 // card's. What it needs first is the cardholder's name, email and phone, which Google Pay does not supply and 3D Secure requires:
@@ -50,9 +51,6 @@ export function googlePayFrameSrc(terminalNumber: number): string | null {
   if (!Number.isInteger(terminalNumber) || terminalNumber <= 0) return null;
   return `${OPEN_FIELDS_ORIGIN}/api/openfields/GooglePay?terminalNumber=${terminalNumber}`;
 }
-
-// The `field` of the master frame's `handleValidations` message that says the buyer has solved the captcha.
-export const OPEN_FIELDS_CAPTCHA_FIELD = 'reCaptcha';
 
 // Loaded onto the payment page: CardCom's 3D Secure handling.
 export const OPEN_FIELDS_3DS_SCRIPT = `${OPEN_FIELDS_ORIGIN}/External/OpenFields/3DS.js`;

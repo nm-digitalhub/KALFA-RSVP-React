@@ -69,8 +69,6 @@ function masterWindow() {
 }
 
 const cardcomMessage = (data: unknown, origin = OPEN_FIELDS_ORIGIN) => act(() => { window.dispatchEvent(new MessageEvent('message', { origin, data })); });
-// CardCom's master frame tells the page when the buyer has solved the reCAPTCHA in CardCom's captcha frame.
-const solveCaptcha = () => cardcomMessage({ action: 'handleValidations', field: 'reCaptcha', isValid: true });
 const fill = (label: RegExp, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 // Everything a submit needs besides the expiry: the ID, and the address details CardCom's documentation says must accompany it.
 function fillDetails() {
@@ -135,7 +133,6 @@ describe('CardcomOpenFieldsForm', () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     const post = masterWindow();
-    solveCaptcha();
     fillDetails();
     fill(/חודש/, '12');
     fill(/שנה/, '39');
@@ -201,7 +198,6 @@ describe('CardcomOpenFieldsForm', () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     const post = masterWindow();
-    solveCaptcha();
     fillDetails();
     fill(/טלפון/, '052-765-4321');
     fill(/חודש/, '12');
@@ -219,7 +215,6 @@ describe('CardcomOpenFieldsForm', () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     const post = masterWindow();
-    solveCaptcha();
     fill(/תעודת זהות/, '000000018');
     fill(/כתובת/, ADDRESS);
     fill(/עיר/, CITY);
@@ -259,53 +254,17 @@ describe('CardcomOpenFieldsForm', () => {
     expect(screen.getByText('חודש תוקף (MM)').closest('[dir]')?.getAttribute('dir')).toBe('rtl');
   });
 
-  it('will not attempt a payment until the buyer has solved the captcha: says so, and posts nothing', async () => {
+  it('does not hold the payment back for the captcha: whether CardCom requires it is the terminal\'s setting', async () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     const post = masterWindow();
     fillDetails();
     fill(/חודש/, '12');
     fill(/שנה/, '39');
-    fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
-    expect((await screen.findByRole('alert')).textContent).toContain('רובוט');
-    expect(post).not.toHaveBeenCalled();
-    solveCaptcha();
     fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
     expect(post).toHaveBeenCalledTimes(1);
-  });
-
-  it('counts a captcha only when it comes from CardCom\'s origin and says it is valid', async () => {
-    render(<CardcomOpenFieldsForm {...props} />);
-    await openSession();
-    const post = masterWindow();
-    fillDetails();
-    fill(/חודש/, '12');
-    fill(/שנה/, '39');
-    cardcomMessage({ action: 'handleValidations', field: 'reCaptcha', isValid: true }, 'https://evil.example');
-    cardcomMessage({ action: 'handleValidations', field: 'reCaptcha', isValid: false });
-    cardcomMessage({ action: 'handleValidations', field: 'cvv', isValid: true });
-    fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
-    expect(post).not.toHaveBeenCalled();
-  });
-
-  it('after a decline the new session starts with the captcha unsolved: the buyer does it again', async () => {
-    answerWith(SETTLE_URL, { state: 'declined' });
-    answerWith(START_URL, { status: 'ready', lowProfileId: 'lp-1' }, { status: 'ready', lowProfileId: 'lp-2' });
-    render(<CardcomOpenFieldsForm {...props} />);
-    await openSession();
-    solveCaptcha();
-    cardcomMessage({ action: 'HandleEror' });
-    await screen.findByRole('alert');
-    fireEvent.click(screen.getByRole('button', { name: 'ניסיון נוסף' }));
-    await waitFor(() => expect(callsTo(START_URL)).toHaveLength(2));
-    await waitFor(() => expect(frame(OPEN_FIELDS_FRAME_ID.master)).not.toBeNull());
-    await act(async () => {});
-    const post = masterWindow();
-    fillDetails();
-    fill(/חודש/, '12');
-    fill(/שנה/, '39');
-    fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
-    expect(post).not.toHaveBeenCalled();
+    expect(post.mock.calls[0][0]).toMatchObject({ action: 'doTransaction' });
+    expect(screen.queryByRole('alert')).toBeNull(); // no "tick «I'm not a robot»" message of our own
   });
 
   it('ignores a "success" that does not come from CardCom\'s origin, and 3DS traffic with no action', async () => {
@@ -694,7 +653,6 @@ describe('CardcomOpenFieldsForm — Google Pay', () => {
     await masterLoaded(post);
     await waitForDetails(post, 1);
     await waitFor(() => expect(walletUnusable()).toBe(false));
-    solveCaptcha();
     fillDetails();
     fill(/חודש/, '12');
     fill(/שנה/, '39');
@@ -706,7 +664,6 @@ describe('CardcomOpenFieldsForm — Google Pay', () => {
     render(<CardcomOpenFieldsForm {...props} googlePayTerminal={TERMINAL} />);
     await openSession();
     const post = masterWindow();
-    solveCaptcha();
     fillDetails();
     fill(/חודש/, '12');
     fill(/שנה/, '39');
@@ -792,7 +749,6 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     await masterLoaded(post);
     await waitForDetails(post, 1);
     await waitFor(() => expect(walletUnusable()).toBe(false));
-    solveCaptcha();
     fillDetails();
     fill(/חודש/, '12');
     fill(/שנה/, '39');
@@ -819,7 +775,6 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     const post = masterWindow();
-    solveCaptcha();
     fillDetails();
     fill(/חודש/, '12');
     fill(/שנה/, '39');
@@ -932,7 +887,6 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     fillDetails();
     fill(/חודש/, '12');
     fill(/שנה/, '39');
-    cardcomMessage({ action: 'handleValidations', field: 'reCaptcha', isValid: true });
     fireEvent.click(screen.getByRole('button', { name: /^שלם/ }));
     cardcomMessage({ action: 'HandleEror', ResponseCode: 333, message: '3DS אימות נכשל' });
     await screen.findByRole('alert');

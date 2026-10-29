@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  OPEN_FIELDS_CAPTCHA_FIELD,
   OPEN_FIELDS_FRAME_ID,
   OPEN_FIELDS_FRAME_SRC,
   OPEN_FIELDS_ORIGIN,
@@ -330,7 +329,7 @@ describe('parseFrameMessage', () => {
   });
 
   it('reads the captcha being solved under the field name the master frame reports it by', () => {
-    expect(from({ action: 'handleValidations', lowProfileCode: 'lp-1', field: OPEN_FIELDS_CAPTCHA_FIELD, isValid: true })).toEqual({ kind: 'validation', field: 'reCaptcha', valid: true });
+    expect(from({ action: 'handleValidations', lowProfileCode: 'lp-1', field: 'reCaptcha', isValid: true })).toEqual({ kind: 'validation', field: 'reCaptcha', valid: true });
   });
 
   it('ignores a message from any other origin, even one that looks right', () => {

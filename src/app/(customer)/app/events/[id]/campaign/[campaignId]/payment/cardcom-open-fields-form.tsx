@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   OPEN_FIELDS_3DS_SCRIPT,
-  OPEN_FIELDS_CAPTCHA_FIELD,
   OPEN_FIELDS_FRAME_ID,
   OPEN_FIELDS_FRAME_SRC,
   buildDoTransactionMessage,
@@ -34,8 +33,9 @@ import { PURCHASE_ERROR_MESSAGES, type PurchaseErrorCode } from '@/lib/payments/
 //
 // What the buyer is told always comes from the SERVER's answer after it asked CardCom — never from what the iframe says:
 //   1. the form opens a session as soon as it is shown → POST …/purchase/cardcom (a LowProfileId, nothing else comes back);
-//   2. the frames are initialised with that id; the buyer fills the form and solves CardCom's reCAPTCHA frame (the master frame
-//      reports it); "pay" posts doTransaction to the master frame;
+//   2. the frames are initialised with that id; the buyer fills the form, and CardCom's reCAPTCHA frame when the terminal asks for it;
+//      "pay" posts doTransaction to the master frame. Whether the captcha is required is CardCom's per-terminal setting, so the page
+//      does not hold the payment back for it — as in CardCom's own sample (owner, 29.10.2026);
 //   3. CardCom's frame answers HandleSubmit / HandleEror — only a reason to ask the server, via POST …/purchase/settle;
 //   4. the server's state (paid / declined / review / in progress) decides the screen.
 // The payment page is reached right after the terms are approved, so the session opens by itself and the buyer sees the card
@@ -71,8 +71,6 @@ const FIELD_MESSAGE: Record<CardholderField, string> = {
   year: 'שנת התוקף אינה תקינה (שתי ספרות).',
   expiry: 'תוקף הכרטיס עבר.',
 };
-
-const CAPTCHA_MESSAGE = 'יש לסמן «אני לא רובוט» לפני התשלום.';
 
 // While the bank checks the payment (3D Secure), whichever step it is on. It never asks the buyer to complete anything: the bank's own
 // window does that, and CardCom never says when that window has closed (none of its scripts posts `CloseCardHolderChallenge`), so a
@@ -143,10 +141,6 @@ export function CardcomOpenFieldsForm({
   const [city, setCity] = useState('');
   const [month, setMonth] = useState('');
   const [year, setYear] = useState('');
-  // CardCom's reCAPTCHA frame tells the page (through the master frame) when the buyer has solved it. Whether CardCom then
-  // requires the token is its server's decision; the page only makes sure the buyer has done it before a payment is attempted.
-  const [captchaSolved, setCaptchaSolved] = useState(false);
-
   // Google Pay. The terminal comes from the server's decision; an address that cannot be built means no wallet, never a broken frame.
   const walletSrc = googlePayTerminal === null ? null : googlePayFrameSrc(googlePayTerminal);
   const walletDetails = useMemo(() => checkWalletDetails({ name, email, phone }), [name, email, phone]);
@@ -213,7 +207,6 @@ export function CardcomOpenFieldsForm({
 
   const openSession = useCallback(async () => {
     setMessage(null);
-    setCaptchaSolved(false);
     setBankChecking(false);
     lastErrorCode.current = null;
     lastErrorReason.current = null;
@@ -363,7 +356,7 @@ export function CardcomOpenFieldsForm({
           settingsSeenFor.current = lowProfileId;
           setWalletSent(null);
         }
-      } else if (frameMessage?.kind === 'validation' && frameMessage.field === OPEN_FIELDS_CAPTCHA_FIELD) setCaptchaSolved(frameMessage.valid);
+      }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -400,10 +393,6 @@ export function CardcomOpenFieldsForm({
       } else {
         setMessage(FIELD_MESSAGE[check.field]);
       }
-      return;
-    }
-    if (!captchaSolved) {
-      setMessage(CAPTCHA_MESSAGE);
       return;
     }
     const frame = masterRef.current?.contentWindow;
