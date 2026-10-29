@@ -64,7 +64,7 @@
     "test:permission-matrix": "node --test scripts/permission-matrix/analyze.test.mjs",
     "test:fleet-scheduler": "node --test .claude/fleet/bin/verdict-guard.test.mjs",
     "test:e2e": "playwright test",
-    "e2e:build": "env -u NEXT_PUBLIC_SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY -u SUPABASE_DB_HOST -u RESEND_API_KEY NODE_ENV=test KALFA_E2E_TEST_PROXY=1 NEXT_DIST_DIR=.next-e2e next build --webpack",
+    "e2e:build": "env -u NEXT_PUBLIC_SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY -u SUPABASE_DB_HOST -u RESEND_API_KEY NODE_ENV=test KALFA_E2E_TEST_PROXY=1 NEXT_DIST_DIR=.next-e2e APP_ORIGIN=http://127.0.0.1:3998 next build --webpack",
     "e2e:start": "env -u NEXT_PUBLIC_SUPABASE_URL -u SUPABASE_SERVICE_ROLE_KEY -u SUPABASE_DB_HOST -u RESEND_API_KEY NODE_ENV=test KALFA_E2E_TEST_PROXY=1 NEXT_DIST_DIR=.next-e2e APP_ORIGIN=http://127.0.0.1:3998 next start -p 3998 -H 127.0.0.1",
     "verify:db": "node --env-file=.env.local scripts/verify-db-contracts.mjs",
     "typecheck": "NEXT_DIST_DIR=.next-typecheck next typegen && tsc --noEmit -p tsconfig.typecheck.json",

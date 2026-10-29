@@ -5,9 +5,12 @@
 # Steps follow the official docs:
 #   - Playwright on GitHub Actions (playwright.dev/docs/ci-intro): install deps, install browsers --with-deps, run,
 #     upload the HTML report;
-#   - supabase/setup-cli README: with no `version` it installs the `supabase` version pinned in package-lock.json,
-#     then `supabase start`, then "Export local Supabase env vars for app tests" with `supabase status -o env
-#     --override-name`.
+#   - Supabase local development: the CLI is a project dev dependency (package.json, pinned in package-lock.json), so
+#     `npm ci` installs it and it runs as `npx supabase` ("supabase vs. npx supabase", local-development/cli-workflows).
+#     `supabase start` applies every migration and supabase/seed.sql to an empty database; the env file follows the
+#     supabase/setup-cli README's "Export local Supabase env vars for app tests" (`supabase status -o env
+#     --override-name`). The setup-cli action itself is not used: it installs the same lockfile version a second time,
+#     and on npm 12 it fails (it reads `npm view --json` as an object; npm 12 prints an array — run 40943279333).
 name: Playwright Tests
 
 on:
@@ -24,18 +27,13 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           # Matches the beta server runtime (node v24).
           node-version: 24
           cache: npm
-
-      # Before npm 12: setup-cli resolves the version with `npm view <spec> ... --json` on the runner's npm and reads the
-      # result as an object; npm 12 returns an array there and the action fails ("Could not resolve a fixed npm version",
-      # measured 29.10.2026). It installs the CLI under its own prefix, so the npm upgrade below does not touch it.
-      - uses: supabase/setup-cli@v3
 
       # package.json `patchedDependencies` and the lockfile format (v4) are npm 12 features; Node 24 ships npm 11.
       - name: Use npm 12
@@ -59,14 +57,14 @@ jobs:
       # The full stack minus the services the customer flows never call (Auth, PostgREST, Kong, Storage and Mailpit stay).
       # `supabase init` is skipped: supabase/config.toml is in the repo.
       - name: Start the local Supabase stack
-        run: supabase start -x studio,postgres-meta,imgproxy,edge-runtime,logflare,vector,supavisor,realtime
+        run: npx supabase start -x studio,postgres-meta,imgproxy,edge-runtime,logflare,vector,supavisor,realtime
 
       # Next.js reads .env.test.local when NODE_ENV=test (the e2e:* scripts), and the e2e:* scripts unset these names
       # from the process env, so they go to the file only. NEXT_PUBLIC_* are inlined at build time: this runs before the
       # build. The SUPABASE_DB_* parts (the queue's Postgres connection, src/lib/queue/web-sender.ts) come from DB_URL.
       - name: Point the E2E build at the local stack (.env.test.local)
         run: |
-          supabase status -o env \
+          npx supabase status -o env \
             --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
             --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
             --override-name auth.publishable_key=NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY \
