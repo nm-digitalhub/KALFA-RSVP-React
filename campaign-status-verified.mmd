@@ -1,0 +1,42 @@
+---
+title: campaigns.status — verified flow (live DB + CodeQL on the working tree, 2026-10-27)
+---
+stateDiagram-v2
+    direction TB
+
+    state "pending_approval<br/>ממתין לאישור תנאים" as pending_approval
+    state "approved<br/>תנאים אושרו, ממתין לתשלום" as approved
+    state "active<br/>פעיל" as active
+    state "paused<br/>מושהה" as paused
+    state "closed<br/>נסגר" as closed
+    state "cancelled<br/>בוטל" as cancelled
+
+    [*] --> pending_approval: create_package_campaign — הלקוח בוחר חבילה
+    pending_approval --> approved: approve_package_terms — הלקוח מאשר תנאים
+    approved --> pending_approval: supersede_campaign_pricing — קבלת הטבה / הטבה שפגה בפתיחת רכישה
+    approved --> active: אחרי תשלום — השרת או ה-worker
+    active --> paused: השהיה — צוות (אתר או מוקד)
+    paused --> active: החייאה — מוקד בלבד
+    active --> closed: סגירה — צוות / טיפול בבקשת ביטול
+    paused --> closed: סגירה
+    approved --> closed: סגירה
+    pending_approval --> cancelled: cancel_campaign — צוות, רק בלי כסף
+    approved --> cancelled: cancel_campaign
+    closed --> [*]
+    cancelled --> [*]
+
+    note right of approved
+        approveCampaign (campaigns.ts:383) כותב approved ישירות,
+        אבל אין לו אף קריאה בקוד — רק בבדיקות
+    end note
+
+    note left of cancelled
+        חזרה מ-closed / cancelled: נחסמת רק באפליקציה
+        (בדיקת status === approved לפני supersede).
+        הפונקציה במסד עצמה לא בודקת מצב
+    end note
+
+    note right of active
+        ההפעלה הראשונה וההחייאה כותבות
+        אותה פעולה ביומן: campaign.activated
+    end note

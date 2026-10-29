@@ -1,0 +1,51 @@
+---
+title: campaigns.status — the flow as it is today (measured 2026-10-27, live DB + code)
+---
+stateDiagram-v2
+    direction TB
+
+    state "pending_approval<br/>ממתין לאישור תנאים" as pending_approval
+    state "approved<br/>תנאים אושרו, ממתין לתשלום" as approved
+    state "active<br/>פעיל" as active
+    state "paused<br/>מושהה" as paused
+    state "closed<br/>נסגר" as closed
+    state "cancelled<br/>בוטל" as cancelled
+
+    [*] --> pending_approval: create_package_campaign (DB)
+    pending_approval --> approved: approve_package_terms (DB)
+    approved --> pending_approval: supersede_campaign_pricing (DB) — repricing
+    approved --> active: activateCampaignAfterPayment — server, after payment
+    active --> paused: pauseCampaign — staff
+    paused --> active: activateCampaign — call centre revive
+    active --> closed: closeCampaign
+    paused --> closed: closeCampaign
+    approved --> closed: closeCampaign
+    pending_approval --> cancelled: cancel_campaign (DB)
+    approved --> cancelled: cancel_campaign (DB)
+    closed --> [*]
+    cancelled --> [*]
+
+    state "מצבים מתים — אף קוד לא מעביר קמפיין אליהם" as dead {
+        state "draft — רק ברירת המחדל של העמודה" as draft
+        state "scheduled — אין כותב" as scheduled
+        state "awaiting_invoice — מודל החיוב הישן" as awaiting_invoice
+        state "billed — מודל החיוב הישן" as billed
+        state "paid — מודל החיוב הישן" as paid
+    }
+
+    note right of approved
+        כותב שני לאותו מעבר: approveCampaign
+        באפליקציה (campaigns.ts:383) — אין לו קוראים
+    end note
+
+    note right of active
+        ההפעלה הראשונה נבדקת ביומן
+        (campaign.activated, activate-paid-package.ts:92)
+    end note
+
+    note left of cancelled
+        אין חסימה ליציאה מ-closed או מ-cancelled:
+        הטריגר campaigns_guard_cancel חוסם רק כניסה ל-cancelled,
+        ו-supersede_campaign_pricing מחזיר ל-pending_approval
+        בלי לבדוק מצב (הסקה מקריאת הקוד, לא הורץ)
+    end note

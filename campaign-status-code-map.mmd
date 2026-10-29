@@ -1,0 +1,94 @@
+---
+title: campaigns.status — who writes, who decides, who labels (code and files, measured 2026-10-27)
+---
+flowchart TD
+    classDef problem fill:#ffe3e3,stroke:#c92a2a,color:#000
+    classDef store fill:#e7f5ff,stroke:#1971c2,color:#000
+    classDef ok fill:#ebfbee,stroke:#2f9e44,color:#000
+
+    subgraph DB["מסד הנתונים"]
+        COL[("campaigns.status<br/>11 ערכים, 6 חיים")]:::store
+        LEDGER[("payment_operations<br/>ספר תנועות התשלום")]:::store
+        LOG[("activity_log<br/>יומן")]:::store
+        F_CREATE["create_package_campaign<br/>→ pending_approval"]
+        F_APPROVE["approve_package_terms<br/>→ approved"]
+        F_SUPER["supersede_campaign_pricing<br/>→ pending_approval בלי בדיקת מצב"]:::problem
+        F_CANCEL["cancel_campaign<br/>→ cancelled"]
+        T_GUARD["trigger campaigns_guard_cancel<br/>חוסם רק כניסה ל-cancelled"]:::problem
+        F_LISTS["events_guard_update · campaigns_require_active_event<br/>sync_campaign_window_from_event · fill/reconcile_authorized_set<br/>try_record_billed_result · test_event_purge_blocker<br/>כל אחת עם רשימת מצבים משלה"]:::problem
+    end
+
+    subgraph WRITE["כתיבת מצב באפליקציה"]
+        TR["campaign-transition.ts<br/>transitionCampaignStatus<br/>4 מעברים, רשימת from מגיעה מהקורא"]
+        AAP["activateCampaignAfterPayment<br/>approved → active"]
+        PAID["payments/activate-paid-package.ts"]
+        REVIVE["campaigns.ts activateCampaign<br/>paused → active"]
+        PAUSE["campaigns.ts pauseCampaign<br/>active → paused"]
+        CLOSE["campaigns.ts closeCampaign<br/>רשימה מוטמעת :736"]:::problem
+        APPROVE["campaigns.ts approveCampaign :383<br/>קוד מת, כותב ישירות"]:::problem
+        CANCEL["campaigns.ts cancelCampaign"]
+        CREATE["campaigns.ts createCampaign"]
+        BENEFIT["campaigns.ts acceptCampaignBenefit<br/>→ coupon-benefits"]
+        ROUTE["api/campaigns/[id]/status<br/>נתיב המוקד"]
+        WORKER["worker: אחרי תשלום"]
+    end
+
+    subgraph PAY["מצב התשלום — נגזר מספר התנועות"]
+        DERIVE["payments/status.ts deriveStatus<br/>PaymentStatus: 8 ערכים"]:::ok
+        FUND["requirePackageFunding<br/>campaign-transition.ts"]
+        PAYBADGE["admin/campaign-payment-status.ts<br/>7 תגיות תשלום לצוות"]
+    end
+
+    subgraph LISTS["רשימות מצבים בקוד TypeScript"]
+        CS["campaign-status.ts<br/>OPERATIONAL 6 · CANCELLABLE 3 · CLOSEABLE 4<br/>כוללות draft ו-scheduled המתים"]:::problem
+        WD["owner-agent/cores/campaigns.ts<br/>WINDDOWN: active, paused, closed"]
+        INLINE["רשימות מוטמעות:<br/>manage-client.tsx :852 :859 :866 :873<br/>contacts.ts :267"]:::problem
+    end
+
+    subgraph LABELS["מה מוצג"]
+        STATUSLBL["event-labels.ts CAMPAIGN_STATUS_LABELS<br/>11 תוויות"]
+        STAGE["event-labels.ts campaignStage<br/>8 שלבים ללקוח"]
+        ADMINPAGE["admin/campaigns/page.tsx"]
+        OWNER["מסכי לקוח: רשימת אירועים, סטטיסטיקה,<br/>ניהול קמפיין, setup-steps"]
+        ADMINLIST["admin/campaigns.ts listCampaignsForAdmin"]
+        EVCANCEL["event-cancellation.ts"]
+        EVENTS["events.ts updateEvent + עמוד ועריכת אירוע"]
+    end
+
+    %% writes into campaigns.status
+    F_CREATE --> COL
+    F_APPROVE --> COL
+    F_SUPER --> COL
+    F_CANCEL --> COL
+    TR --> COL
+    APPROVE -. "עוקף את TR" .-> COL
+
+    CREATE --> F_CREATE
+    CANCEL --> F_CANCEL
+    BENEFIT --> F_SUPER
+    WORKER --> PAID --> AAP --> TR
+    ROUTE --> REVIVE --> TR
+    ROUTE --> PAUSE --> TR
+    CLOSE --> TR
+
+    %% the activity log used as state
+    PAID -- "בודק campaign.activated" --> LOG
+    REVIVE -- "כותב campaign.activated" --> LOG
+
+    %% payment
+    LEDGER --> DERIVE
+    DERIVE --> FUND --> TR
+    DERIVE --> STAGE
+    DERIVE --> PAYBADGE --> ADMINPAGE
+
+    %% status lists and their copies
+    CS -. "עותק ידני" .- F_LISTS
+    CS -. "עותק ידני" .- T_GUARD
+    CS -- CLOSEABLE --> EVCANCEL
+    CS -- OPERATIONAL --> EVENTS
+    CLOSE -. "לא משתמש ב-CLOSEABLE" .- CS
+    WD --> ADMINLIST --> ADMINPAGE
+
+    %% labels
+    COL --> STAGE --> OWNER
+    COL --> STATUSLBL --> ADMINPAGE
