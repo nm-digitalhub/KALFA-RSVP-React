@@ -234,7 +234,7 @@
     "@lacspace/seo": "^1.10.0",
     "@microsoft/microsoft-graph-types": "^2.43.1",
     "@next/bundle-analyzer": "^16.4.3",
-    "@playwright/test": "1.64.1",
+    "@playwright/test": "^1.64.1",
     "@statelyai/inspect": "^0.7.2",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.2",
