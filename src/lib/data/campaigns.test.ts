@@ -836,6 +836,22 @@ describe('campaign run-state: system actor after a recorded payment (D23)', () =
     expect(getPackagePaymentState).toHaveBeenCalledWith('c1');
   });
 
+  // Purchase starts the service whether or not the event has guests (design D4): the start reads the campaign, the
+  // event and the payment, never the guest list, and fills nothing.
+  it('starts a paid campaign without reading or filling the guest list', async () => {
+    const builders = adminByTable({
+      campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
+      events: EVENT_OK,
+      payment_operations: PAYMENT,
+    });
+
+    await activateCampaignAfterPayment('c1', 'op1');
+
+    expect(builders.campaigns.update).toHaveBeenCalledWith({ status: 'active' });
+    expect(Object.keys(builders).sort()).toEqual(['campaigns', 'events', 'payment_operations']);
+    expect(fillAuthorizedSet).not.toHaveBeenCalled();
+  });
+
   it('uses no session: neither the cookie ownership check nor the user nor the run-state gate', async () => {
     adminByTable({
       campaigns: { id: 'c1', event_id: 'e1', package_price: 150 },
