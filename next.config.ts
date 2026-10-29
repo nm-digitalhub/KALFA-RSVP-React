@@ -78,6 +78,11 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: '6mb',
     },
+    // Next's experimental test mode for Playwright (next/experimental/testmode/playwright): the E2E tests answer the
+    // server's own outbound fetches (CardCom) instead of the provider. While it is on, any request carrying a
+    // `next-test-proxy-port` header sends this server's fetches to that local port, so it must never be on in
+    // production: only the E2E build and server (npm run e2e:build / e2e:start) run with both conditions.
+    testProxy: process.env.NODE_ENV === 'test' && process.env.KALFA_E2E_TEST_PROXY === '1',
   },
   // next/image optimizer allowlist: the invitation-image preview renders
   // short-lived SIGNED urls from the private event-media bucket. Pinned to

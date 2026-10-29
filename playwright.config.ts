@@ -1,79 +1,32 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/**
- * Read environment variables from file.
- * https://github.com/motdotla/dotenv
- */
-// import dotenv from 'dotenv';
-// import path from 'path';
-// dotenv.config({ path: path.resolve(__dirname, '.env') });
-
-/**
- * See https://playwright.dev/docs/test-configuration.
- */
+// E2E tests of KALFA against an isolated stack: the app's E2E build on 127.0.0.1:3998 (npm run e2e:build / e2e:start,
+// NODE_ENV=test, so Next.js reads .env.test.local and never .env.local) and the local Supabase stack. The tests import
+// `test` from tests/fixtures.ts, which runs every test under Next's test mode; defineConfig comes from Playwright itself so
+// no default project or server of Next's sample config is merged in.
+//
+// Next.js recommends running Playwright against the production build (guides/testing/playwright), hence build + start.
 export default defineConfig({
   testDir: './tests',
-  /* Run tests in files in parallel */
+  globalSetup: './tests/global-setup.ts',
   fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    /* Base URL to use in actions like `await page.goto('')`. */
-    // baseURL: 'http://localhost:3000',
-
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+    baseURL: 'http://127.0.0.1:3998',
     trace: 'on-first-retry',
+    // page.route must see every request; a service worker would answer some of them first (Playwright docs: network).
+    serviceWorkers: 'block',
+    locale: 'he-IL',
   },
-
-  /* Configure projects for major browsers */
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-
-    /* Test against mobile viewports. */
-    // {
-    //   name: 'Mobile Chrome',
-    //   use: { ...devices['Pixel 5'] },
-    // },
-    // {
-    //   name: 'Mobile Safari',
-    //   use: { ...devices['iPhone 12'] },
-    // },
-
-    /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'Google Chrome',
-    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    // },
-  ],
-
-  /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run start',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
+  // Chromium only: it is the browser installed for this Playwright version.
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  webServer: {
+    command: 'npm run e2e:build && npm run e2e:start',
+    url: 'http://127.0.0.1:3998/auth/login',
+    reuseExistingServer: !process.env.CI,
+    timeout: 15 * 60 * 1000,
+  },
 });
