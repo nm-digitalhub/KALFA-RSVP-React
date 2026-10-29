@@ -78,12 +78,6 @@ export function PackagePaymentView({
             <Link href={`/app/events/${eventId}/guests`} className={buttonVariants()}>
               הוספת מוזמנים
             </Link>
-            <Link
-              href={`/app/events/${eventId}/campaign/${campaignId}`}
-              className={buttonVariants({ variant: 'outline' })}
-            >
-              מעבר לניהול הקמפיין
-            </Link>
           </div>
         </section>
       );

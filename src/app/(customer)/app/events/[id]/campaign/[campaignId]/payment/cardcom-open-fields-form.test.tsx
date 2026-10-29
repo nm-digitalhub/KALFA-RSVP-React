@@ -316,21 +316,21 @@ describe('CardcomOpenFieldsForm', () => {
     expect(callsTo(SETTLE_URL)).toHaveLength(0);
   });
 
-  it('on CardCom\'s "submitted" asks the SERVER — it never believes the message — and shows the paid result when the server says so', async () => {
+  it('on CardCom\'s "submitted" asks the SERVER — it never believes the message — and lands on the event page when the server says paid', async () => {
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: false, Description: 'whatever the iframe says' } });
     await waitFor(() => expect(callsTo(SETTLE_URL)).toHaveLength(1));
     expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body)).toEqual({ submitted: true, method: 'google_pay' });
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1'));
   });
 
-  it('passes on that the automatic start was refused, so the page can show a notice and the start button', async () => {
+  it('lands on the event page even when the inline start was refused: the purchase ended setup either way', async () => {
     answerWith(SETTLE_URL, { state: 'paid', activation: 'failed' });
     render(<CardcomOpenFieldsForm {...props} />);
     await openSession();
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1&activate=failed'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1'));
   });
 
   it('settles only once for one submit, however many messages arrive', async () => {
@@ -358,7 +358,7 @@ describe('CardcomOpenFieldsForm', () => {
     render(<CardcomOpenFieldsForm {...props} pollDelayMs={1} />);
     await openSession();
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1'));
     expect(callsTo(SETTLE_URL)).toHaveLength(3);
   });
 
@@ -440,7 +440,7 @@ describe('CardcomOpenFieldsForm', () => {
   it('an already-paid answer (the buyer came back from a redirect) asks the settle route once, bare, and shows the paid screen', async () => {
     answerWith(START_URL, { status: 'already_paid' });
     render(<CardcomOpenFieldsForm {...props} />);
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1'));
     expect(callsTo(SETTLE_URL)).toHaveLength(1);
     // It never says "submitted": a returning buyer must not be able to close a session as failed.
     expect(callsTo(SETTLE_URL)[0][1].body).toBeUndefined();
@@ -449,18 +449,18 @@ describe('CardcomOpenFieldsForm', () => {
     expect(document.querySelector('iframe')).toBeNull();
   });
 
-  it('on a return, passes on that the automatic start was refused, so the page shows the notice and the start button', async () => {
+  it('on a return, lands on the event page even when the inline start was refused', async () => {
     answerWith(START_URL, { status: 'already_paid' });
     answerWith(SETTLE_URL, { state: 'paid', activation: 'failed' });
     render(<CardcomOpenFieldsForm {...props} />);
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1&activate=failed'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1'));
   });
 
-  it('on a return, a paid answer whose start was not needed (the webhook or another tab already started the campaign) shows the paid screen without a notice', async () => {
+  it('on a return, a paid answer whose start was not needed (the webhook or another tab already started the campaign) lands on the event page', async () => {
     answerWith(START_URL, { status: 'already_paid' });
     answerWith(SETTLE_URL, { state: 'paid', activation: 'not_needed' });
     render(<CardcomOpenFieldsForm {...props} />);
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1'));
   });
 
   it.each([
@@ -675,7 +675,7 @@ describe('CardcomOpenFieldsForm — Google Pay', () => {
     expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body)).toEqual({ submitted: true, method: 'google_pay' });
     expect(screen.getByRole('button', { name: /מעבד/ })).toBeTruthy();
     expect(walletUnusable()).toBe(true);
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1'));
   });
 
   it('ignores a wallet "success" from another origin, and 3DS traffic with no action', async () => {
@@ -811,7 +811,7 @@ describe('CardcomOpenFieldsForm — 3D Secure', () => {
     expect(callsTo(SETTLE_URL)).toHaveLength(0);
     // the result is settled exactly as before
     cardcomMessage({ action: 'HandleSubmit', data: { IsSuccess: true } });
-    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1/campaign/c1/payment?paid=1'));
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith('/app/events/e1'));
     expect(JSON.parse(callsTo(SETTLE_URL)[0][1].body as string)).toEqual({ submitted: true, method: 'google_pay' });
   });
 

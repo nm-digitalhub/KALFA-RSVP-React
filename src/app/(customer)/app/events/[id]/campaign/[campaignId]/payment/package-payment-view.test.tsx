@@ -78,7 +78,10 @@ describe('PackagePaymentView — a payment that exists, or may exist, never offe
     expect(screen.getByText('התשלום התקבל')).toBeTruthy();
     expect(container.textContent).toContain('120');
     expect(screen.queryByTestId('card-form')).toBeNull();
-    expect(screen.getByRole('link', { name: 'מעבר לניהול הקמפיין' }).getAttribute('href')).toBe('/app/events/e1/campaign/c1');
+    expect(screen.getByRole('link', { name: 'הוספת מוזמנים' }).getAttribute('href')).toBe('/app/events/e1/guests');
+    // Paid ends setup (design D2): the way on is the event page, not the service's own page.
+    expect(container.textContent).not.toContain('מעבר לניהול הקמפיין');
+    expect(container.querySelector('a[href="/app/events/e1/campaign/c1"]')).toBeNull();
   });
 
   it.each([
@@ -109,7 +112,7 @@ describe('PackagePaymentView — test money is said out loud', () => {
     const { container } = render(view({ kind: 'paid', amount: 120, activation: 'unavailable', testMoney: true }));
     expect(screen.getByRole('status').textContent).toBe('תשלום בדיקה — לא נגבה כסף ולא נספר בהכנסות.');
     expect(container.textContent).toContain('התשלום התקבל');
-    expect(screen.getByRole('link', { name: 'מעבר לניהול הקמפיין' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'הוספת מוזמנים' })).toBeTruthy();
   });
 
   it('the paid screen of real money has no such note', () => {

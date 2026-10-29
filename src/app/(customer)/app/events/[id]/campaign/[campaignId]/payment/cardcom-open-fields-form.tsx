@@ -186,7 +186,9 @@ export function CardcomOpenFieldsForm({
     };
   }, []);
 
-  const payUrl = `/app/events/${eventId}/campaign/${campaignId}/payment`;
+  // A recorded payment ends setup: the buyer lands on the event page, the management page from then on (design D2). Whether the
+  // service already started is the server's to show there; nothing about it is passed in the URL.
+  const eventUrl = `/app/events/${eventId}`;
   const fail = useCallback((code: PurchaseErrorCode, next: Phase = 'failed') => {
     setMessage(PURCHASE_ERROR_MESSAGES[code]);
     setPhase(next);
@@ -194,7 +196,7 @@ export function CardcomOpenFieldsForm({
   }, []);
 
   // The buyer returned to a payment that is already recorded. One call, no polling: the ledger decides what the page shows, so a
-  // failure here only means the screen is drawn from the ledger without the automatic start (its "start now" button covers that).
+  // failure here only means the screen is drawn from the ledger without the inline start (the queued job starts it, design D23).
   const finishReturnedPayment = useCallback(async () => {
     let answer: SettleAnswer;
     try {
@@ -204,10 +206,10 @@ export function CardcomOpenFieldsForm({
     }
     if (!mounted.current) return;
     if (answer.state === 'paid') {
-      router.replace(`${payUrl}?paid=1${answer.activation === 'failed' ? '&activate=failed' : ''}`);
+      router.replace(eventUrl);
     }
     router.refresh();
-  }, [campaignId, payUrl, router]);
+  }, [campaignId, eventUrl, router]);
 
   const openSession = useCallback(async () => {
     setMessage(null);
@@ -275,8 +277,7 @@ export function CardcomOpenFieldsForm({
         }
         if (!mounted.current) return;
         if (answer.state === 'paid') {
-          const reason = answer.activation === 'failed' ? '&activate=failed' : '';
-          router.replace(`${payUrl}?paid=1${reason}`);
+          router.replace(eventUrl);
           router.refresh();
           return;
         }
@@ -309,7 +310,7 @@ export function CardcomOpenFieldsForm({
     } finally {
       settling.current = false;
     }
-  }, [campaignId, fail, payUrl, pollDelayMs, router]);
+  }, [campaignId, fail, eventUrl, pollDelayMs, router]);
 
   // CardCom's 3D Secure handling is a script that must be on the page BEFORE the frames exist: the master frame asks this page for
   // the screen's size (`GetScreenValues`) the moment it initialises, and starts and ends every 3D Secure step by posting to it,

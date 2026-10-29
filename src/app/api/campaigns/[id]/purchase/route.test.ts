@@ -27,6 +27,8 @@ const APP_ORIGIN = 'https://kalfa.test';
 const CAMPAIGN_ID = '11111111-1111-4111-8111-111111111111';
 const EVENT_ID = '22222222-2222-4222-8222-222222222222';
 const PAY_PATH = `/app/events/${EVENT_ID}/campaign/${CAMPAIGN_ID}/payment`;
+// A recorded payment ends setup: the owner lands on the event page, the management page from then on (design D2).
+const EVENT_PATH = `/app/events/${EVENT_ID}`;
 const CAMPAIGN = { id: CAMPAIGN_ID, event_id: EVENT_ID, status: 'approved', package_price: 120 };
 
 function request(
@@ -164,25 +166,26 @@ describe('POST /api/campaigns/[id]/purchase — what is on the table', () => {
 });
 
 describe('POST /api/campaigns/[id]/purchase — the answer the customer gets', () => {
-  it.each<[PurchaseOutcome, string | null, string | null]>([
-    ['paid', null, '1'],
-    ['already_paid', null, '1'],
-    ['in_progress', 'purchase_in_progress', null],
-    ['review', 'purchase_review', null],
-    ['declined', 'purchase_declined', null],
-    ['disabled', 'purchase_disabled', null],
-    ['not_purchasable', 'bad_state', null],
-    ['credit_unsupported', 'credit_unsupported', null],
-    ['error', 'purchase_failed', null],
-  ])('%s → error=%s paid=%s', async (outcome, error, paid) => {
+  it.each<[PurchaseOutcome, string, string | null]>([
+    ['paid', EVENT_PATH, null],
+    ['already_paid', EVENT_PATH, null],
+    ['in_progress', PAY_PATH, 'purchase_in_progress'],
+    ['review', PAY_PATH, 'purchase_review'],
+    ['declined', PAY_PATH, 'purchase_declined'],
+    ['disabled', PAY_PATH, 'purchase_disabled'],
+    ['not_purchasable', PAY_PATH, 'bad_state'],
+    ['credit_unsupported', PAY_PATH, 'credit_unsupported'],
+    ['error', PAY_PATH, 'purchase_failed'],
+  ])('%s → %s, error=%s', async (outcome, path, error) => {
     vi.mocked(purchasePackage).mockResolvedValue(outcome);
     const res = await callPost(request({ 'og-token': 'og-123' }));
     expect(res.status).toBe(303);
     const loc = location(res);
     expect(loc.origin).toBe(APP_ORIGIN);
-    expect(loc.pathname).toBe(PAY_PATH);
+    expect(loc.pathname).toBe(path);
     expect(loc.searchParams.get('error')).toBe(error);
-    expect(loc.searchParams.get('paid')).toBe(paid);
+    // The landing after a payment carries nothing the page could mistake for the payment's state.
+    if (path === EVENT_PATH) expect(loc.search).toBe('');
   });
 
   it.each<[PurchaseOutcome]>([['already_paid'], ['in_progress'], ['review'], ['declined'], ['disabled'], ['not_purchasable'], ['credit_unsupported'], ['error']])(
@@ -206,26 +209,25 @@ describe('POST /api/campaigns/[id]/purchase — the answer the customer gets', (
 });
 
 describe('POST /api/campaigns/[id]/purchase — after a payment that was just recorded', () => {
-  it('the service is started inline, and the customer lands on the paid page', async () => {
+  it('the service is started inline, and the customer lands on the event page', async () => {
     vi.mocked(purchasePackage).mockResolvedValue('paid');
     vi.mocked(startPaidPackageNow).mockResolvedValue('started');
     const res = await callPost(request({ 'og-token': 'og-123' }));
     expect(startPaidPackageNow).toHaveBeenCalledWith(CAMPAIGN_ID);
     const loc = location(res);
-    expect(loc.pathname).toBe(PAY_PATH);
-    expect(loc.searchParams.get('paid')).toBe('1');
-    expect(loc.searchParams.get('activate')).toBeNull();
+    expect(loc.pathname).toBe(EVENT_PATH);
+    expect(loc.search).toBe('');
   });
 
   // purchasePackage already queued the start (D23): the worker retries it and alerts only on its final delivery, so the
-  // route itself raises no alert.
-  it('an inline start not done yet keeps the payment: paid, activate=failed, and no alert from the route', async () => {
+  // route itself raises no alert. The customer sees the same landing: the purchase ended setup either way.
+  it('an inline start not done yet keeps the payment: the same landing, and no alert from the route', async () => {
     vi.mocked(purchasePackage).mockResolvedValue('paid');
     vi.mocked(startPaidPackageNow).mockResolvedValue('failed');
     const res = await callPost(request({ 'og-token': 'og-123' }));
     const loc = location(res);
-    expect(loc.searchParams.get('paid')).toBe('1');
-    expect(loc.searchParams.get('activate')).toBe('failed');
+    expect(loc.pathname).toBe(EVENT_PATH);
+    expect(loc.search).toBe('');
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });

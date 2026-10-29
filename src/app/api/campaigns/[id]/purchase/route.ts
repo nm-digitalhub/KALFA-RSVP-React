@@ -19,8 +19,9 @@ import { isAllowedOrigin } from '@/lib/http/allowed-origin';
 // The browser submits ONLY the card token. The price charged is the campaign's current pricing round's, read here on the
 // server; a price, a campaign id or any other field in the form is ignored.
 
-// Both a fresh payment and one that was already recorded land on the same "paid" page: a second click, or a page
-// reload after the redirect, must show the receipt state — not an error.
+// Both a fresh payment and one that was already recorded land on the event page, which is the management page once the
+// ledger shows the package paid (design D2): a second click, or a page reload after the redirect, must land there too —
+// not on an error.
 const OUTCOME_TO_ERROR: Record<Exclude<PurchaseOutcome, 'paid' | 'already_paid'>, PurchaseErrorCode> = {
   in_progress: PURCHASE_ERROR.IN_PROGRESS,
   review: PURCHASE_ERROR.REVIEW,
@@ -110,15 +111,17 @@ export async function POST(
     return payError(PURCHASE_ERROR.FAILED);
   }
 
-  if (outcome === 'already_paid') return r303(payUrl('paid=1'));
+  // Paid ends setup: the owner lands on the event page, which the ledger now makes the management page (design D2).
+  const eventPage = r303(new URL(`/app/events/${campaign.event_id}`, origin));
+  if (outcome === 'already_paid') return eventPage;
 
   if (outcome === 'paid') {
     // The payment was the customer's last real decision, so the campaign starts now instead of asking for one more
     // click. FAIL-SAFE: the payment is recorded whatever happens, and purchasePackage already queued the start
-    // (design D23), so a start refused here is retried by the worker. See startPaidPackageNow.
-    const activation = await startPaidPackageNow(campaignId);
-    if (activation === 'failed') return r303(payUrl('paid=1&activate=failed'));
-    return r303(payUrl('paid=1'));
+    // (design D23), so a start refused here is retried by the worker (see startPaidPackageNow). The landing is the same
+    // either way: the event page shows the service's state from the server, never from this request.
+    await startPaidPackageNow(campaignId);
+    return eventPage;
   }
   return payError(OUTCOME_TO_ERROR[outcome]);
 }
