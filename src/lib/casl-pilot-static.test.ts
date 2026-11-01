@@ -52,14 +52,23 @@ const KEY_LITERAL = new RegExp(
 const DIRECT_GATE = /\b(requirePlatformPermission|hasPlatformPermission)\(/;
 const ACTION_GATE = /\b(requirePlatformAction|requireAnyPlatformAction)\(/;
 
-// Each top-level exported function, from its signature to the line that holds only its closing brace (a multi-line
-// parameter type also has lines that start with `}`, such as `}: {`).
+// Each top-level exported entry point:
+//   - a function, from its signature to the line that holds only its closing brace (a multi-line parameter type also
+//     has lines that start with `}`, such as `}: {`);
+//   - a Server Action built from the next-safe-action client (`export const x = actionClient…`, src/lib/safe-action.ts),
+//     up to the next top-level export, so a gate in its pre-validation `.use()` is part of what is checked.
 function exportedFunctions(source: string): { name: string; body: string }[] {
-  return [...source.matchAll(/^export (?:default )?(?:async )?function (\w+)/gm)].map((match) => {
+  const functions = [...source.matchAll(/^export (?:default )?(?:async )?function (\w+)/gm)].map((match) => {
     const start = match.index ?? 0;
     const close = /^\}\s*$/m.exec(source.slice(start));
     return { name: match[1], body: close ? source.slice(start, start + close.index) : source.slice(start) };
   });
+  const actions = [...source.matchAll(/^export const (\w+)\s*=\s*actionClient\b/gm)].map((match) => {
+    const start = match.index ?? 0;
+    const next = /^export /m.exec(source.slice(start + 1));
+    return { name: match[1], body: next ? source.slice(start, start + 1 + next.index) : source.slice(start) };
+  });
+  return [...functions, ...actions];
 }
 
 describe('the pilot names permission keys only through the action map', () => {
