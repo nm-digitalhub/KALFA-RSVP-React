@@ -15,9 +15,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { actionErrorMessage } from '@/lib/action-result';
 import { formatCountdown, percentLeft, spokenRemaining } from '@/lib/rdp-access/countdown';
 import { minutesLabel, PENDING_COPY } from '@/lib/rdp-access/copy';
-import type { FormState } from '@/lib/validation/result';
 
 import { cancelRdpRequestAction } from './actions';
 import { StatusPoller } from './status-poller';
@@ -48,7 +48,7 @@ export function PendingPanel({ requestId, reason, requestedMinutes, createdAt, e
   const left = percentLeft(remainingMs, totalMs);
   const timer = formatCountdown(remainingMs, { hours: false });
 
-  const [state, formAction] = useActionState<FormState, FormData>(cancelRdpRequestAction, null);
+  const [state, formAction] = useActionState(cancelRdpRequestAction, {});
   const [open, setOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -149,8 +149,8 @@ export function PendingPanel({ requestId, reason, requestedMinutes, createdAt, e
           </form>
         </div>
 
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionErrorMessage(state)} />
+        <FormNotice message={state.data?.notice} />
       </section>
     </>
   );

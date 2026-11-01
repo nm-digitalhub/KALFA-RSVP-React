@@ -61,9 +61,10 @@ export const signupSchema = z.object({
   // Sales-closing-agent conversion tracking (?ref= on /auth/signup — a
   // sales_call_attempts.id, not a credential). Optional and never
   // user-facing; a malformed value here just means no attribution, never a
-  // signup failure — existence is re-verified server-side (see actions.ts)
-  // before it is ever trusted.
-  ref: z.uuid().optional().or(z.literal('')),
+  // signup failure (zod's `.catch`: anything that is not an id reads as
+  // absent) — existence is re-verified server-side (see actions.ts) before it
+  // is ever trusted.
+  ref: z.uuid().optional().or(z.literal('')).catch(undefined),
   // A checkbox is absent from FormData entirely when unchecked (not "off"),
   // so an unset field is what makes this required — the client-side
   // `required` attribute is a UX nicety, this is the real gate.
@@ -424,23 +425,14 @@ export type CelebrantFieldLabels = {
   [T in EventType]: CelebrantLabelFieldsByKind[(typeof CELEBRANT_KIND_BY_EVENT_TYPE)[T]];
 };
 
-// Profile (account settings). Both fields are optional: an empty string clears
-// the value. `phone` is validated against the Israeli numbering plan
-// (ISRAELI_PHONE_RE) only when present. The owner id is derived server-side and
-// is intentionally NOT part of this schema.
+// Profile (account settings): the display name only; an empty string clears it. The phone is not part of it: a new
+// number is proved through Supabase Auth on the same settings page, which then writes profiles.phone itself. The owner
+// id is derived server-side and is intentionally NOT part of this schema.
 export const updateProfileSchema = z.object({
   full_name: z
     .string()
     .trim()
     .max(PROFILE_NAME_MAX, { error: 'השם ארוך מדי' })
-    .optional()
-    .or(z.literal('')),
-  phone: z
-    .string()
-    .trim()
-    .refine((v) => v === '' || ISRAELI_PHONE_RE.test(v), {
-      error: 'מספר טלפון לא תקין',
-    })
     .optional()
     .or(z.literal('')),
 });

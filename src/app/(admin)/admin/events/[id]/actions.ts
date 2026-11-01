@@ -2,14 +2,18 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect, unstable_rethrow } from 'next/navigation';
+import { z } from 'zod';
+import { zfd } from 'zod-form-data';
 
 import {
   markEventAsTest,
   purgeTestEvent,
   unmarkEventAsTest,
+  type MarkOutcome,
   type PurgeOutcome,
+  type UnmarkOutcome,
 } from '@/lib/data/admin/test-events';
-import type { FormState } from '@/lib/validation/result';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 
 // Thin entry points for the test-event section of the staff event page. Each
 // action is reachable by a direct POST, so the permission check lives in the
@@ -25,59 +29,55 @@ const PURGE_ERRORS: Record<Exclude<PurgeOutcome, 'purged'>, string> = {
   no_event: 'האירוע לא נמצא.',
 };
 
-function eventIdFrom(formData: FormData): string {
-  return (formData.get('eventId') ?? '').toString();
-}
+// The event id travels in a hidden field and reaches the data layer as sent (an
+// absent one as ''): the data layer checks the permission first, then the id.
+const eventIdForm = zfd.formData({ eventId: z.string().prefault('') });
 
-export async function markTestEventAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const eventId = eventIdFrom(formData);
-  try {
-    const outcome = await markEventAsTest(eventId);
-    if (outcome === 'not_staff') return { error: 'אין הרשאה לפעולה.' };
-    if (outcome === 'no_event') return { error: 'האירוע לא נמצא.' };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'סימון האירוע נכשל. נסו שוב.' };
-  }
-  revalidatePath(`/admin/events/${eventId}`);
-  return { notice: 'האירוע סומן כאירוע בדיקה.' };
-}
+export const markTestEventAction = actionClient
+  .inputSchema(eventIdForm)
+  .stateAction(async ({ parsedInput: { eventId } }) => {
+    let outcome: MarkOutcome;
+    try {
+      outcome = await markEventAsTest(eventId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('סימון האירוע נכשל. נסו שוב.');
+    }
+    if (outcome === 'not_staff') returnUserError('אין הרשאה לפעולה.');
+    if (outcome === 'no_event') returnUserError('האירוע לא נמצא.');
+    revalidatePath(`/admin/events/${eventId}`);
+    return { notice: 'האירוע סומן כאירוע בדיקה.' };
+  });
 
-export async function unmarkTestEventAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const eventId = eventIdFrom(formData);
-  try {
-    const outcome = await unmarkEventAsTest(eventId);
-    if (outcome === 'not_staff') return { error: 'אין הרשאה לפעולה.' };
-    if (outcome === 'no_event') return { error: 'האירוע לא נמצא.' };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'ביטול הסימון נכשל. נסו שוב.' };
-  }
-  revalidatePath(`/admin/events/${eventId}`);
-  return { notice: 'הסימון בוטל.' };
-}
+export const unmarkTestEventAction = actionClient
+  .inputSchema(eventIdForm)
+  .stateAction(async ({ parsedInput: { eventId } }) => {
+    let outcome: UnmarkOutcome;
+    try {
+      outcome = await unmarkEventAsTest(eventId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('ביטול הסימון נכשל. נסו שוב.');
+    }
+    if (outcome === 'not_staff') returnUserError('אין הרשאה לפעולה.');
+    if (outcome === 'no_event') returnUserError('האירוע לא נמצא.');
+    revalidatePath(`/admin/events/${eventId}`);
+    return { notice: 'הסימון בוטל.' };
+  });
 
-export async function purgeTestEventAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const eventId = eventIdFrom(formData);
-  let outcome: PurgeOutcome;
-  try {
-    outcome = await purgeTestEvent(eventId);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'מחיקת האירוע נכשלה. נסו שוב.' };
-  }
-  if (outcome !== 'purged') return { error: PURGE_ERRORS[outcome] };
+export const purgeTestEventAction = actionClient
+  .inputSchema(eventIdForm)
+  .stateAction(async ({ parsedInput: { eventId } }) => {
+    let outcome: PurgeOutcome;
+    try {
+      outcome = await purgeTestEvent(eventId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('מחיקת האירוע נכשלה. נסו שוב.');
+    }
+    if (outcome !== 'purged') returnUserError(PURGE_ERRORS[outcome]);
 
-  // The event no longer exists, so its page would 404 — go to the campaign board.
-  revalidatePath('/admin/campaigns');
-  redirect('/admin/campaigns');
-}
+    // The event no longer exists, so its page would 404 — go to the campaign board.
+    revalidatePath('/admin/campaigns');
+    redirect('/admin/campaigns');
+  });

@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from 'react';
 
 import { FormError, SubmitButton } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { AssignableOffer } from '@/lib/data/admin/coupon-assignments';
 import { createAssignmentAction } from '../actions';
 
@@ -21,7 +22,7 @@ export function AssignForm({
   offers: AssignableOffer[];
   idempotencyKey: string;
 }) {
-  const [state, formAction, pending] = useActionState(createAssignmentAction, null);
+  const [state, formAction, pending] = useActionState(createAssignmentAction, {});
   const [selectedId, setSelectedId] = useState('');
   const selected = offers.find((o) => o.id === selectedId) ?? null;
   const selectRef = useRef<HTMLSelectElement>(null);
@@ -39,7 +40,7 @@ export function AssignForm({
 
   return (
     <form action={formAction} className="flex max-w-xl flex-col gap-4">
-      <FormError message={state?.error} />
+      <FormError message={actionErrorMessage(state)} />
       <input type="hidden" name="email" value={email} />
       <input type="hidden" name="idempotency_key" value={idempotencyKey} />
       <input

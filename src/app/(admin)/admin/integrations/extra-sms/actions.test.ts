@@ -65,43 +65,54 @@ beforeEach(() => {
 describe('sendExtraTestSmsAction — the gate', () => {
   it('demands manage_settings BEFORE anything is read or sent', async () => {
     // requirePlatformPermission redirects rather than returning false, so a throw here
-    // is what an unauthorized caller actually experiences.
-    permMock.mockRejectedValue(new Error('NEXT_REDIRECT'));
-    await expect(sendExtraTestSmsAction(null, fd({ test_destination: '0500000000' }))).rejects.toThrow();
+    // is what an unauthorized caller actually experiences — a real redirect, digest and all.
+    permMock.mockRejectedValue(
+      Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/auth/login;307;' }),
+    );
+    await expect(sendExtraTestSmsAction({}, fd({ test_destination: '0500000000' }))).rejects.toThrow();
     expect(readMock).not.toHaveBeenCalled();
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('runs the gate before the destination is even looked at', async () => {
+    // An unauthorized caller is redirected, never told what is wrong with the number.
+    permMock.mockRejectedValue(
+      Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/auth/login;307;' }),
+    );
+    await expect(sendExtraTestSmsAction({}, fd({ test_destination: '' }))).rejects.toThrow('NEXT_REDIRECT');
+    expect(limitMock).not.toHaveBeenCalled();
   });
 
   it('rate-limits on the SESSION staff id, never on anything from the form', async () => {
     // A browser-supplied id would let one admin spend another's quota, and let anyone
     // reset their own by editing a hidden field.
-    await sendExtraTestSmsAction(null, fd({ test_destination: '0500000000', user_id: 'someone-else' }));
+    await sendExtraTestSmsAction({}, fd({ test_destination: '0500000000', user_id: 'someone-else' }));
     expect(limitMock).toHaveBeenCalledWith('extra-test-sms:staff-1', expect.anything());
   });
 
   it('refuses once the hourly quota is spent, without calling the provider', async () => {
     limitMock.mockReturnValue({ allowed: false, remaining: 0, resetAt: Date.now() + 30 * 60_000 });
-    const r = await sendExtraTestSmsAction(null, fd({ test_destination: '0500000000' }));
-    expect(r?.error).toContain('מגבלת');
+    const r = await sendExtraTestSmsAction({}, fd({ test_destination: '0500000000' }));
+    expect(r?.serverError).toContain('מגבלת');
     expect(sendMock).not.toHaveBeenCalled();
   });
 });
 
 describe('sendExtraTestSmsAction — the destination', () => {
   it('normalises to E.164 before the provider is paid to reject it', async () => {
-    await sendExtraTestSmsAction(null, fd({ test_destination: '050-000 0000' }));
+    await sendExtraTestSmsAction({}, fd({ test_destination: '050-000 0000' }));
     expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ to: '+972500000000' }));
   });
 
   it('rejects a non-number as a field error, with no request made', async () => {
-    const r = await sendExtraTestSmsAction(null, fd({ test_destination: 'לא מספר' }));
-    expect(r?.fieldErrors?.test_destination).toBeTruthy();
+    const r = await sendExtraTestSmsAction({}, fd({ test_destination: 'לא מספר' }));
+    expect(r?.validationErrors?.fieldErrors?.test_destination).toBeTruthy();
     expect(sendMock).not.toHaveBeenCalled();
   });
 
   it('requires a destination at all', async () => {
-    const r = await sendExtraTestSmsAction(null, fd({ test_destination: '  ' }));
-    expect(r?.fieldErrors?.test_destination).toBeTruthy();
+    const r = await sendExtraTestSmsAction({}, fd({ test_destination: '  ' }));
+    expect(r?.validationErrors?.fieldErrors?.test_destination).toBeTruthy();
     expect(limitMock).not.toHaveBeenCalled();
   });
 });
@@ -111,14 +122,14 @@ describe('sendExtraTestSmsAction — the switch', () => {
     // Testing credentials is exactly what someone does BEFORE switching the channel
     // on. getSmsSender() would refuse here, which is why this path does not use it.
     readMock.mockResolvedValue({ kind: 'ok', token: 't', sender: 's', enabled: false });
-    await sendExtraTestSmsAction(null, fd({ test_destination: '0500000000' }));
+    await sendExtraTestSmsAction({}, fd({ test_destination: '0500000000' }));
     expect(sendMock).toHaveBeenCalled();
   });
 
   it('refuses when there are no credentials to test', async () => {
     readMock.mockResolvedValue({ kind: 'unconfigured' });
-    const r = await sendExtraTestSmsAction(null, fd({ test_destination: '0500000000' }));
-    expect(r?.error).toContain('אינם מוגדרים');
+    const r = await sendExtraTestSmsAction({}, fd({ test_destination: '0500000000' }));
+    expect(r?.serverError).toContain('אינם מוגדרים');
     expect(sendMock).not.toHaveBeenCalled();
   });
 });
@@ -130,18 +141,18 @@ describe('sendExtraTestSmsAction — what the operator is told', () => {
     sendMock.mockRejectedValue(
       new SmsSendError('שליחת ההודעה נדחתה ([{"code":9404},{"code":1215}])'),
     );
-    const r = await sendExtraTestSmsAction(null, fd({ test_destination: '0500000000' }));
+    const r = await sendExtraTestSmsAction({}, fd({ test_destination: '0500000000' }));
     // 1215 is the sender's fault and lands on the sender field…
-    expect(r?.fieldErrors?.extra_sms_sender?.[0]).toContain('verified');
+    expect(r?.validationErrors?.fieldErrors?.extra_sms_sender?.[0]).toContain('verified');
     // …while the billing problem still reaches the form rather than vanishing.
-    expect(r?.error).toContain('כרטיס אשראי');
+    expect(r?.validationErrors?.formErrors[0]).toContain('כרטיס אשראי');
   });
 
   it('degrades to a generic message when the provider said nothing parseable', async () => {
     sendMock.mockRejectedValue(new SmsSendError('שליחת ההודעה נכשלה (HTTP 500)'));
-    const r = await sendExtraTestSmsAction(null, fd({ test_destination: '0500000000' }));
-    expect(r?.error).toBeTruthy();
-    expect(r?.fieldErrors).toBeUndefined();
+    const r = await sendExtraTestSmsAction({}, fd({ test_destination: '0500000000' }));
+    expect(r?.serverError).toBeTruthy();
+    expect(r?.validationErrors).toBeUndefined();
   });
 });
 
@@ -150,7 +161,7 @@ describe('sendExtraTestSmsAction — the audit trail', () => {
     // activity_log is an audit record, not a data store for personal data. The number
     // the admin typed belongs to a person.
     sendMock.mockRejectedValue(new SmsSendError('נדחתה ([{"code":1215}])'));
-    await sendExtraTestSmsAction(null, fd({ test_destination: '0501234567' }));
+    await sendExtraTestSmsAction({}, fd({ test_destination: '0501234567' }));
     const logged = JSON.stringify(logMock.mock.calls);
     expect(logged).toContain('admin.extra.test_sms');
     expect(logged).toContain('1215');
@@ -161,7 +172,7 @@ describe('sendExtraTestSmsAction — the audit trail', () => {
   });
 
   it('records a success the same way', async () => {
-    await sendExtraTestSmsAction(null, fd({ test_destination: '0501234567' }));
+    await sendExtraTestSmsAction({}, fd({ test_destination: '0501234567' }));
     const logged = JSON.stringify(logMock.mock.calls);
     expect(logged).toContain('"ok":true');
     // BOTH forms. Checking only the typed one lets the NORMALISED number through —
@@ -175,7 +186,7 @@ describe('sendExtraTestSmsAction — the audit trail', () => {
 describe('updateExtraSmsAction', () => {
   it('saves the five fields and revalidates both surfaces', async () => {
     const r = await updateExtraSmsAction(
-      null,
+      {},
       fd({
         sms_enabled: 'on',
         extra_sms_sender: '03-3301505',
@@ -191,13 +202,13 @@ describe('updateExtraSmsAction', () => {
       callback_intake_sms_enabled: true,
       callback_intake_sms_daily_cap: 50,
     });
-    expect(r?.notice).toBeTruthy();
+    expect(r?.data?.notice).toBeTruthy();
   });
 
   it('⚠️ an absent intake checkbox is OFF, and an absent cap is 0 — both fail closed', async () => {
     // A form that posts neither must never be read as "armed with yesterday's
     // ceiling": both defaults have to stop the sending, not permit it.
-    await updateExtraSmsAction(null, fd({ extra_sms_sender: 's', extra_sms_token: 't' }));
+    await updateExtraSmsAction({}, fd({ extra_sms_sender: 's', extra_sms_token: 't' }));
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         callback_intake_sms_enabled: false,
@@ -208,14 +219,14 @@ describe('updateExtraSmsAction', () => {
 
   it('⚠️ refuses a cap that is not a whole, in-range number', async () => {
     const r = await updateExtraSmsAction(
-      null,
+      {},
       fd({ extra_sms_sender: 's', extra_sms_token: 't', callback_intake_sms_daily_cap: '-5' }),
     );
-    expect(r?.fieldErrors?.callback_intake_sms_daily_cap).toBeTruthy();
+    expect(r?.validationErrors?.fieldErrors?.callback_intake_sms_daily_cap).toBeTruthy();
   });
 
   it('reads an absent checkbox as off, which is what a form actually sends', async () => {
-    await updateExtraSmsAction(null, fd({ extra_sms_sender: 's', extra_sms_token: 't' }));
+    await updateExtraSmsAction({}, fd({ extra_sms_sender: 's', extra_sms_token: 't' }));
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ sms_enabled: false }));
   });
 });

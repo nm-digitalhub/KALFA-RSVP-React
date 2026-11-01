@@ -4,7 +4,9 @@ import type { ReactNode } from 'react';
 import { useActionState, useState } from 'react';
 
 import { FormError, SubmitButton } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionErrorMessage } from '@/lib/action-result';
+
+import type { setupCampaignAction } from './campaign/campaign-actions';
 
 // The confirm step of the setup flow: the owner acknowledges, explicitly, what
 // they are about to lock in before the event details are confirmed. Each item is
@@ -19,18 +21,20 @@ import type { FormState } from '@/lib/validation/result';
 // action redirects.
 export type SetupConfirmItem = { name: string; label: ReactNode };
 
+type SetupConfirmResult = Awaited<ReturnType<typeof setupCampaignAction>>;
+
 export function SetupConfirmForm({
   action,
   items,
   warning,
   submitLabel,
 }: {
-  action: (prev: FormState, formData: FormData) => Promise<FormState>;
+  action: (prev: SetupConfirmResult, formData: FormData) => Promise<SetupConfirmResult>;
   items: readonly SetupConfirmItem[];
   warning: string;
   submitLabel: string;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const allChecked = items.every((item) => checked.has(item.name));
 
@@ -61,7 +65,7 @@ export function SetupConfirmForm({
       <p className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
         {warning}
       </p>
-      <FormError message={state?.error} />
+      <FormError message={actionErrorMessage(state)} />
       <SubmitButton disabled={!allChecked}>{submitLabel}</SubmitButton>
     </form>
   );

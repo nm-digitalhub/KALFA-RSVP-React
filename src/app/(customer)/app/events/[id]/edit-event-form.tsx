@@ -15,6 +15,7 @@ import type { EventDetail } from '@/lib/data/events';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import { INVITE_IMAGE_MAX_BYTES } from '@/lib/constants';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { PlacesAutocomplete } from '@/components/places-autocomplete';
 import { TimeSelect24 } from '@/components/time-select-24';
 import { DateSelectIL } from '@/components/date-select-il';
@@ -85,7 +86,10 @@ export function EditEventForm({
 }) {
   const isSetup = mode === 'setup';
   const action = (isSetup ? setupSaveEventAction : updateEventAction).bind(null, event.id);
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
+  const fieldErrors = state.validationErrors?.fieldErrors;
+  // The form-level message: the server's, or the setup flow's "saved, but …" sentence.
+  const formError = actionFormError(state);
 
   // R5: the date fields are editable until the first send (or until the event is
   // closed) — not merely while draft. Status itself is not editable here (R6):
@@ -148,8 +152,8 @@ export function EditEventForm({
       {/* In the setup flow the message sits by the button instead (below): the form
           is long, and a message at the top is off-screen when the button at the
           bottom is pressed. */}
-      {isSetup ? null : <FormError message={state?.error} />}
-      <FormNotice message={state?.notice} />
+      {isSetup ? null : <FormError message={formError} />}
+      <FormNotice message={state.data?.notice} />
 
       <div>
         <label htmlFor="name" className="mb-1 block text-sm font-medium">
@@ -163,7 +167,7 @@ export function EditEventForm({
           defaultValue={event.name}
           className={inputClass}
         />
-        <FieldError errors={state?.fieldErrors?.name} />
+        <FieldError errors={fieldErrors?.name} />
       </div>
 
       <div>
@@ -194,11 +198,11 @@ export function EditEventForm({
           <>
             <input type="hidden" name="event_type" value={event.event_type} />
             <p className="mt-1 text-xs text-muted-foreground">
-              נעול כל עוד קיים קמפיין אישורי הגעה בתהליך
+              נעול כל עוד שירות אישורי ההגעה בתהליך
             </p>
           </>
         ) : null}
-        <FieldError errors={state?.fieldErrors?.event_type} />
+        <FieldError errors={fieldErrors?.event_type} />
       </div>
 
       {/* key={eventType}: remount the uncontrolled group on type change, so
@@ -207,7 +211,7 @@ export function EditEventForm({
         key={eventType}
         eventType={eventType}
         defaults={celebrantDefaults(event.celebrants)}
-        errors={state?.fieldErrors}
+        errors={fieldErrors}
         requiredKeys={
           hasOperationalCampaign
             ? CELEBRANT_REQUIRED_FIELD_KEYS_BY_KIND[
@@ -233,7 +237,7 @@ export function EditEventForm({
         ) : editableUntilNote ? (
           <p className="mt-1 text-xs text-muted-foreground">{editableUntilNote}</p>
         ) : null}
-        <FieldError errors={state?.fieldErrors?.event_date} />
+        <FieldError errors={fieldErrors?.event_date} />
       </div>
 
       <div>
@@ -251,7 +255,7 @@ export function EditEventForm({
         <p className="mt-1 text-xs text-muted-foreground">
           {datesEditable ? 'תופיע בהזמנות ובתזכורות (שעון ישראל)' : lockedNote}
         </p>
-        <FieldError errors={state?.fieldErrors?.event_time} />
+        <FieldError errors={fieldErrors?.event_time} />
       </div>
 
       <div>
@@ -268,7 +272,7 @@ export function EditEventForm({
         {!datesEditable ? (
           <p className="mt-1 text-xs text-muted-foreground">{lockedNote}</p>
         ) : null}
-        <FieldError errors={state?.fieldErrors?.rsvp_deadline} />
+        <FieldError errors={fieldErrors?.rsvp_deadline} />
       </div>
 
       <div>
@@ -290,10 +294,10 @@ export function EditEventForm({
         />
         {hasOperationalCampaign ? (
           <p className="mt-1 text-xs text-muted-foreground">
-            המיקום מופיע בהזמנות ובתזכורות ולכן אינו יכול להישאר ריק כל עוד קיים קמפיין אישורי הגעה בתהליך.
+            המיקום מופיע בהזמנות ובתזכורות ולכן אינו יכול להישאר ריק כל עוד שירות אישורי ההגעה בתהליך.
           </p>
         ) : null}
-        <FieldError errors={state?.fieldErrors?.venue_name} />
+        <FieldError errors={fieldErrors?.venue_name} />
       </div>
 
       <div>
@@ -309,7 +313,7 @@ export function EditEventForm({
           onChange={(e) => setVenueAddress(e.target.value)}
           className={inputClass}
         />
-        <FieldError errors={state?.fieldErrors?.venue_address} />
+        <FieldError errors={fieldErrors?.venue_address} />
       </div>
 
       <div>
@@ -328,7 +332,7 @@ export function EditEventForm({
         <p className="mt-1 text-xs text-muted-foreground">
           יופיע בתזכורת המתנה בוואטסאפ — האורחים יועברו אליו בלחיצה.
         </p>
-        <FieldError errors={state?.fieldErrors?.gift_payment_url} />
+        <FieldError errors={fieldErrors?.gift_payment_url} />
       </div>
 
       <div>
@@ -394,7 +398,7 @@ export function EditEventForm({
         </p>
       </div>
 
-      {isSetup ? <FormError message={state?.error} /> : null}
+      {isSetup ? <FormError message={formError} /> : null}
       <SubmitButton>{isSetup ? 'שמירה והמשך' : 'שמירת שינויים'}</SubmitButton>
     </form>
   );

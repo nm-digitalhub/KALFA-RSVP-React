@@ -5,17 +5,23 @@ import { useActionState } from 'react';
 import { Constants } from '@/lib/supabase/types';
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
 import { PhoneInput } from '@/components/ui/phone-input';
-import type { FormState } from '@/lib/validation/result';
+import { actionFormError } from '@/lib/action-result';
 import type { GuestDetail, GuestGroup } from '@/lib/data/guests';
 import { GUEST_STATUS_LABELS, CONTACT_STATUS_LABELS } from './labels';
+import type { createGuestAction, updateGuestAction } from './guests-actions';
 
 const inputClass =
   'w-full rounded-md border border-border bg-transparent px-3 py-2';
 
+// Create and update read the same fields and both land on the list on success, so their results have one shape.
+type GuestFormResult =
+  | Awaited<ReturnType<typeof createGuestAction>>
+  | Awaited<ReturnType<typeof updateGuestAction>>;
+
 type GuestAction = (
-  prevState: FormState,
+  prevState: GuestFormResult,
   formData: FormData,
-) => Promise<FormState>;
+) => Promise<GuestFormResult>;
 
 // Shared create/edit form. `initial` is undefined when creating. The bound
 // server action (create or update) is passed in by the page so this component
@@ -31,11 +37,13 @@ export function GuestForm({
   initial?: GuestDetail;
   submitLabel: string;
 }) {
-  const [state, formAction] = useActionState<FormState, FormData>(action, null);
+  const [state, formAction] = useActionState(action, {});
+  // Each field shows its own message below it; the top line is the server's or a form-level one only.
+  const fieldErrors = state.validationErrors?.fieldErrors;
 
   return (
     <form action={formAction} className="space-y-4">
-      <FormError message={state?.error} />
+      <FormError message={actionFormError(state)} />
 
       <div>
         <label htmlFor="full_name" className="mb-1 block text-sm font-medium">
@@ -49,7 +57,7 @@ export function GuestForm({
           defaultValue={initial?.full_name ?? ''}
           className={inputClass}
         />
-        <FieldError errors={state?.fieldErrors?.full_name} />
+        <FieldError errors={fieldErrors?.full_name} />
       </div>
 
       <div>
@@ -61,7 +69,7 @@ export function GuestForm({
           name="phone"
           defaultValue={initial?.phone ?? ''}
         />
-        <FieldError errors={state?.fieldErrors?.phone} />
+        <FieldError errors={fieldErrors?.phone} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -81,7 +89,7 @@ export function GuestForm({
               </option>
             ))}
           </select>
-          <FieldError errors={state?.fieldErrors?.status} />
+          <FieldError errors={fieldErrors?.status} />
         </div>
 
         <div>
@@ -103,7 +111,7 @@ export function GuestForm({
               </option>
             ))}
           </select>
-          <FieldError errors={state?.fieldErrors?.contact_status} />
+          <FieldError errors={fieldErrors?.contact_status} />
         </div>
       </div>
 
@@ -125,7 +133,7 @@ export function GuestForm({
               </option>
             ))}
           </select>
-          <FieldError errors={state?.fieldErrors?.group_id} />
+          <FieldError errors={fieldErrors?.group_id} />
         </div>
 
         <div>
@@ -145,7 +153,7 @@ export function GuestForm({
             defaultValue={initial?.expected_count ?? ''}
             className={inputClass}
           />
-          <FieldError errors={state?.fieldErrors?.expected_count} />
+          <FieldError errors={fieldErrors?.expected_count} />
         </div>
       </div>
 
@@ -160,7 +168,7 @@ export function GuestForm({
           defaultValue={initial?.note ?? ''}
           className={inputClass}
         />
-        <FieldError errors={state?.fieldErrors?.note} />
+        <FieldError errors={fieldErrors?.note} />
       </div>
 
       <SubmitButton>{submitLabel}</SubmitButton>

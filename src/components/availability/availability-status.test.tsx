@@ -19,9 +19,10 @@ beforeEach(() => {
   vi.useFakeTimers();
   refreshAvailabilityAction.mockReset();
   refreshAvailabilityAction.mockResolvedValue({
-    ok: true,
-    blocks: [],
-    presence: { showAs: 'free', untilIso: null, ownedByApp: false },
+    data: {
+      blocks: [],
+      presence: { showAs: 'free', untilIso: null, ownedByApp: false },
+    },
   });
 });
 

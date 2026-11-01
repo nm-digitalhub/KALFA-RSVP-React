@@ -10,7 +10,10 @@ import {
   ROLE_LABELS,
   type NumberRole,
 } from '@/lib/validation/provider-numbers';
-import type { FormState } from '@/lib/validation/result';
+import { actionErrorMessage } from '@/lib/action-result';
+import type { assignRoleAction } from './actions';
+
+type AssignRoleResult = Awaited<ReturnType<typeof assignRoleAction>>;
 
 // ONE ROW PER ROLE, not per number — and the shape follows the database rather than
 // the other way round. provider_number_roles' PRIMARY KEY is `role` alone, so a role
@@ -39,11 +42,11 @@ function RoleRow({
   role: NumberRole;
   numbers: ProviderNumber[];
   currentId: string | null;
-  onAssign: (formData: FormData) => Promise<FormState>;
+  onAssign: (formData: FormData) => Promise<AssignRoleResult>;
 }) {
-  const [state, formAction, pending] = useActionState<FormState, FormData>(
+  const [state, formAction, pending] = useActionState<AssignRoleResult, FormData>(
     async (_prev, formData) => onAssign(formData),
-    null,
+    {},
   );
 
   return (
@@ -77,8 +80,8 @@ function RoleRow({
           </span>
         ) : null}
       </form>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
     </div>
   );
 }
@@ -88,7 +91,7 @@ export function RolesPanel({
   onAssign,
 }: {
   numbers: ProviderNumber[];
-  onAssign: (formData: FormData) => Promise<FormState>;
+  onAssign: (formData: FormData) => Promise<AssignRoleResult>;
 }) {
   // Built from the ROLE list, not from the assignments, so a role nobody holds still
   // gets a row. Deriving the rows from provider_number_roles would hide exactly the

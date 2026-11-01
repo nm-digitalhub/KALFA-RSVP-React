@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./actions', () => ({
-  rescheduleCallbackAction: vi.fn(async () => ({ notice: 'השיחה תוזמנה מחדש' })),
+  rescheduleCallbackAction: vi.fn(async () => ({ data: { notice: 'השיחה תוזמנה מחדש' } })),
 }));
 
 import { rescheduleCallbackAction } from './actions';

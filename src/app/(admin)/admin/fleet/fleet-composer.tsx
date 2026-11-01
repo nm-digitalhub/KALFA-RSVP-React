@@ -19,11 +19,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { compactSelectClass, FieldError, FormError, FormNotice } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { deriveSubject, TITLE_MAX } from '@/lib/fleet/conversation';
 import type { Reachability } from '@/lib/fleet/reachability';
-import type { FormState } from '@/lib/validation/result';
 import { cn } from '@/lib/utils';
-import { answerFleetRequestAction, createFleetRequestAction, type FleetComposeState } from './actions';
+import { answerFleetRequestAction, createFleetRequestAction } from './actions';
 import { NewGoalSheet } from './fleet-goals';
 
 // The one composer of a conversation (plan D5). ONE form whose action switches
@@ -39,6 +39,9 @@ import { NewGoalSheet } from './fleet-goals';
 // No optimistic append: the button shows pending, then the revalidated page
 // brings the real bubble (a deduplicated send lands on the existing one via
 // ?focus=).
+
+type NewResult = Awaited<ReturnType<typeof createFleetRequestAction>>;
+type ReplyResult = Awaited<ReturnType<typeof answerFleetRequestAction>>;
 
 export type ComposerMode =
   | { type: 'new' }
@@ -57,9 +60,9 @@ type ComposerContextValue = {
   subjectOverride: string | null;
   setSubjectOverride: (value: string | null) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
-  newState: FleetComposeState;
+  newState: NewResult;
   newAction: (formData: FormData) => void;
-  replyState: FormState;
+  replyState: ReplyResult;
   replyAction: (formData: FormData) => void;
   /** The last settled submission's message, whichever action it came from —
    * a successful reply switches the mode back to "new", and its notice must
@@ -89,19 +92,22 @@ export function ComposerProvider({ role, children }: { role: string; children?: 
   const [feedback, setFeedback] = useState<ComposerContextValue['feedback']>(null);
 
   const [newState, newAction, newPending] = useActionState(
-    async (prev: FleetComposeState, formData: FormData): Promise<FleetComposeState> => {
+    async (prev: NewResult, formData: FormData): Promise<NewResult> => {
       const result = await createFleetRequestAction(prev, formData);
-      setFeedback(result?.error || result?.notice ? { error: result.error, notice: result.notice } : null);
+      const sent = result.data;
+      // A field error is shown under its field, not here.
+      const error = actionFormError(result);
+      setFeedback(error || sent?.notice ? { error, notice: sent?.notice } : null);
       // The draft clears only when the ACTIVE action reports success.
-      if (result?.notice) {
+      if (sent?.notice) {
         setDraft('');
         setSubjectOverride(null);
         setMode({ type: 'new' });
-        const target = result.role ?? role;
-        if (result.deduplicated && result.requestId) {
+        const target = sent.role;
+        if (sent.deduplicated && sent.requestId) {
           // Today's identical message already exists: land on it and ring it
           // instead of pretending a second one was sent (plan D5).
-          router.replace(`/admin/fleet?role=${encodeURIComponent(target)}&focus=${result.requestId}`, {
+          router.replace(`/admin/fleet?role=${encodeURIComponent(target)}&focus=${sent.requestId}`, {
             scroll: false,
           });
         } else {
@@ -117,20 +123,22 @@ export function ComposerProvider({ role, children }: { role: string; children?: 
       }
       return result;
     },
-    null,
+    {},
   );
   const [replyState, replyAction, replyPending] = useActionState(
-    async (prev: FormState, formData: FormData): Promise<FormState> => {
+    async (prev: ReplyResult, formData: FormData): Promise<ReplyResult> => {
       const result = await answerFleetRequestAction(prev, formData);
-      setFeedback(result?.error || result?.notice ? { error: result.error, notice: result.notice } : null);
-      if (result?.notice) {
+      const notice = result.data?.notice;
+      const error = actionFormError(result);
+      setFeedback(error || notice ? { error, notice } : null);
+      if (notice) {
         setDraft('');
         setMode({ type: 'new' });
         focusSoon(textareaRef);
       }
       return result;
     },
-    null,
+    {},
   );
   const busy = newPending || replyPending;
 
@@ -277,7 +285,9 @@ export function FleetComposer({
   // cannot send. Answering an agent's still-open request is always allowed.
   const blocked = !isReply && reach.tone === 'blocked';
   const subject = subjectOverride ?? deriveSubject(draft);
-  const bodyErrors = isReply ? replyState?.fieldErrors?.answer : newState?.fieldErrors?.body;
+  const bodyErrors = isReply
+    ? replyState.validationErrors?.fieldErrors?.answer
+    : newState.validationErrors?.fieldErrors?.body;
   const titleId = `${uid}-replying-to`;
   const errorId = `${uid}-body-error`;
 
@@ -379,8 +389,8 @@ export function FleetComposer({
           className="max-h-[calc(6lh+1rem)] resize-none"
         />
         <FieldError id={errorId} errors={bodyErrors} />
-        {mode.type === 'new' ? <FieldError errors={newState?.fieldErrors?.title} /> : null}
-        {mode.type === 'new' ? <FieldError errors={newState?.fieldErrors?.role} /> : null}
+        {mode.type === 'new' ? <FieldError errors={newState.validationErrors?.fieldErrors?.title} /> : null}
+        {mode.type === 'new' ? <FieldError errors={newState.validationErrors?.fieldErrors?.role} /> : null}
       </div>
 
       {showOptions && mode.type === 'new' ? (

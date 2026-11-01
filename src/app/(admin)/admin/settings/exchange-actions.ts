@@ -1,8 +1,8 @@
 'use server';
 
-import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
+import { zfd } from 'zod-form-data';
 
 import {
   createExchangeConnection,
@@ -12,157 +12,109 @@ import {
   revokeExchangeConnection,
   testMyExchangeConnection,
 } from '@/lib/data/exchange-connections';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import {
   createExchangeConnectionSchema,
   exchangeConnectionIdSchema,
   exchangeTestAppointmentIdSchema,
 } from '@/lib/validation/schemas';
-import type { FormState } from '@/lib/validation/result';
 
-export async function createExchangeConnectionAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = createExchangeConnectionSchema.safeParse({
-    mailboxEmail: formData.get('mailboxEmail'),
-    // The password is read once, right here, to build the encrypted row —
-    // and is never echoed back in any returned state (plan §5.5).
-    password: formData.get('password'),
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
+// The form on /admin/settings has no password field (needsPassword={false}: Graph signs in with a certificate, and
+// createExchangeConnection ignores a password). A field the form does not send reaches the schema as undefined (zfd),
+// which its optional `password` accepts. A password, when a form does send one, is never echoed back in any result.
+const createConnectionForm = zfd.formData(createExchangeConnectionSchema);
 
-  try {
-    const result = await createExchangeConnection(parsed.data);
-    if (!result.ok) {
-      return { error: result.error };
+export const createExchangeConnectionAction = actionClient
+  .inputSchema(createConnectionForm)
+  .stateAction(async ({ parsedInput }) => {
+    let result: Awaited<ReturnType<typeof createExchangeConnection>>;
+    try {
+      result = await createExchangeConnection(parsedInput);
+      if (result.ok) revalidatePath('/admin/settings');
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('יצירת חיבור ה-Exchange נכשלה. נסו שוב.');
     }
-    revalidatePath('/admin/settings');
+    if (!result.ok) returnUserError(result.error);
     return { notice: 'החיבור נוצר. לחצו על "בדיקת חיבור" כדי לאמת אותו.' };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'יצירת חיבור ה-Exchange נכשלה. נסו שוב.' };
-  }
-}
-
-export async function testExchangeConnectionAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = exchangeConnectionIdSchema.safeParse({
-    connectionId: formData.get('connectionId'),
   });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
 
-  try {
-    const result = await testMyExchangeConnection(parsed.data.connectionId);
-    revalidatePath('/admin/settings');
-    return result.ok ? { notice: result.message } : { error: result.message };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'בדיקת החיבור נכשלה. נסו שוב.' };
-  }
-}
-
-export async function listExchangeCalendarsAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = exchangeConnectionIdSchema.safeParse({
-    connectionId: formData.get('connectionId'),
+export const testExchangeConnectionAction = actionClient
+  .inputSchema(zfd.formData(exchangeConnectionIdSchema))
+  .stateAction(async ({ parsedInput: { connectionId } }) => {
+    let result: Awaited<ReturnType<typeof testMyExchangeConnection>>;
+    try {
+      result = await testMyExchangeConnection(connectionId);
+      revalidatePath('/admin/settings');
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('בדיקת החיבור נכשלה. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.message);
+    return { notice: result.message };
   });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
 
-  try {
-    const result = await listMyExchangeCalendars(parsed.data.connectionId);
-    return result.ok ? { notice: result.message } : { error: result.message };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'טעינת רשימת היומנים נכשלה. נסו שוב.' };
-  }
-}
-
-export async function revokeExchangeConnectionAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = exchangeConnectionIdSchema.safeParse({
-    connectionId: formData.get('connectionId'),
+export const listExchangeCalendarsAction = actionClient
+  .inputSchema(zfd.formData(exchangeConnectionIdSchema))
+  .stateAction(async ({ parsedInput: { connectionId } }) => {
+    let result: Awaited<ReturnType<typeof listMyExchangeCalendars>>;
+    try {
+      result = await listMyExchangeCalendars(connectionId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('טעינת רשימת היומנים נכשלה. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.message);
+    return { notice: result.message };
   });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
 
-  try {
-    await revokeExchangeConnection(parsed.data.connectionId);
-    revalidatePath('/admin/settings');
+export const revokeExchangeConnectionAction = actionClient
+  .inputSchema(zfd.formData(exchangeConnectionIdSchema))
+  .stateAction(async ({ parsedInput: { connectionId } }) => {
+    try {
+      await revokeExchangeConnection(connectionId);
+      revalidatePath('/admin/settings');
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('ניתוק החיבור נכשל. נסו שוב.');
+    }
     return { notice: 'החיבור נותק.' };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'ניתוק החיבור נכשל. נסו שוב.' };
-  }
-}
-
-// A dedicated (non-FormState) result shape: the create step must hand the new
-// appointmentId to the client so the matching "מחק פגישת בדיקה" button can
-// submit it — the id is never persisted server-side (Stage 1 has no column
-// for it; the appointment is meant to be looked at once in OWA and removed,
-// not tracked long-term). FormNotice/FormError still work unchanged since
-// they only need a `message` string, not this exact type.
-export type TestAppointmentState =
-  | { notice?: string; error?: string; appointmentId?: string }
-  | null;
-
-export async function createExchangeTestAppointmentAction(
-  _prev: TestAppointmentState,
-  formData: FormData,
-): Promise<TestAppointmentState> {
-  const parsed = exchangeConnectionIdSchema.safeParse({
-    connectionId: formData.get('connectionId'),
   });
-  if (!parsed.success) {
-    return { error: 'מזהה חיבור לא תקין' };
-  }
 
-  try {
-    const result = await createMyExchangeTestAppointment(parsed.data.connectionId);
-    if (!result.ok) return { error: result.message };
+// The create step hands the new appointmentId to the client (in its `data`) so
+// the matching "מחק פגישת בדיקה" button can submit it — the id is never
+// persisted server-side (Stage 1 has no column for it; the appointment is
+// meant to be looked at once in OWA and removed, not tracked long-term).
+export const createExchangeTestAppointmentAction = actionClient
+  .inputSchema(zfd.formData(exchangeConnectionIdSchema))
+  .stateAction(async ({ parsedInput: { connectionId } }) => {
+    let result: Awaited<ReturnType<typeof createMyExchangeTestAppointment>>;
+    try {
+      result = await createMyExchangeTestAppointment(connectionId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('יצירת פגישת הבדיקה נכשלה. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.message);
     return {
       notice: 'פגישת הבדיקה נוצרה. בדקו שהיא מופיעה ב-OWA, ואז מחקו אותה.',
       appointmentId: result.appointmentId,
     };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'יצירת פגישת הבדיקה נכשלה. נסו שוב.' };
-  }
-}
-
-export async function deleteExchangeTestAppointmentAction(
-  _prev: TestAppointmentState,
-  formData: FormData,
-): Promise<TestAppointmentState> {
-  const parsed = exchangeTestAppointmentIdSchema.safeParse({
-    connectionId: formData.get('connectionId'),
-    appointmentId: formData.get('appointmentId'),
   });
-  if (!parsed.success) {
-    return { error: 'מזהה חיבור או פגישה לא תקין' };
-  }
 
-  try {
-    const result = await deleteMyExchangeTestAppointment(
-      parsed.data.connectionId,
-      parsed.data.appointmentId,
-    );
-    if (!result.ok) return { error: result.message };
+export const deleteExchangeTestAppointmentAction = actionClient
+  .inputSchema(zfd.formData(exchangeTestAppointmentIdSchema), {
+    // One line for a bad connection id or a bad appointment id alike.
+    handleValidationErrorsShape: async () => ({ formErrors: ['מזהה חיבור או פגישה לא תקין'], fieldErrors: {} }),
+  })
+  .stateAction(async ({ parsedInput: { connectionId, appointmentId } }) => {
+    let result: Awaited<ReturnType<typeof deleteMyExchangeTestAppointment>>;
+    try {
+      result = await deleteMyExchangeTestAppointment(connectionId, appointmentId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('מחיקת פגישת הבדיקה נכשלה. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.message);
     return { notice: 'פגישת הבדיקה נמחקה. ודאו שהיא נעלמה מ-OWA.' };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'מחיקת פגישת הבדיקה נכשלה. נסו שוב.' };
-  }
-}
+  });

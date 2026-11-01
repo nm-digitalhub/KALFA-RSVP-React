@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { isCancellableCallbackStatus } from '@/lib/validation/admin';
 import { cancelCallbackAction } from './actions';
 
@@ -22,7 +23,7 @@ export function CancelCallbackForm({
 }) {
   const [state, formAction, pending] = useActionState(
     cancelCallbackAction,
-    null,
+    {},
   );
 
   if (!isCancellableCallbackStatus(currentStatus)) return null;
@@ -37,8 +38,8 @@ export function CancelCallbackForm({
       >
         {pending ? 'מבטל…' : 'בטל בקשה'}
       </button>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }

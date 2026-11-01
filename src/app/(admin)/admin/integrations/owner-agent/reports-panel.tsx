@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import { LocalDateTime } from '@/components/local-date-time';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -187,7 +188,7 @@ function ReportsSwitch({
   agentEnabled: boolean;
   hasTemplate: boolean;
 }) {
-  const [state, action] = useActionState(setOwnerAgentReportsEnabledAction, null);
+  const [state, action] = useActionState(setOwnerAgentReportsEnabledAction, {});
 
   return (
     <form
@@ -208,8 +209,8 @@ function ReportsSwitch({
             אין תבנית מוגדרת: דוח יישלח רק למי שכתב לסוכן ב-24 השעות האחרונות.
           </p>
         ) : null}
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionErrorMessage(state)} />
+        <FormNotice message={state.data?.notice} />
       </div>
       <div className="flex shrink-0 items-center justify-end gap-3">
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
@@ -248,7 +249,7 @@ function TemplateForm({
   templateName: string | null;
   templateLang: string | null;
 }) {
-  const [state, action] = useActionState(saveAction, null);
+  const [state, action] = useActionState(saveAction, {});
   const nameId = `${idPrefix}-name`;
   const langId = `${idPrefix}-lang`;
   const hintId = `${idPrefix}-kind-hint`;
@@ -273,10 +274,10 @@ function TemplateForm({
             defaultValue={templateName ?? ''}
             placeholder={placeholder}
             aria-describedby={`report-template-hint ${hintId}`}
-            aria-invalid={state?.fieldErrors?.templateName ? true : undefined}
+            aria-invalid={state.validationErrors?.fieldErrors?.templateName ? true : undefined}
             className={`${inputClass} font-mono`}
           />
-          <FieldError errors={state?.fieldErrors?.templateName} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.templateName} />
         </div>
         <div>
           <label htmlFor={langId} className="mb-1 block text-sm font-medium">
@@ -288,15 +289,15 @@ function TemplateForm({
             dir="ltr"
             defaultValue={templateLang ?? ''}
             placeholder="he"
-            aria-invalid={state?.fieldErrors?.templateLang ? true : undefined}
+            aria-invalid={state.validationErrors?.fieldErrors?.templateLang ? true : undefined}
             className={`${inputClass} font-mono`}
           />
-          <FieldError errors={state?.fieldErrors?.templateLang} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.templateLang} />
         </div>
         <SubmitButton className="w-auto">שמירה</SubmitButton>
       </div>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }
@@ -309,7 +310,7 @@ const slotRow = (time: string, instructions: string | null = null) => ({
 });
 
 function ScheduleForm({ entry, schedule }: { entry: OwnerAgentAllowlistEntry; schedule: OwnerAgentReportSchedule }) {
-  const [state, action] = useActionState(setOwnerAgentReportScheduleAction, null);
+  const [state, action] = useActionState(setOwnerAgentReportScheduleAction, {});
   // Any whole-minute time. A row that never had a schedule is offered the owner's own
   // request (08:00, 00:00); nothing is saved until "שמירה".
   const [slots, setSlots] = useState(() =>
@@ -408,23 +409,17 @@ function ScheduleForm({ entry, schedule }: { entry: OwnerAgentAllowlistEntry; sc
         >
           הוספת שעה
         </Button>
-        <FieldError errors={state?.fieldErrors?.slots ?? firstSlotError(state?.fieldErrors)} />
+        {/* Every refusal under `slots` (the list, or one time or text in it) is one flattened field. */}
+        <FieldError errors={state.validationErrors?.fieldErrors?.slots} />
       </fieldset>
 
       <div className="flex items-center justify-end">
         <SubmitButton className="w-auto">שמירה</SubmitButton>
       </div>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
-}
-
-// A bad single time or text comes back keyed "slots.<i>.time" / "slots.<i>.instructions".
-function firstSlotError(fieldErrors: Record<string, string[] | undefined> | undefined): string[] | undefined {
-  if (!fieldErrors) return undefined;
-  const key = Object.keys(fieldErrors).find((k) => k.startsWith('slots.'));
-  return key ? fieldErrors[key] : undefined;
 }
 
 function RunsTable({

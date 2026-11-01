@@ -42,14 +42,19 @@ beforeEach(() => {
   ownerMock.mockResolvedValue({ id: 'owner' });
 });
 
+// What redirect('/access-denied') throws: the action client tells a redirect from a failure by this digest.
+const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
+  digest: 'NEXT_REDIRECT;replace;/access-denied;307;',
+});
+
 describe('owner gate', () => {
   it('every action checks the owner itself, and a refusal reaches no DAL', async () => {
-    ownerMock.mockRejectedValue(new Error('NEXT_REDIRECT'));
-    await expect(setOwnerAgentReportsEnabledAction(null, form([['owner_agent_reports_enabled', 'on']]))).rejects.toThrow('NEXT_REDIRECT');
-    await expect(setOwnerAgentReportTemplateAction(null, form([['templateName', 'x_v1']]))).rejects.toThrow('NEXT_REDIRECT');
-    await expect(setOwnerAgentCustomReportTemplateAction(null, form([['templateName', 'x_v1']]))).rejects.toThrow('NEXT_REDIRECT');
+    ownerMock.mockRejectedValue(NEXT_REDIRECT);
+    await expect(setOwnerAgentReportsEnabledAction({}, form([['owner_agent_reports_enabled', 'on']]))).rejects.toThrow('NEXT_REDIRECT');
+    await expect(setOwnerAgentReportTemplateAction({}, form([['templateName', 'x_v1']]))).rejects.toThrow('NEXT_REDIRECT');
+    await expect(setOwnerAgentCustomReportTemplateAction({}, form([['templateName', 'x_v1']]))).rejects.toThrow('NEXT_REDIRECT');
     await expect(
-      setOwnerAgentReportScheduleAction(null, form([['entryId', ENTRY_ID], ['optIn', 'on'], ['slots', '08:00']])),
+      setOwnerAgentReportScheduleAction({}, form([['entryId', ENTRY_ID], ['optIn', 'on'], ['slots', '08:00']])),
     ).rejects.toThrow('NEXT_REDIRECT');
     expect(enabledMock).not.toHaveBeenCalled();
     expect(templateMock).not.toHaveBeenCalled();
@@ -60,57 +65,57 @@ describe('owner gate', () => {
 
 describe('setOwnerAgentReportsEnabledAction', () => {
   it('a ticked box turns reports on; an unticked one off', async () => {
-    expect(await setOwnerAgentReportsEnabledAction(null, form([['owner_agent_reports_enabled', 'on']]))).toEqual({ notice: 'הדוחות הופעלו' });
+    expect(await setOwnerAgentReportsEnabledAction({}, form([['owner_agent_reports_enabled', 'on']]))).toEqual({ data: { notice: 'הדוחות הופעלו' } });
     expect(enabledMock).toHaveBeenLastCalledWith(true);
-    await setOwnerAgentReportsEnabledAction(null, form([]));
+    await setOwnerAgentReportsEnabledAction({}, form([]));
     expect(enabledMock).toHaveBeenLastCalledWith(false);
     expect(revalidateMock).toHaveBeenCalledWith('/admin/integrations/owner-agent');
   });
 
   it('only the DAL’s own messages reach the screen', async () => {
     enabledMock.mockRejectedValueOnce(new Error(OWNER_AGENT_REPORT_ERRORS.switchFailed));
-    expect(await setOwnerAgentReportsEnabledAction(null, form([]))).toEqual({ error: OWNER_AGENT_REPORT_ERRORS.switchFailed });
+    expect(await setOwnerAgentReportsEnabledAction({}, form([]))).toEqual({ serverError: OWNER_AGENT_REPORT_ERRORS.switchFailed });
     enabledMock.mockRejectedValueOnce(new Error('duplicate key value violates unique constraint "x" (+972501234567)'));
-    expect(await setOwnerAgentReportsEnabledAction(null, form([]))).toEqual({ error: 'עדכון מתג הדוחות נכשל' });
+    expect(await setOwnerAgentReportsEnabledAction({}, form([]))).toEqual({ serverError: 'עדכון מתג הדוחות נכשל' });
   });
 });
 
 describe('setOwnerAgentReportTemplateAction', () => {
   it('a malformed name is a field error, with no DAL call', async () => {
-    const state = await setOwnerAgentReportTemplateAction(null, form([['templateName', 'Bad Name'], ['templateLang', 'he']]));
-    expect(state?.fieldErrors?.templateName).toBeDefined();
+    const state = await setOwnerAgentReportTemplateAction({}, form([['templateName', 'Bad Name'], ['templateLang', 'he']]));
+    expect(state.validationErrors?.fieldErrors?.templateName).toBeDefined();
     expect(templateMock).not.toHaveBeenCalled();
   });
 
   it('passes the raw strings through (the DAL re-parses)', async () => {
-    await setOwnerAgentReportTemplateAction(null, form([['templateName', 'kalfa_owner_daily_report_util_v1'], ['templateLang', 'he']]));
+    await setOwnerAgentReportTemplateAction({}, form([['templateName', 'kalfa_owner_daily_report_util_v1'], ['templateLang', 'he']]));
     expect(templateMock).toHaveBeenCalledWith({ templateName: 'kalfa_owner_daily_report_util_v1', templateLang: 'he' });
   });
 });
 
 describe('setOwnerAgentCustomReportTemplateAction', () => {
   it('a malformed name or language is a field error, with no DAL call', async () => {
-    const bad = await setOwnerAgentCustomReportTemplateAction(null, form([['templateName', 'Bad Name'], ['templateLang', 'he']]));
-    expect(bad?.fieldErrors?.templateName).toBeDefined();
-    const badLang = await setOwnerAgentCustomReportTemplateAction(null, form([['templateName', 'ok_v1'], ['templateLang', 'hebrew']]));
-    expect(badLang?.fieldErrors?.templateLang).toBeDefined();
+    const bad = await setOwnerAgentCustomReportTemplateAction({}, form([['templateName', 'Bad Name'], ['templateLang', 'he']]));
+    expect(bad.validationErrors?.fieldErrors?.templateName).toBeDefined();
+    const badLang = await setOwnerAgentCustomReportTemplateAction({}, form([['templateName', 'ok_v1'], ['templateLang', 'hebrew']]));
+    expect(badLang.validationErrors?.fieldErrors?.templateLang).toBeDefined();
     expect(customTemplateMock).not.toHaveBeenCalled();
   });
 
   it('saves through its own DAL function, never the numeric one', async () => {
     const state = await setOwnerAgentCustomReportTemplateAction(
-      null,
+      {},
       form([['templateName', 'owner_custom_report'], ['templateLang', 'he']]),
     );
-    expect(state).toEqual({ notice: 'התבנית נשמרה' });
+    expect(state).toEqual({ data: { notice: 'התבנית נשמרה' } });
     expect(customTemplateMock).toHaveBeenCalledWith({ templateName: 'owner_custom_report', templateLang: 'he' });
     expect(templateMock).not.toHaveBeenCalled();
   });
 
   it('only the DAL’s own messages reach the screen', async () => {
     customTemplateMock.mockRejectedValueOnce(new Error('new row violates check constraint'));
-    expect(await setOwnerAgentCustomReportTemplateAction(null, form([['templateName', 'ok_v1']]))).toEqual({
-      error: 'שמירת התבנית נכשלה',
+    expect(await setOwnerAgentCustomReportTemplateAction({}, form([['templateName', 'ok_v1']]))).toEqual({
+      serverError: 'שמירת התבנית נכשלה',
     });
   });
 });
@@ -118,10 +123,10 @@ describe('setOwnerAgentCustomReportTemplateAction', () => {
 describe('setOwnerAgentReportScheduleAction', () => {
   it('reads the opt-in box and every ticked hour', async () => {
     const state = await setOwnerAgentReportScheduleAction(
-      null,
+      {},
       form([['entryId', ENTRY_ID], ['optIn', 'on'], ['slots', '08:00'], ['slots', '00:00']]),
     );
-    expect(state).toEqual({ notice: 'לוח הזמנים נשמר' });
+    expect(state).toEqual({ data: { notice: 'לוח הזמנים נשמר' } });
     expect(scheduleMock).toHaveBeenCalledWith({
       entryId: ENTRY_ID,
       optIn: true,
@@ -134,7 +139,7 @@ describe('setOwnerAgentReportScheduleAction', () => {
 
   it('any whole-minute time is accepted; an emptied field is dropped', async () => {
     await setOwnerAgentReportScheduleAction(
-      null,
+      {},
       form([
         ['entryId', ENTRY_ID],
         ['optIn', 'on'],
@@ -164,14 +169,14 @@ describe('setOwnerAgentReportScheduleAction', () => {
       [['entryId', ENTRY_ID], ['slots', '8:15']],
       [['entryId', 'not-a-uuid'], ['slots', '08:00']],
     ] as Array<Array<[string, string]>>) {
-      const state = await setOwnerAgentReportScheduleAction(null, form(fields));
-      expect(state?.fieldErrors).toBeDefined();
+      const state = await setOwnerAgentReportScheduleAction({}, form(fields));
+      expect(state.validationErrors?.fieldErrors).toBeDefined();
     }
     expect(scheduleMock).not.toHaveBeenCalled();
   });
 
   it('opting out needs no hour', async () => {
-    expect(await setOwnerAgentReportScheduleAction(null, form([['entryId', ENTRY_ID]]))).toEqual({ notice: 'הדוחות לרשומה הזו כובו' });
+    expect(await setOwnerAgentReportScheduleAction({}, form([['entryId', ENTRY_ID]]))).toEqual({ data: { notice: 'הדוחות לרשומה הזו כובו' } });
     expect(scheduleMock).toHaveBeenCalledWith({ entryId: ENTRY_ID, optIn: false, slots: [] });
   });
 });

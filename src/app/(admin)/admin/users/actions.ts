@@ -1,140 +1,88 @@
 'use server';
 
-import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { unstable_rethrow } from 'next/navigation';
+import { zfd } from 'zod-form-data';
 
 import {
   setUserSuspended,
   grantBillingCredit,
   voidBillingCredit,
   getUserDetail,
-  type AdminUserDetail,
 } from '@/lib/data/admin/users';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import {
   adminUserIdSchema,
   adminUserViewSchema,
   grantCreditSchema,
   voidCreditSchema,
 } from '@/lib/validation/admin';
-import type { ActionResult, FormState } from '@/lib/validation/result';
 
 // The admin data layer only throws Error with our own safe Hebrew messages
 // (last-staff / no-self-lockout / not-found / generic) — never raw DB detail —
-// so surfacing err.message is safe; anything else falls back to a generic.
-function safeMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
-}
+// and the action client passes those through to the admin unchanged.
 
 // Revalidate the whole /admin/users subtree (list + the open detail page).
 function revalidateUsers(): void {
   revalidatePath('/admin/users', 'layout');
 }
 
-export async function suspendUserAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = adminUserIdSchema.safeParse({ user_id: formData.get('user_id') });
-  if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  try {
-    await setUserSuspended(parsed.data.user_id, true);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'הפעולה נכשלה') };
-  }
-  revalidateUsers();
-  return { notice: 'המשתמש הושהה' };
-}
-
-export async function reactivateUserAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = adminUserIdSchema.safeParse({ user_id: formData.get('user_id') });
-  if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  try {
-    await setUserSuspended(parsed.data.user_id, false);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'הפעולה נכשלה') };
-  }
-  revalidateUsers();
-  return { notice: 'המשתמש שוחזר' };
-}
-
-export async function grantCreditAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = grantCreditSchema.safeParse({
-    user_id: formData.get('user_id'),
-    event_id: formData.get('event_id'),
-    campaign_id: formData.get('campaign_id') ?? '',
-    amount: formData.get('amount'),
-    reason: formData.get('reason'),
+export const suspendUserAction = actionClient
+  .inputSchema(zfd.formData(adminUserIdSchema))
+  .stateAction(async ({ parsedInput: { user_id } }) => {
+    await setUserSuspended(user_id, true);
+    revalidateUsers();
+    return { notice: 'המשתמש הושהה' };
   });
-  if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  try {
+
+export const reactivateUserAction = actionClient
+  .inputSchema(zfd.formData(adminUserIdSchema))
+  .stateAction(async ({ parsedInput: { user_id } }) => {
+    await setUserSuspended(user_id, false);
+    revalidateUsers();
+    return { notice: 'המשתמש שוחזר' };
+  });
+
+// The fields reach the schema as posted: an empty campaign_id is the event-level
+// credit, an empty amount or reason gets the schema's own message.
+export const grantCreditAction = actionClient
+  .inputSchema(zfd.formData(grantCreditSchema))
+  .stateAction(async ({ parsedInput }) => {
     await grantBillingCredit({
-      eventId: parsed.data.event_id,
-      campaignId: parsed.data.campaign_id || null,
-      amount: parsed.data.amount,
-      reason: parsed.data.reason,
-      ownerId: parsed.data.user_id,
+      eventId: parsedInput.event_id,
+      campaignId: parsedInput.campaign_id || null,
+      amount: parsedInput.amount,
+      reason: parsedInput.reason,
+      ownerId: parsedInput.user_id,
     });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'מתן ההטבה נכשל') };
-  }
-  revalidateUsers();
-  return { notice: 'ההטבה ניתנה' };
-}
+    revalidateUsers();
+    return { notice: 'ההטבה ניתנה' };
+  });
 
 // Break-glass view of ANOTHER user's full detail. The reason is validated here
 // and re-enforced by getUserDetail, which writes the audit row (subject_type
 // 'user') BEFORE returning any PII — fail-closed. The self-view path never
 // calls this action (the page renders the detail directly with no reason).
-export async function viewUserDetailAction(input: {
-  user_id: string;
-  reason: string;
-}): Promise<ActionResult<AdminUserDetail>> {
-  const parsed = adminUserViewSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'קלט לא תקין' };
-  }
-  try {
-    const user = await getUserDetail(parsed.data.user_id, parsed.data.reason);
+export const viewUserDetailAction = actionClient
+  .inputSchema(adminUserViewSchema)
+  .action(async ({ parsedInput: { user_id, reason } }) => {
+    const user = await getUserDetail(user_id, reason);
     if (!user) {
-      return { ok: false, error: 'המשתמש לא נמצא' };
+      return returnUserError('המשתמש לא נמצא');
     }
-    return { ok: true, data: user };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, error: safeMessage(err, 'הצפייה נכשלה') };
-  }
-}
+    return user;
+  });
 
 // Void (soft-reverse) a granted credit. The data layer re-checks ownership and
 // blocks voiding a credit already consumed by a settled charge; append-only is
 // preserved (the row is kept, only stamped voided).
-export async function voidCreditAction(input: {
-  credit_id: string;
-  user_id: string;
-  reason: string;
-}): Promise<FormState> {
-  const parsed = voidCreditSchema.safeParse(input);
-  if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  try {
+export const voidCreditAction = actionClient
+  .inputSchema(voidCreditSchema)
+  .action(async ({ parsedInput }) => {
     await voidBillingCredit({
-      creditId: parsed.data.credit_id,
-      reason: parsed.data.reason,
-      ownerId: parsed.data.user_id,
+      creditId: parsedInput.credit_id,
+      reason: parsedInput.reason,
+      ownerId: parsedInput.user_id,
     });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'ביטול הזיכוי נכשל') };
-  }
-  revalidateUsers();
-  return { notice: 'הזיכוי בוטל' };
-}
+    revalidateUsers();
+    return { notice: 'הזיכוי בוטל' };
+  });

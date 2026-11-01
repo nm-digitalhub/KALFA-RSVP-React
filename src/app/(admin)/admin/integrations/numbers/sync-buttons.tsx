@@ -4,7 +4,11 @@ import { useActionState } from 'react';
 import { RefreshCw } from 'lucide-react';
 
 import { FormError, FormNotice } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionErrorMessage } from '@/lib/action-result';
+import type { syncMetaNumbersAction } from './actions';
+
+// Both sync actions answer the same way: a notice, or one message.
+type SyncResult = Awaited<ReturnType<typeof syncMetaNumbersAction>>;
 
 // One button per provider. Read-only against the provider — list reads only, nothing
 // purchased, nothing bound, no message sent — so there is no confirmation dialog
@@ -21,13 +25,13 @@ function SyncButton({
   disabledHint,
 }: {
   label: string;
-  action: () => Promise<FormState>;
+  action: () => Promise<SyncResult>;
   disabled: boolean;
   disabledHint: string;
 }) {
-  const [state, formAction, pending] = useActionState<FormState>(
+  const [state, formAction, pending] = useActionState<SyncResult>(
     async () => action(),
-    null,
+    {},
   );
 
   return (
@@ -49,8 +53,8 @@ function SyncButton({
       {disabled ? (
         <p className="text-xs text-muted-foreground">{disabledHint}</p>
       ) : null}
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
     </div>
   );
 }
@@ -61,8 +65,8 @@ export function SyncButtons({
   metaConfigured,
   voximplantConfigured,
 }: {
-  syncMeta: () => Promise<FormState>;
-  syncVoximplant: () => Promise<FormState>;
+  syncMeta: () => Promise<SyncResult>;
+  syncVoximplant: () => Promise<SyncResult>;
   // Passed from the server rather than inferred from an empty table: "no numbers
   // yet" and "this provider is not connected" look identical in a row count, and
   // only one of them is fixed by pressing sync.

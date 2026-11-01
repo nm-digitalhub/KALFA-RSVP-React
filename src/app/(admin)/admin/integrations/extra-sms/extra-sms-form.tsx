@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { EditableField } from '@/app/(admin)/admin/_form-fields';
 
 import { updateExtraSmsAction } from './actions';
@@ -24,13 +25,13 @@ export type ExtraSmsFormValues = {
 };
 
 export function ExtraSmsForm({ values }: { values: ExtraSmsFormValues }) {
-  const [state, action] = useActionState(updateExtraSmsAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(updateExtraSmsAction, {});
+  const e = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <label className="flex items-start gap-3">
         <input

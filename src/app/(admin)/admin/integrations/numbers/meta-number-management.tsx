@@ -7,9 +7,12 @@ import { FieldError, FormError, FormNotice, SubmitButton, compactSelectClass } f
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { actionFormError } from '@/lib/action-result';
 import type { ProviderNumber } from '@/lib/data/admin/integrations/provider-numbers';
 import { CONFIRM_WORD } from '@/lib/validation/whatsapp-numbers';
-import type { FormState } from '@/lib/validation/result';
+import type { deregisterNumberAction } from './actions';
+
+type DeregisterResult = Awaited<ReturnType<typeof deregisterNumberAction>>;
 
 // Removing a number from the Cloud API. Deliberately NOT a button in the table row.
 //
@@ -32,12 +35,12 @@ export function MetaNumberManagement({
   deregisterAction,
 }: {
   numbers: ProviderNumber[];
-  deregisterAction: (prev: FormState, fd: FormData) => Promise<FormState>;
+  deregisterAction: (prev: DeregisterResult, fd: FormData) => Promise<DeregisterResult>;
 }) {
   const [selected, setSelected] = useState('');
-  const [state, formAction] = useActionState<FormState, FormData>(
+  const [state, formAction] = useActionState<DeregisterResult, FormData>(
     async (prev, fd) => deregisterAction(prev, fd),
-    null,
+    {},
   );
 
   // Only numbers Meta actually knows by an id can be deregistered — a backfill row
@@ -104,13 +107,13 @@ export function MetaNumberManagement({
           name="confirm"
           dir="ltr"
           autoComplete="off"
-          aria-invalid={state?.fieldErrors?.confirm ? true : undefined}
+          aria-invalid={state.validationErrors?.fieldErrors.confirm ? true : undefined}
         />
-        <FieldError errors={state?.fieldErrors?.confirm} />
+        <FieldError errors={state.validationErrors?.fieldErrors.confirm} />
       </div>
 
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <SubmitButton className="w-auto">הסרת הרישום</SubmitButton>
     </form>
   );

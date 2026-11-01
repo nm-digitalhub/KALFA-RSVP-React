@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton, compactSelectClass } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import { updateExchangeConnectionModeAction } from './actions';
 
 // Admin control for app_settings.exchange_connection_mode (plan §3.1,
@@ -10,11 +11,11 @@ import { updateExchangeConnectionModeAction } from './actions';
 // primitive) — same convention as the rest of this admin form family:
 // FormData-native, no controlled state needed to submit correctly.
 export function ExchangeModeToggle({ mode }: { mode: 'per_user' | 'per_org' }) {
-  const [state, formAction] = useActionState(updateExchangeConnectionModeAction, null);
+  const [state, formAction] = useActionState(updateExchangeConnectionModeAction, {});
   return (
     <form action={formAction} className="space-y-3">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
       <label className="flex items-center gap-2 text-sm font-medium">
         מודל בעלות על חיבור Exchange
         <select

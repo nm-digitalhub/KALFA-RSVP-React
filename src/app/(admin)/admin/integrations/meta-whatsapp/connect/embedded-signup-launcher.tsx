@@ -6,6 +6,7 @@ import { useRef, useState } from 'react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { EsConnectResult } from '@/lib/data/admin/integrations/whatsapp-es';
 import { GRAPH_API_VERSION } from '@/lib/whatsapp/graph-version';
 import {
@@ -129,7 +130,12 @@ export function EmbeddedSignupLauncher({ appId, configId }: { appId: string; con
           // re-derives everything else from the token.
           finishEvent: finishRef.current ?? COEXISTENCE,
         })
-          .then((result) => setState({ kind: 'done', result }))
+          .then((res) =>
+            setState({
+              kind: 'done',
+              result: res.data ?? { ok: false, message: actionErrorMessage(res) ?? 'החיבור נכשל. נסו שוב.' },
+            }),
+          )
           .catch(() =>
             setState({ kind: 'done', result: { ok: false, message: 'החיבור נכשל. נסו שוב.' } }),
           );

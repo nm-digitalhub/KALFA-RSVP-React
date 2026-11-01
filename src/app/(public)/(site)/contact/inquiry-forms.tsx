@@ -20,21 +20,21 @@ import {
 } from '@/components/forms/callback-fields';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  submitCallbackAction,
-  submitContactAction,
-  type InquiryFormState,
-} from './actions';
+import { actionFormError } from '@/lib/action-result';
+import { submitCallbackAction, submitContactAction } from './actions';
+
+type InquiryResult = Awaited<ReturnType<typeof submitContactAction | typeof submitCallbackAction>>;
 
 // generate_lead — fired exactly once per successful REAL submission (the
 // server sets `leadSource` only when a lead was actually persisted; the
 // honeypot's fake success carries no flag, so bots never become conversions).
-function useLeadEvent(state: InquiryFormState) {
-  const fired = useRef<InquiryFormState>(null);
+function useLeadEvent(state: InquiryResult) {
+  const fired = useRef<InquiryResult | null>(null);
   useEffect(() => {
-    if (!state?.leadSource || fired.current === state) return;
+    const leadSource = state.data?.leadSource;
+    if (!leadSource || fired.current === state) return;
     fired.current = state;
-    sendBusinessEvent({ name: 'generate_lead', params: { lead_source: state.leadSource } });
+    sendBusinessEvent({ name: 'generate_lead', params: { lead_source: leadSource } });
   }, [state]);
 }
 
@@ -75,9 +75,9 @@ export function ContactForm({
   defaultEmail?: string;
   defaultName?: string;
 }) {
-  const [state, formAction] = useActionState(submitContactAction, null);
+  const [state, formAction] = useActionState(submitContactAction, {});
   useLeadEvent(state);
-  const fe = state?.fieldErrors;
+  const fe = state.validationErrors?.fieldErrors;
 
   return (
     <form action={formAction} className="relative space-y-4">
@@ -140,8 +140,8 @@ export function ContactForm({
         />
         <FieldError id="contact-message-err" errors={fe?.message} />
       </div>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <SubmitButton size="lg" className="min-h-11">שליחת פנייה</SubmitButton>
       <PrivacyNote />
     </form>
@@ -160,9 +160,9 @@ export function ContactForm({
  * that picks a time ever reads the note.
  */
 export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
-  const [state, formAction] = useActionState(submitCallbackAction, null);
+  const [state, formAction] = useActionState(submitCallbackAction, {});
   useLeadEvent(state);
-  const fe = state?.fieldErrors;
+  const fe = state.validationErrors?.fieldErrors;
 
   return (
     <form action={formAction} className="relative space-y-4">
@@ -207,8 +207,8 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
         />
         <FieldError id="cb-note-err" errors={fe?.note} />
       </div>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <SubmitButton size="lg" className="min-h-11">חזרו אליי</SubmitButton>
       <CallbackDisclosureNote />
       <PrivacyNote />

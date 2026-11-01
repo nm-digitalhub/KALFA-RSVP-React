@@ -8,6 +8,7 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import type { AdminChannel } from '@/lib/data/admin/channel-catalog';
 import { updateChannelCatalogAction } from './actions';
 
@@ -23,14 +24,14 @@ const inputClass =
 const labelClass = 'mb-1 block text-sm font-medium';
 
 function ChannelRow({ channel }: { channel: AdminChannel }) {
-  const [state, formAction] = useActionState(updateChannelCatalogAction, null);
+  const [state, formAction] = useActionState(updateChannelCatalogAction, {});
   return (
     <form
       action={formAction}
       className="space-y-3 rounded-md border border-border p-4"
     >
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <input type="hidden" name="key" value={channel.key} />
 
       <div className="flex items-center justify-between">
@@ -52,7 +53,7 @@ function ChannelRow({ channel }: { channel: AdminChannel }) {
             className={inputClass}
             autoComplete="off"
           />
-          <FieldError errors={state?.fieldErrors?.display_name} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.display_name} />
         </div>
         <div>
           <label htmlFor={`sort_order_${channel.key}`} className={labelClass}>
@@ -68,7 +69,7 @@ function ChannelRow({ channel }: { channel: AdminChannel }) {
             defaultValue={channel.sort_order}
             className={inputClass}
           />
-          <FieldError errors={state?.fieldErrors?.sort_order} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.sort_order} />
         </div>
       </div>
 

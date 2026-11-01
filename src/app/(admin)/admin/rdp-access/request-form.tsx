@@ -6,11 +6,11 @@ import { useActionState, useEffect, useState } from 'react';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
+import { actionFormError } from '@/lib/action-result';
 import { formatIsraelTime } from '@/lib/date';
 import { FORM_COPY, minutesLabel } from '@/lib/rdp-access/copy';
 import { RDP_MINUTES_DEFAULT, RDP_MINUTES_PRESETS, RDP_REASON_MAX } from '@/lib/rdp-access/policy';
 import { cn } from '@/lib/utils';
-import type { FormState } from '@/lib/validation/result';
 
 import { requestRdpAccessAction } from './actions';
 
@@ -23,7 +23,7 @@ const REASON_HELP_ID = 'rdp-reason-help';
 const REASON_ERROR_ID = 'rdp-reason-error';
 
 export function RequestForm({ serverNow }: { serverNow: string }) {
-  const [state, formAction] = useActionState<FormState, FormData>(requestRdpAccessAction, null);
+  const [state, formAction] = useActionState(requestRdpAccessAction, {});
   const [reason, setReason] = useState('');
   const [minutes, setMinutes] = useState<number>(RDP_MINUTES_DEFAULT);
   // The "if approved now, until HH:MM" line moves with the clock. First render uses the server's time so the markup
@@ -34,8 +34,8 @@ export function RequestForm({ serverNow }: { serverNow: string }) {
     return () => clearInterval(timer);
   }, []);
 
-  const reasonErrors = state?.fieldErrors?.reason;
-  const minutesErrors = state?.fieldErrors?.minutes;
+  const reasonErrors = state.validationErrors?.fieldErrors?.reason;
+  const minutesErrors = state.validationErrors?.fieldErrors?.minutes;
   const endsAt = formatIsraelTime(new Date(nowMs + minutes * 60_000));
 
   return (
@@ -99,8 +99,8 @@ export function RequestForm({ serverNow }: { serverNow: string }) {
         <FieldError errors={minutesErrors} />
       </fieldset>
 
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-5">
         <div className="flex flex-col gap-1">

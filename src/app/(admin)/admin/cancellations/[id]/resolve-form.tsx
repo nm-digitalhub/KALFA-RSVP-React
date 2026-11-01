@@ -17,8 +17,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { actionFormError } from '@/lib/action-result';
 import { feeFromPercent } from '@/lib/data/cancellation-fee';
-import type { ResolveFormState, RetryAdvice } from '@/lib/data/package-cancellation';
+import type { RetryAdvice } from '@/lib/data/package-cancellation';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '../../_components';
 import { resolveCancellationRequestAction } from '../actions';
@@ -137,7 +138,10 @@ export function ResolveForm({
   feeBaseLabel: string;
 }) {
   const action = resolveCancellationRequestAction.bind(null, requestId);
-  const [state, formAction, pending] = useActionState<ResolveFormState, FormData>(action, null);
+  const [state, formAction, pending] = useActionState(action, {});
+  // A refused resolve carries its retry advice as data; any other failure is the server's message. Field messages stay
+  // under their fields.
+  const formError = state.data?.error ?? actionFormError(state);
   const [resolution, setResolution] = useState<Resolution>('full_cancellation');
   const [feeMode, setFeeMode] = useState<FeeMode>('amount');
   const [percentText, setPercentText] = useState('');
@@ -185,8 +189,8 @@ export function ResolveForm({
         if (!pending && !feeImpossible) setConfirmOpen(true);
       }}
     >
-      {state?.error ? <ResolveError message={state.error} retry={state.retry} /> : null}
-      <FormNotice message={state?.notice} />
+      {formError ? <ResolveError message={formError} retry={state.data?.retry} /> : null}
+      <FormNotice message={state.data?.notice} />
 
       <h2 id="resolve-heading" className="text-lg font-semibold">
         ההחלטה
@@ -287,7 +291,7 @@ export function ResolveForm({
                   {`דמי ביטול: ${formatCurrency(percentFee)} (${percent}% מתוך ${formatCurrency(feeBase)})`}
                 </p>
               ) : null}
-              <FieldError errors={state?.fieldErrors?.resolutionPercent} />
+              <FieldError errors={state.validationErrors?.fieldErrors?.resolutionPercent} />
             </div>
           ) : (
             <div>
@@ -305,7 +309,7 @@ export function ResolveForm({
                 onChange={(e) => setAmountText(e.target.value)}
                 className="h-11 w-full max-w-56 rounded-md border border-input bg-background px-3 text-base"
               />
-              <FieldError errors={state?.fieldErrors?.resolutionAmount} />
+              <FieldError errors={state.validationErrors?.fieldErrors?.resolutionAmount} />
             </div>
           )}
           {refundsMoney && moneyOutcome !== 'resume' ? <FeeCubes paid={feeBase} fee={fee} /> : null}
@@ -324,7 +328,7 @@ export function ResolveForm({
           placeholder="תישלח ללקוח במייל יחד עם ההחלטה"
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-base"
         />
-        <FieldError errors={state?.fieldErrors?.resolutionNote} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.resolutionNote} />
       </div>
 
       {/* On a phone the button stays in reach at the bottom of the screen while the form scrolls (the same single button). */}

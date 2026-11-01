@@ -19,43 +19,51 @@
 
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
+import { returnValidationErrors } from 'next-safe-action';
 import { z } from 'zod';
+import { zfd } from 'zod-form-data';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { createClient } from '@/lib/supabase/server';
-import type { FormState } from '@/lib/validation/result';
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 type Day = (typeof DAYS)[number];
 
-const policySchema = z.object({
-  sunOpen: z.boolean(), sunStart: z.string(), sunEnd: z.string(),
-  monOpen: z.boolean(), monStart: z.string(), monEnd: z.string(),
-  tueOpen: z.boolean(), tueStart: z.string(), tueEnd: z.string(),
-  wedOpen: z.boolean(), wedStart: z.string(), wedEnd: z.string(),
-  thuOpen: z.boolean(), thuStart: z.string(), thuEnd: z.string(),
-  friOpen: z.boolean(), friStart: z.string(), friEnd: z.string(),
-  satOpen: z.boolean(), satStart: z.string(), satEnd: z.string(),
+// How each field is read from the form: a day is open only when its checkbox sends 'on'; a closed day
+// renders no time inputs, so a missing time reads as ''; a blank or missing number reads as 0.
+const open = zfd.checkbox();
+const time = z.string().default('');
+const blankIsZero = (value: unknown) => value || '0';
+
+const policySchema = zfd.formData({
+  sunOpen: open, sunStart: time, sunEnd: time,
+  monOpen: open, monStart: time, monEnd: time,
+  tueOpen: open, tueStart: time, tueEnd: time,
+  wedOpen: open, wedStart: time, wedEnd: time,
+  thuOpen: open, thuStart: time, thuEnd: time,
+  friOpen: open, friStart: time, friEnd: time,
+  satOpen: open, satStart: time, satEnd: time,
   // The actual-dial window ("חיוג" tab) — separate day-open/start/end triple
   // per day, same shape as above, saved into the dial_*_start_min/end_min
   // columns instead of the scheduling *_start_min/end_min ones.
-  dialSunOpen: z.boolean(), dialSunStart: z.string(), dialSunEnd: z.string(),
-  dialMonOpen: z.boolean(), dialMonStart: z.string(), dialMonEnd: z.string(),
-  dialTueOpen: z.boolean(), dialTueStart: z.string(), dialTueEnd: z.string(),
-  dialWedOpen: z.boolean(), dialWedStart: z.string(), dialWedEnd: z.string(),
-  dialThuOpen: z.boolean(), dialThuStart: z.string(), dialThuEnd: z.string(),
-  dialFriOpen: z.boolean(), dialFriStart: z.string(), dialFriEnd: z.string(),
-  dialSatOpen: z.boolean(), dialSatStart: z.string(), dialSatEnd: z.string(),
-  minNoticeMinutes: z.coerce.number().int().min(0),
-  horizonDays: z.coerce.number().int().min(1).max(90),
-  durationMinutes: z.coerce.number().int().min(5).max(120),
-  dailyCap: z.coerce.number().int().min(1).max(50),
-  motzashResumeMinutes: z.coerce.number().int().min(0),
-  maxAttempts: z.coerce.number().int().min(1).max(20),
-  attemptWindowDays: z.coerce.number().int().min(1).max(365),
+  dialSunOpen: open, dialSunStart: time, dialSunEnd: time,
+  dialMonOpen: open, dialMonStart: time, dialMonEnd: time,
+  dialTueOpen: open, dialTueStart: time, dialTueEnd: time,
+  dialWedOpen: open, dialWedStart: time, dialWedEnd: time,
+  dialThuOpen: open, dialThuStart: time, dialThuEnd: time,
+  dialFriOpen: open, dialFriStart: time, dialFriEnd: time,
+  dialSatOpen: open, dialSatStart: time, dialSatEnd: time,
+  minNoticeMinutes: z.preprocess(blankIsZero, z.coerce.number().int().min(0)),
+  horizonDays: z.preprocess(blankIsZero, z.coerce.number().int().min(1).max(90)),
+  durationMinutes: z.preprocess(blankIsZero, z.coerce.number().int().min(5).max(120)),
+  dailyCap: z.preprocess(blankIsZero, z.coerce.number().int().min(1).max(50)),
+  motzashResumeMinutes: z.preprocess(blankIsZero, z.coerce.number().int().min(0)),
+  maxAttempts: z.preprocess(blankIsZero, z.coerce.number().int().min(1).max(20)),
+  attemptWindowDays: z.preprocess(blankIsZero, z.coerce.number().int().min(1).max(365)),
 });
 
-type PolicyInput = z.infer<typeof policySchema>;
+type PolicyInput = z.output<typeof policySchema>;
 
 function cap(day: Day): string {
   return `${day[0].toUpperCase()}${day.slice(1)}`;
@@ -82,123 +90,71 @@ function timeToMinutes(hhmm: string): number | null {
   return h * 60 + min;
 }
 
-export async function saveCallbackPolicyAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = policySchema.safeParse({
-    sunOpen: formData.get('sunOpen') === 'on',
-    sunStart: formData.get('sunStart') ?? '',
-    sunEnd: formData.get('sunEnd') ?? '',
-    monOpen: formData.get('monOpen') === 'on',
-    monStart: formData.get('monStart') ?? '',
-    monEnd: formData.get('monEnd') ?? '',
-    tueOpen: formData.get('tueOpen') === 'on',
-    tueStart: formData.get('tueStart') ?? '',
-    tueEnd: formData.get('tueEnd') ?? '',
-    wedOpen: formData.get('wedOpen') === 'on',
-    wedStart: formData.get('wedStart') ?? '',
-    wedEnd: formData.get('wedEnd') ?? '',
-    thuOpen: formData.get('thuOpen') === 'on',
-    thuStart: formData.get('thuStart') ?? '',
-    thuEnd: formData.get('thuEnd') ?? '',
-    friOpen: formData.get('friOpen') === 'on',
-    friStart: formData.get('friStart') ?? '',
-    friEnd: formData.get('friEnd') ?? '',
-    satOpen: formData.get('satOpen') === 'on',
-    satStart: formData.get('satStart') ?? '',
-    satEnd: formData.get('satEnd') ?? '',
-    dialSunOpen: formData.get('dialSunOpen') === 'on',
-    dialSunStart: formData.get('dialSunStart') ?? '',
-    dialSunEnd: formData.get('dialSunEnd') ?? '',
-    dialMonOpen: formData.get('dialMonOpen') === 'on',
-    dialMonStart: formData.get('dialMonStart') ?? '',
-    dialMonEnd: formData.get('dialMonEnd') ?? '',
-    dialTueOpen: formData.get('dialTueOpen') === 'on',
-    dialTueStart: formData.get('dialTueStart') ?? '',
-    dialTueEnd: formData.get('dialTueEnd') ?? '',
-    dialWedOpen: formData.get('dialWedOpen') === 'on',
-    dialWedStart: formData.get('dialWedStart') ?? '',
-    dialWedEnd: formData.get('dialWedEnd') ?? '',
-    dialThuOpen: formData.get('dialThuOpen') === 'on',
-    dialThuStart: formData.get('dialThuStart') ?? '',
-    dialThuEnd: formData.get('dialThuEnd') ?? '',
-    dialFriOpen: formData.get('dialFriOpen') === 'on',
-    dialFriStart: formData.get('dialFriStart') ?? '',
-    dialFriEnd: formData.get('dialFriEnd') ?? '',
-    dialSatOpen: formData.get('dialSatOpen') === 'on',
-    dialSatStart: formData.get('dialSatStart') ?? '',
-    dialSatEnd: formData.get('dialSatEnd') ?? '',
-    minNoticeMinutes: (formData.get('minNoticeMinutes') || '0') as string,
-    horizonDays: (formData.get('horizonDays') || '0') as string,
-    durationMinutes: (formData.get('durationMinutes') || '0') as string,
-    dailyCap: (formData.get('dailyCap') || '0') as string,
-    motzashResumeMinutes: (formData.get('motzashResumeMinutes') || '0') as string,
-    maxAttempts: (formData.get('maxAttempts') || '0') as string,
-    attemptWindowDays: (formData.get('attemptWindowDays') || '0') as string,
-  });
-
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  const dayColumns: Record<string, number | null> = {};
-  for (const day of DAYS) {
-    if (!dayOpen(parsed.data, day)) {
-      dayColumns[`${day}_start_min`] = null;
-      dayColumns[`${day}_end_min`] = null;
-      continue;
-    }
-    const start = timeToMinutes(dayStart(parsed.data, day));
-    const end = timeToMinutes(dayEnd(parsed.data, day));
-    if (start === null || end === null || start >= end) {
-      return { fieldErrors: { [`${day}Start`]: ['שעת התחלה/סיום לא תקינה'] } };
-    }
-    dayColumns[`${day}_start_min`] = start;
-    dayColumns[`${day}_end_min`] = end;
-  }
-  for (const day of DAYS) {
-    if (!dayOpen(parsed.data, day, true)) {
-      dayColumns[`dial_${day}_start_min`] = null;
-      dayColumns[`dial_${day}_end_min`] = null;
-      continue;
-    }
-    const start = timeToMinutes(dayStart(parsed.data, day, true));
-    const end = timeToMinutes(dayEnd(parsed.data, day, true));
-    if (start === null || end === null || start >= end) {
-      return { fieldErrors: { [`dial${cap(day)}Start`]: ['שעת התחלה/סיום לא תקינה'] } };
-    }
-    dayColumns[`dial_${day}_start_min`] = start;
-    dayColumns[`dial_${day}_end_min`] = end;
-  }
-
-  try {
-    // `manage_settings`, not the retired coarse `requireAdmin()` flag. Callback policy governs when the
-// system calls people back.
-  await requirePlatformPermission('manage_settings');
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from('callback_schedule_policies')
-      .update({
-        ...dayColumns,
-        min_notice_minutes: parsed.data.minNoticeMinutes,
-        horizon_days: parsed.data.horizonDays,
-        duration_minutes: parsed.data.durationMinutes,
-        daily_cap: parsed.data.dailyCap,
-        motzash_resume_minutes: parsed.data.motzashResumeMinutes,
-        max_attempts: parsed.data.maxAttempts,
-        attempt_window_days: parsed.data.attemptWindowDays,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', true);
-    if (error) {
-      return { error: 'עדכון מדיניות התזמון נכשל. נסו שוב.' };
-    }
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'עדכון מדיניות התזמון נכשל. נסו שוב.' };
-  }
-
-  revalidatePath('/admin/callbacks/policy');
-  return { notice: 'מדיניות התזמון נשמרה' };
+// A day whose hours do not parse, or start at or after their end, is refused on its start field.
+function invalidHours(field: keyof PolicyInput): never {
+  return returnValidationErrors(policySchema, { [field]: { _errors: ['שעת התחלה/סיום לא תקינה'] } });
 }
+
+export const saveCallbackPolicyAction = actionClient
+  .inputSchema(policySchema)
+  .stateAction(async ({ parsedInput }) => {
+    const dayColumns: Record<string, number | null> = {};
+    for (const day of DAYS) {
+      if (!dayOpen(parsedInput, day)) {
+        dayColumns[`${day}_start_min`] = null;
+        dayColumns[`${day}_end_min`] = null;
+        continue;
+      }
+      const start = timeToMinutes(dayStart(parsedInput, day));
+      const end = timeToMinutes(dayEnd(parsedInput, day));
+      if (start === null || end === null || start >= end) {
+        invalidHours(`${day}Start`);
+      }
+      dayColumns[`${day}_start_min`] = start;
+      dayColumns[`${day}_end_min`] = end;
+    }
+    for (const day of DAYS) {
+      if (!dayOpen(parsedInput, day, true)) {
+        dayColumns[`dial_${day}_start_min`] = null;
+        dayColumns[`dial_${day}_end_min`] = null;
+        continue;
+      }
+      const start = timeToMinutes(dayStart(parsedInput, day, true));
+      const end = timeToMinutes(dayEnd(parsedInput, day, true));
+      if (start === null || end === null || start >= end) {
+        invalidHours(`dial${cap(day)}Start` as keyof PolicyInput);
+      }
+      dayColumns[`dial_${day}_start_min`] = start;
+      dayColumns[`dial_${day}_end_min`] = end;
+    }
+
+    let saved = false;
+    try {
+      // `manage_settings`, not the retired coarse `requireAdmin()` flag. Callback policy governs when the
+      // system calls people back.
+      await requirePlatformPermission('manage_settings');
+      const supabase = await createClient();
+      const { error } = await supabase
+        .from('callback_schedule_policies')
+        .update({
+          ...dayColumns,
+          min_notice_minutes: parsedInput.minNoticeMinutes,
+          horizon_days: parsedInput.horizonDays,
+          duration_minutes: parsedInput.durationMinutes,
+          daily_cap: parsedInput.dailyCap,
+          motzash_resume_minutes: parsedInput.motzashResumeMinutes,
+          max_attempts: parsedInput.maxAttempts,
+          attempt_window_days: parsedInput.attemptWindowDays,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', true);
+      saved = !error;
+    } catch (err) {
+      unstable_rethrow(err);
+    }
+    // A database refusal and a thrown failure answer the same way.
+    if (!saved) returnUserError('עדכון מדיניות התזמון נכשל. נסו שוב.');
+
+    revalidatePath('/admin/callbacks/policy');
+    return { notice: 'מדיניות התזמון נשמרה' };
+  });

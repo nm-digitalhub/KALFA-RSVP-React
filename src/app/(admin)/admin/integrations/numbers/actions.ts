@@ -2,7 +2,11 @@
 
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
+import { flattenValidationErrors, returnValidationErrors } from 'next-safe-action';
+import type { FlattenedValidationErrors, ValidationErrors } from 'next-safe-action';
+import { zfd } from 'zod-form-data';
 
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { logActivity } from '@/lib/data/activity';
 import {
   assignRole,
@@ -29,7 +33,6 @@ import {
   requestCodeSchema,
   verifyCodeSchema,
 } from '@/lib/validation/whatsapp-numbers';
-import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
 
 // The gate lives in the DAL, per provider — syncMetaNumbers takes manage_settings,
 // syncVoximplantNumbers takes manage_voice. Not repeated here on purpose: two gates
@@ -40,7 +43,7 @@ import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
 const NUMBERS = '/admin/integrations/numbers';
 const INDEX = '/admin/integrations';
 
-export async function syncMetaNumbersAction(): Promise<FormState> {
+export const syncMetaNumbersAction = actionClient.action(async () => {
   let result: Awaited<ReturnType<typeof syncMetaNumbers>>;
   try {
     result = await syncMetaNumbers();
@@ -49,9 +52,7 @@ export async function syncMetaNumbersAction(): Promise<FormState> {
     // The DAL's message is already user-facing Hebrew and names the fixable case
     // (missing WABA id / token). Anything else is ours and stays generic.
     const message = err instanceof Error ? err.message : '';
-    return {
-      error: message.startsWith('חסרים') ? message : 'סנכרון המספרים מ-Meta נכשל',
-    };
+    returnUserError(message.startsWith('חסרים') ? message : 'סנכרון המספרים מ-Meta נכשל');
   }
 
   await logActivity({
@@ -85,18 +86,16 @@ export async function syncMetaNumbersAction(): Promise<FormState> {
         ? `${base}. ${result.deactivated} מספרים שכבר אינם ב-Meta סומנו כלא פעילים (השורה והשיוכים נשמרו).`
         : base,
   };
-}
+});
 
-export async function syncVoximplantNumbersAction(): Promise<FormState> {
+export const syncVoximplantNumbersAction = actionClient.action(async () => {
   let result: Awaited<ReturnType<typeof syncVoximplantNumbers>>;
   try {
     result = await syncVoximplantNumbers();
   } catch (err) {
     unstable_rethrow(err);
     const message = err instanceof Error ? err.message : '';
-    return {
-      error: message.startsWith('חסרים') ? message : 'סנכרון המספרים מ-Voximplant נכשל',
-    };
+    returnUserError(message.startsWith('חסרים') ? message : 'סנכרון המספרים מ-Voximplant נכשל');
   }
 
   await logActivity({
@@ -107,7 +106,7 @@ export async function syncVoximplantNumbersAction(): Promise<FormState> {
   revalidatePath(NUMBERS);
   revalidatePath(INDEX);
   return { notice: `סונכרנו ${result.count} מספרים מ-Voximplant` };
-}
+});
 
 /**
  * Point a role at a number, or at nobody.
@@ -121,46 +120,45 @@ export async function syncVoximplantNumbersAction(): Promise<FormState> {
  * configuration. Not repeated here — a Server Action is its own endpoint, so the
  * answer is never "the page checked", and two gates on one path drift apart.
  */
-export async function assignRoleAction(formData: FormData): Promise<FormState> {
-  const rawRole = formData.get('role');
-  const rawNumber = formData.get('numberId');
-
-  const role = numberRoleSchema.safeParse(rawRole);
-  if (!role.success) return { error: 'תפקיד לא מוכר' };
-
-  // An empty select means "nobody". Distinct from an invalid id, which is a bug in
-  // the form rather than a choice, and gets a different message.
-  const wantsClear = rawNumber === '' || rawNumber === null;
-
-  try {
-    if (wantsClear) {
-      await clearRole(role.data);
-    } else {
-      const parsed = assignRoleSchema.safeParse({ role: role.data, numberId: rawNumber });
-      if (!parsed.success) return { error: 'מזהה מספר לא תקין' };
-      await assignRole(parsed.data.role, parsed.data.numberId);
+export const assignRoleAction = actionClient
+  .inputSchema(
+    zfd.formData({
+      role: numberRoleSchema,
+      // An empty select means "nobody" (zfd.text reads '' as absent). Distinct from an
+      // invalid id, which is a bug in the form rather than a choice, and gets a
+      // different message.
+      numberId: zfd.text(assignRoleSchema.shape.numberId.optional()),
+    }),
+  )
+  .action(async ({ parsedInput: { role, numberId } }) => {
+    try {
+      if (numberId === undefined) {
+        await clearRole(role);
+      } else {
+        await assignRole(role, numberId);
+      }
+    } catch (err) {
+      unstable_rethrow(err);
+      // The DAL names the one failure a caller can act on (the number is gone);
+      // anything else is ours and stays generic.
+      const message = err instanceof Error ? err.message : '';
+      returnUserError(message === 'המספר שנבחר אינו קיים' ? message : 'שמירת השיוך נכשלה');
     }
-  } catch (err) {
-    unstable_rethrow(err);
-    // The DAL names the one failure a caller can act on (the number is gone);
-    // anything else is ours and stays generic.
-    const message = err instanceof Error ? err.message : '';
-    return { error: message === 'המספר שנבחר אינו קיים' ? message : 'שמירת השיוך נכשלה' };
-  }
 
-  await logActivity({
-    action: 'admin.integrations.number_role_assigned',
-    meta: { role: role.data, cleared: wantsClear },
+    const wantsClear = numberId === undefined;
+    await logActivity({
+      action: 'admin.integrations.number_role_assigned',
+      meta: { role, cleared: wantsClear },
+    });
+
+    revalidatePath(NUMBERS);
+    revalidatePath(INDEX);
+    // The inbox names the receiving number from these rows, so a reassignment changes
+    // what it prints.
+    revalidatePath('/admin/webhooks');
+
+    return { notice: wantsClear ? 'השיוך בוטל' : 'השיוך נשמר' };
   });
-
-  revalidatePath(NUMBERS);
-  revalidatePath(INDEX);
-  // The inbox names the receiving number from these rows, so a reassignment changes
-  // what it prints.
-  revalidatePath('/admin/webhooks');
-
-  return { notice: wantsClear ? 'השיוך בוטל' : 'השיוך נשמר' };
-}
 
 // ─── THE META NUMBER LIFECYCLE ────────────────────────────────────────────────
 // add → request code → verify → register / deregister.
@@ -172,27 +170,7 @@ export async function assignRoleAction(formData: FormData): Promise<FormState> {
 //
 // ⚠️ NO PIN REACHES THIS FILE'S LOGS OR RETURN VALUES. It is read from the form and
 // handed to the DAL in the same expression. It is not put in a notice, not echoed
-// into fieldErrors, and not recorded in the activity row.
-
-/** Superset of FormState: the wizard needs the new id to move to the next step. */
-export interface AddNumberState {
-  error?: string;
-  notice?: string;
-  fieldErrors?: Record<string, string[] | undefined>;
-  /** Meta's phone_number_id for the number just added. Never a phone number. */
-  phoneNumberId?: string;
-  /**
-   * The business name as submitted, echoed back so a failed attempt does not wipe it.
-   *
-   * A Server Action re-renders the form, and an uncontrolled input with no
-   * defaultValue comes back EMPTY — so the first real failure blanked the name the
-   * admin had just typed while leaving the phone number in place, which reads as the
-   * form having eaten it. The phone number is NOT echoed here: PhoneInput keeps its
-   * own state, and a phone number has no business making a round trip it does not
-   * need to.
-   */
-  verifiedName?: string;
-}
+// into the validation errors, and not recorded in the activity row.
 
 /**
  * Whether a message was written for the admin.
@@ -206,118 +184,102 @@ function isUserFacing(message: string): boolean {
   return /[\u0590-\u05FF]/.test(message);
 }
 
-export async function addNumberAction(
-  _prev: AddNumberState | null,
-  formData: FormData,
-): Promise<AddNumberState> {
-  const parsed = addNumberSchema.safeParse({
-    phone: formData.get('phone'),
-    verifiedName: formData.get('verifiedName'),
-  });
-  if (!parsed.success) {
-    const raw = formData.get('verifiedName');
+// The form's own fields (phone, verifiedName) validate here, so their errors keep the
+// names the wizard shows them under; addNumberSchema's split of the phone into Meta's
+// cc + phone_number runs in the action, once, on the validated values.
+const addNumberInput = zfd.formData(addNumberSchema.in);
+
+export const addNumberAction = actionClient
+  .inputSchema(addNumberInput, {
+    // Every refusal of this step — the schema's or Meta's — carries the business name back
+    // as it was typed, so a failed attempt does not wipe it.
+    //
+    // A Server Action re-renders the form, and an uncontrolled input with no
+    // defaultValue comes back EMPTY — so the first real failure blanked the name the
+    // admin had just typed while leaving the phone number in place, which reads as the
+    // form having eaten it. The phone number is NOT echoed here: PhoneInput keeps its
+    // own state, and a phone number has no business making a round trip it does not
+    // need to.
+    handleValidationErrorsShape: async (errors, { clientInput }) => {
+      const typed = clientInput instanceof FormData ? clientInput.get('verifiedName') : null;
+      return {
+        ...flattenValidationErrors(errors),
+        verifiedName: typeof typed === 'string' ? typed : undefined,
+      };
+    },
+  })
+  .stateAction(async ({ parsedInput }) => {
+    let phoneNumberId: string;
+    try {
+      phoneNumberId = await addNumber(addNumberSchema.out.parse(parsedInput));
+    } catch (err) {
+      unstable_rethrow(err);
+      const message = err instanceof Error ? err.message : '';
+      // The DAL maps every Meta failure to Hebrew AND appends the numeric code, so
+      // passing it through is what makes "it failed" into something diagnosable.
+      returnValidationErrors(addNumberInput, {
+        _errors: [isUserFacing(message) ? message : 'הוספת המספר נכשלה'],
+      });
+    }
+
+    await logActivity({
+      action: ADD_ACTION,
+      // The Meta object id, not the phone number: this row is an audit trail, and the
+      // number itself is personal data we have no reason to duplicate into it.
+      meta: { phoneNumberId },
+    });
+
+    revalidatePath(NUMBERS);
+    // The wizard needs the new id to move to the next step. Never a phone number.
     return {
-      fieldErrors: issuesToFieldErrors(parsed.error.issues),
-      verifiedName: typeof raw === 'string' ? raw : undefined,
+      phoneNumberId,
+      notice: 'המספר נוסף ל-WABA. עכשיו צריך לאמת בעלות עליו.',
     };
-  }
-
-  const verifiedName = parsed.data.verifiedName;
-
-  let phoneNumberId: string;
-  try {
-    phoneNumberId = await addNumber(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    const message = err instanceof Error ? err.message : '';
-    // The DAL maps every Meta failure to Hebrew AND appends the numeric code, so
-    // passing it through is what makes "it failed" into something diagnosable.
-    return {
-      error: isUserFacing(message) ? message : 'הוספת המספר נכשלה',
-      verifiedName,
-    };
-  }
-
-  await logActivity({
-    action: ADD_ACTION,
-    // The Meta object id, not the phone number: this row is an audit trail, and the
-    // number itself is personal data we have no reason to duplicate into it.
-    meta: { phoneNumberId },
   });
-
-  revalidatePath(NUMBERS);
-  return {
-    phoneNumberId,
-    notice: 'המספר נוסף ל-WABA. עכשיו צריך לאמת בעלות עליו.',
-  };
-}
 
 /**
  * Ask Meta to send the verification code.
  *
  * ⚠️ THIS RINGS OR TEXTS A REAL HANDSET. Nothing here is a dry run.
  */
-export async function requestCodeAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = requestCodeSchema.safeParse({
-    phoneNumberId: formData.get('phoneNumberId'),
-    codeMethod: formData.get('codeMethod'),
-  });
-  if (!parsed.success) {
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
+export const requestCodeAction = actionClient
+  .inputSchema(zfd.formData(requestCodeSchema))
+  .stateAction(async ({ parsedInput: { phoneNumberId, codeMethod } }) => {
+    await requestCode(phoneNumberId, codeMethod);
 
-  try {
-    await requestCode(parsed.data.phoneNumberId, parsed.data.codeMethod);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'בקשת הקוד נכשלה' };
-  }
+    await logActivity({
+      action: CODE_ACTION,
+      meta: { phoneNumberId, method: codeMethod },
+    });
 
-  await logActivity({
-    action: CODE_ACTION,
-    meta: { phoneNumberId: parsed.data.phoneNumberId, method: parsed.data.codeMethod },
+    return {
+      notice:
+        codeMethod === 'SMS'
+          ? 'נשלחה הודעת SMS עם הקוד למספר.'
+          : 'Meta מתקשרת למספר ומקריאה את הקוד.',
+    };
   });
 
-  return {
-    notice:
-      parsed.data.codeMethod === 'SMS'
-        ? 'נשלחה הודעת SMS עם הקוד למספר.'
-        : 'Meta מתקשרת למספר ומקריאה את הקוד.',
-  };
-}
+export const verifyCodeAction = actionClient
+  .inputSchema(zfd.formData(verifyCodeSchema))
+  .stateAction(async ({ parsedInput: { phoneNumberId, code } }) => {
+    await verifyCode(phoneNumberId, code);
 
-export async function verifyCodeAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = verifyCodeSchema.safeParse({
-    phoneNumberId: formData.get('phoneNumberId'),
-    code: formData.get('code'),
-  });
-  if (!parsed.success) {
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
+    await logActivity({
+      action: VERIFY_ACTION,
+      // The code is single-use and already spent, but it is still a secret the audit
+      // row has no use for.
+      meta: { phoneNumberId },
+    });
 
-  try {
-    await verifyCode(parsed.data.phoneNumberId, parsed.data.code);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'אימות הקוד נכשל' };
-  }
-
-  await logActivity({
-    action: VERIFY_ACTION,
-    // The code is single-use and already spent, but it is still a secret the audit
-    // row has no use for.
-    meta: { phoneNumberId: parsed.data.phoneNumberId },
+    revalidatePath(NUMBERS);
+    return { notice: 'הבעלות על המספר אומתה. אפשר לרשום אותו ל-Cloud API.' };
   });
 
-  revalidatePath(NUMBERS);
-  return { notice: 'הבעלות על המספר אומתה. אפשר לרשום אותו ל-Cloud API.' };
-}
+// Register and deregister check the typed confirmation FIRST: while it is wrong, it is
+// the only thing the form says.
+const registerInput = zfd.formData({ confirm: confirmWordSchema, ...registerNumberSchema.shape });
+type RegisterErrors = FlattenedValidationErrors<ValidationErrors<typeof registerInput>>;
 
 /**
  * Register the number. OWNER ONLY, and it spends from a budget of 10 per number per
@@ -326,68 +288,62 @@ export async function verifyCodeAction(
  * The typed confirmation is not friction for its own sake: this is the one control on
  * the page whose accidental use cannot be undone by pressing it again.
  */
-export async function registerNumberAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const confirm = confirmWordSchema.safeParse(formData.get('confirm'));
-  if (!confirm.success) {
-    return { fieldErrors: { confirm: [confirm.error.issues[0]?.message ?? ''] } };
-  }
-
-  const parsed = registerNumberSchema.safeParse({
-    phoneNumberId: formData.get('phoneNumberId'),
-    pin: formData.get('pin'),
-  });
-  if (!parsed.success) {
-    // issuesToFieldErrors carries MESSAGES, never the submitted values — so a bad PIN
+export const registerNumberAction = actionClient
+  .inputSchema(registerInput, {
+    // The flattened errors carry MESSAGES, never the submitted values — so a bad PIN
     // produces "ה-PIN מורכב מ-6 ספרות" and never the PIN itself.
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
+    handleValidationErrorsShape: async (errors): Promise<RegisterErrors> => {
+      const flat = flattenValidationErrors(errors);
+      return flat.fieldErrors.confirm
+        ? { formErrors: [], fieldErrors: { confirm: flat.fieldErrors.confirm } }
+        : flat;
+    },
+  })
+  .stateAction(async ({ parsedInput: { phoneNumberId, pin } }) => {
+    try {
+      await registerNumber(phoneNumberId, pin);
+    } catch (err) {
+      unstable_rethrow(err);
+      // The DAL's message is passed through as it is, Hebrew or not: the DAL's contract
+      // is that none of its messages carries the PIN, and actions.test.ts pins both.
+      returnUserError(err instanceof Error ? err.message : 'רישום המספר נכשל');
+    }
 
-  try {
-    await registerNumber(parsed.data.phoneNumberId, parsed.data.pin);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'רישום המספר נכשל' };
-  }
+    await logActivity({
+      action: 'admin.integrations.number_registered',
+      meta: { phoneNumberId },
+    });
 
-  await logActivity({
-    action: 'admin.integrations.number_registered',
-    meta: { phoneNumberId: parsed.data.phoneNumberId },
+    revalidatePath(NUMBERS);
+    revalidatePath(INDEX);
+    return { notice: 'המספר נרשם ל-Cloud API ויכול לשלוח.' };
   });
 
-  revalidatePath(NUMBERS);
-  revalidatePath(INDEX);
-  return { notice: 'המספר נרשם ל-Cloud API ויכול לשלוח.' };
-}
+const deregisterInput = zfd.formData({ confirm: confirmWordSchema, phoneNumberId: phoneNumberIdSchema });
+type DeregisterErrors = FlattenedValidationErrors<ValidationErrors<typeof deregisterInput>>;
 
 /** Deregister. OWNER ONLY. Sending through this number stops immediately. */
-export async function deregisterNumberAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const confirm = confirmWordSchema.safeParse(formData.get('confirm'));
-  if (!confirm.success) {
-    return { fieldErrors: { confirm: [confirm.error.issues[0]?.message ?? ''] } };
-  }
+export const deregisterNumberAction = actionClient
+  .inputSchema(deregisterInput, {
+    // A bad id is a bug in the form rather than a field the owner can fix, so it is
+    // said once, above the button.
+    handleValidationErrorsShape: async (errors): Promise<DeregisterErrors> => {
+      const flat = flattenValidationErrors(errors);
+      if (flat.fieldErrors.confirm) {
+        return { formErrors: [], fieldErrors: { confirm: flat.fieldErrors.confirm } };
+      }
+      return { formErrors: flat.fieldErrors.phoneNumberId ? ['מזהה מספר לא תקין'] : [], fieldErrors: {} };
+    },
+  })
+  .stateAction(async ({ parsedInput: { phoneNumberId } }) => {
+    await deregisterNumber(phoneNumberId);
 
-  const id = phoneNumberIdSchema.safeParse(formData.get('phoneNumberId'));
-  if (!id.success) return { error: 'מזהה מספר לא תקין' };
+    await logActivity({
+      action: 'admin.integrations.number_deregistered',
+      meta: { phoneNumberId },
+    });
 
-  try {
-    await deregisterNumber(id.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'הסרת הרישום נכשלה' };
-  }
-
-  await logActivity({
-    action: 'admin.integrations.number_deregistered',
-    meta: { phoneNumberId: id.data },
+    revalidatePath(NUMBERS);
+    revalidatePath(INDEX);
+    return { notice: 'רישום המספר הוסר. שליחה דרכו נפסקה.' };
   });
-
-  revalidatePath(NUMBERS);
-  revalidatePath(INDEX);
-  return { notice: 'רישום המספר הוסר. שליחה דרכו נפסקה.' };
-}

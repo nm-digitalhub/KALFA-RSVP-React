@@ -34,6 +34,9 @@ const FIELDS = {
   packages_json: JSON.stringify([{ package_id: '2b1e0c54-7b1f-4f58-9a3e-1c2d3e4f5a6b', value_override: null }]),
 };
 
+// The bound offer id is validated (bindArgsSchemas: z.uuid()).
+const OFFER_ID = '6c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+
 function fd(entries: Record<string, string>): FormData {
   const f = new FormData();
   for (const [k, v] of Object.entries(entries)) f.set(k, v);
@@ -46,7 +49,7 @@ describe('createOfferAction', () => {
   it('parses the form (objections one per line, checkboxes, packages JSON) and redirects', async () => {
     vi.mocked(createOffer).mockResolvedValue({ id: 'o-1' });
 
-    await createOfferAction(null, fd(FIELDS));
+    await createOfferAction({}, fd(FIELDS));
 
     expect(createOffer).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -68,25 +71,25 @@ describe('createOfferAction', () => {
   });
 
   it('refuses a form without packages (malformed JSON becomes an empty set)', async () => {
-    const state = await createOfferAction(null, fd({ ...FIELDS, packages_json: 'not-json' }));
+    const state = await createOfferAction({}, fd({ ...FIELDS, packages_json: 'not-json' }));
 
-    expect(state?.fieldErrors?.packages).toBeTruthy();
+    expect(state.validationErrors?.fieldErrors?.packages).toBeTruthy();
     expect(createOffer).not.toHaveBeenCalled();
   });
 
   it('refuses a missing title with a field error', async () => {
-    const state = await createOfferAction(null, fd({ ...FIELDS, title: ' ' }));
+    const state = await createOfferAction({}, fd({ ...FIELDS, title: ' ' }));
 
-    expect(state?.fieldErrors?.title).toBeTruthy();
+    expect(state.validationErrors?.fieldErrors?.title).toBeTruthy();
     expect(createOffer).not.toHaveBeenCalled();
   });
 
   it('maps the D14 floor refusal to a field error on the value', async () => {
     vi.mocked(createOffer).mockRejectedValue(new OfferFloorError('בסיס', 0));
 
-    const state = await createOfferAction(null, fd(FIELDS));
+    const state = await createOfferAction({}, fd(FIELDS));
 
-    expect(state?.fieldErrors?.value?.[0]).toContain('בסיס');
+    expect(state.validationErrors?.fieldErrors?.value?.[0]).toContain('בסיס');
     expect(redirect).not.toHaveBeenCalled();
   });
 });
@@ -95,19 +98,19 @@ describe('updateOfferAction', () => {
   it('saves and answers with a notice (no redirect)', async () => {
     vi.mocked(updateOffer).mockResolvedValue();
 
-    const state = await updateOfferAction('o-1', null, fd(FIELDS));
+    const state = await updateOfferAction(OFFER_ID, {}, fd(FIELDS));
 
-    expect(updateOffer).toHaveBeenCalledWith('o-1', expect.objectContaining({ value: 5 }));
-    expect(state?.notice).toBe('ההצעה נשמרה');
+    expect(updateOffer).toHaveBeenCalledWith(OFFER_ID, expect.objectContaining({ value: 5 }));
+    expect(state.data?.notice).toBe('ההצעה נשמרה');
     expect(redirect).not.toHaveBeenCalled();
   });
 
   it('maps the floor refusal to a field error on the value', async () => {
     vi.mocked(updateOffer).mockRejectedValue(new OfferFloorError('בסיס', -10));
 
-    const state = await updateOfferAction('o-1', null, fd(FIELDS));
+    const state = await updateOfferAction(OFFER_ID, {}, fd(FIELDS));
 
-    expect(state?.fieldErrors?.value).toBeTruthy();
+    expect(state.validationErrors?.fieldErrors?.value).toBeTruthy();
   });
 });
 
@@ -117,16 +120,16 @@ describe('deleteOfferAction', () => {
       new Error('לא ניתן למחוק הצעה שכבר הוקצו ממנה הטבות. אפשר לסמן אותה כלא פעילה.'),
     );
 
-    const state = await deleteOfferAction('o-1', null, new FormData());
+    const state = await deleteOfferAction(OFFER_ID, {});
 
-    expect(state?.error).toContain('לא ניתן למחוק');
+    expect(state.serverError).toContain('לא ניתן למחוק');
     expect(redirect).not.toHaveBeenCalled();
   });
 
   it('redirects to the list on success', async () => {
     vi.mocked(deleteOffer).mockResolvedValue();
 
-    await deleteOfferAction('o-1', null, new FormData());
+    await deleteOfferAction(OFFER_ID, {});
 
     expect(redirect).toHaveBeenCalledWith('/admin/offers');
   });

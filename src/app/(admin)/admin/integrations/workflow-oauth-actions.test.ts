@@ -39,7 +39,7 @@ beforeEach(() => {
 
 describe('what reaches the data layer', () => {
   it('passes the submitted client id and secret through', async () => {
-    await saveWorkflowOAuthProviderAction(null, form({ ...VALID, enabled: 'on' }));
+    await saveWorkflowOAuthProviderAction({}, form({ ...VALID, enabled: 'on' }));
 
     expect(saveMock).toHaveBeenCalledWith({
       provider: 'fixture',
@@ -54,19 +54,19 @@ describe('what reaches the data layer', () => {
     // would break the ordinary case — correcting a client id, or toggling
     // `enabled` — for an operator who cannot re-read a secret the provider only
     // ever displayed once.
-    await saveWorkflowOAuthProviderAction(null, form({ ...VALID, clientSecret: '' }));
+    await saveWorkflowOAuthProviderAction({}, form({ ...VALID, clientSecret: '' }));
 
     expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ clientSecret: '' }));
   });
 
   it('treats a missing checkbox as disabled, not as unspecified', async () => {
-    await saveWorkflowOAuthProviderAction(null, form(VALID));
+    await saveWorkflowOAuthProviderAction({}, form(VALID));
     expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
   });
 
   it('trims what an operator pasted', async () => {
     await saveWorkflowOAuthProviderAction(
-      null,
+      {},
       form({ provider: ' fixture ', clientId: '  client-abc  ', clientSecret: ' secret-abc ' }),
     );
 
@@ -82,7 +82,7 @@ describe('what reaches the data layer', () => {
     // that a browser cannot name a provider would go untested.
     resolveProviderMock.mockReturnValueOnce({ ...OAUTH_PROVIDER, id: 'canonical-fixture' });
 
-    await saveWorkflowOAuthProviderAction(null, form({ ...VALID, provider: 'fixture' }));
+    await saveWorkflowOAuthProviderAction({}, form({ ...VALID, provider: 'fixture' }));
 
     expect(saveMock).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'canonical-fixture' }),
@@ -91,7 +91,7 @@ describe('what reaches the data layer', () => {
 
   it('⚠️ never carries an actor from the form — the data layer takes it from the session', async () => {
     await saveWorkflowOAuthProviderAction(
-      null,
+      {},
       form({ ...VALID, createdBy: 'attacker-supplied-uuid', p_created_by: 'also-not-ok' }),
     );
 
@@ -111,39 +111,39 @@ describe('what it refuses', () => {
     resolveProviderMock.mockReturnValueOnce(undefined);
 
     const result = await saveWorkflowOAuthProviderAction(
-      null,
+      {},
       form({ ...VALID, provider: 'not-registered' }),
     );
 
-    expect(result).toEqual({ fieldErrors: { provider: expect.any(Array) } });
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors: { provider: expect.any(Array) } } });
     expect(saveMock).not.toHaveBeenCalled();
   });
 
   it('⚠️ a registered provider that has no OAuth client to configure', async () => {
     resolveProviderMock.mockReturnValueOnce({ id: 'api-key-thing', credentialKind: 'static' });
 
-    const result = await saveWorkflowOAuthProviderAction(null, form(VALID));
+    const result = await saveWorkflowOAuthProviderAction({}, form(VALID));
 
-    expect(result).toEqual({ fieldErrors: { provider: expect.any(Array) } });
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors: { provider: expect.any(Array) } } });
     expect(saveMock).not.toHaveBeenCalled();
   });
 
   it('a missing client id, reported as a field error', async () => {
     const result = await saveWorkflowOAuthProviderAction(
-      null,
+      {},
       form({ provider: 'fixture', clientSecret: 'secret-abc' }),
     );
 
-    expect(result).toMatchObject({ fieldErrors: { clientId: ['יש להזין Client ID.'] } });
+    expect(result).toMatchObject({ validationErrors: { fieldErrors: { clientId: ['יש להזין Client ID.'] } } });
     expect(saveMock).not.toHaveBeenCalled();
   });
 
   it('reports both field problems at once', async () => {
     resolveProviderMock.mockReturnValueOnce(undefined);
 
-    const result = await saveWorkflowOAuthProviderAction(null, form({ provider: 'nope' }));
+    const result = await saveWorkflowOAuthProviderAction({}, form({ provider: 'nope' }));
 
-    expect(Object.keys((result as { fieldErrors: object }).fieldErrors).sort()).toEqual([
+    expect(Object.keys(result.validationErrors?.fieldErrors ?? {}).sort()).toEqual([
       'clientId',
       'provider',
     ]);
@@ -154,9 +154,9 @@ describe('failure handling', () => {
   it('turns a database error into a form error, not a crash', async () => {
     saveMock.mockRejectedValueOnce(new Error('23505'));
 
-    const result = await saveWorkflowOAuthProviderAction(null, form(VALID));
+    const result = await saveWorkflowOAuthProviderAction({}, form(VALID));
 
-    expect(result).toMatchObject({ error: expect.stringContaining('OAuth') });
+    expect(result).toMatchObject({ serverError: expect.stringContaining('OAuth') });
     expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
@@ -169,13 +169,13 @@ describe('failure handling', () => {
     });
     saveMock.mockRejectedValueOnce(nextRedirect);
 
-    await expect(saveWorkflowOAuthProviderAction(null, form(VALID))).rejects.toBe(nextRedirect);
+    await expect(saveWorkflowOAuthProviderAction({}, form(VALID))).rejects.toBe(nextRedirect);
   });
 });
 
 describe('after a successful save', () => {
   it('revalidates the pages that render this configuration', async () => {
-    await saveWorkflowOAuthProviderAction(null, form(VALID));
+    await saveWorkflowOAuthProviderAction({}, form(VALID));
 
     expect(revalidatePathMock).toHaveBeenCalledWith('/admin/integrations/workflow-oauth');
     expect(revalidatePathMock).toHaveBeenCalledWith('/admin/integrations');
@@ -185,9 +185,9 @@ describe('after a successful save', () => {
     // `integrations_upsert_provider_config` returns void — "created" and
     // "updated" are indistinguishable, and widening the contract to phrase a
     // sentence would be the tail wagging the dog.
-    const result = await saveWorkflowOAuthProviderAction(null, form(VALID));
+    const result = await saveWorkflowOAuthProviderAction({}, form(VALID));
 
-    expect(result).toEqual({ notice: 'הגדרות ה-OAuth נשמרו.' });
+    expect(result).toEqual({ data: { notice: 'הגדרות ה-OAuth נשמרו.' } });
     expect(JSON.stringify(result)).not.toMatch(/נוצר|עודכן/);
   });
 });

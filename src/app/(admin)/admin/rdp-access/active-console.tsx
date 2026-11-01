@@ -16,10 +16,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs';
+import { actionErrorMessage } from '@/lib/action-result';
 import { formatIsraelTime } from '@/lib/date';
 import { ACTIVE_COPY, DEVICES, downloadFailureText, type DeviceId } from '@/lib/rdp-access/copy';
 import { formatCountdown, percentLeft, spokenRemaining } from '@/lib/rdp-access/countdown';
-import type { FormState } from '@/lib/validation/result';
 
 import { endRdpGrantAction } from './actions';
 import { StatusPoller } from './status-poller';
@@ -67,7 +67,7 @@ export function ActiveConsole({ reason, startsAt, expiresAt, serverNow, filesIss
   const left = percentLeft(remainingMs, totalMs);
 
   const [download, setDownload] = useState<Download>({ kind: 'idle' });
-  const [endState, endAction] = useActionState<FormState, FormData>(endRdpGrantAction, null);
+  const [endState, endAction] = useActionState(endRdpGrantAction, {});
   const [endOpen, setEndOpen] = useState(false);
   const endFormRef = useRef<HTMLFormElement>(null);
 
@@ -210,8 +210,8 @@ export function ActiveConsole({ reason, startsAt, expiresAt, serverNow, filesIss
             {ACTIVE_COPY.fileReady}
           </p>
         ) : null}
-        <FormError message={endState?.error} />
-        <FormNotice message={endState?.notice} />
+        <FormError message={actionErrorMessage(endState)} />
+        <FormNotice message={endState.data?.notice} />
 
         <p className="flex items-start gap-2.5 rounded-xl bg-console-warning px-3.5 py-3 text-sm leading-[22px] text-console-warning-foreground">
           <TriangleAlert className="mt-0.5 size-[18px] shrink-0" aria-hidden />

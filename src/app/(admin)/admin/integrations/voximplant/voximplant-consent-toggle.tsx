@@ -5,6 +5,7 @@ import { TriangleAlert } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import { updateCallConsentRequiredAction } from '@/app/(admin)/admin/integrations/actions';
 
 // The §30א consent gate for AI CALLS — the exact twin of WhatsAppConsentToggle in
@@ -21,15 +22,15 @@ import { updateCallConsentRequiredAction } from '@/app/(admin)/admin/integration
 // voximplant-personas.tsx for the bug that rule prevents.
 
 export function VoximplantConsentToggle({ consentRequired }: { consentRequired: boolean }) {
-  const [state, action] = useActionState(updateCallConsentRequiredAction, null);
+  const [state, action] = useActionState(updateCallConsentRequiredAction, {});
 
   return (
     <form
       action={action}
       className="mt-4 space-y-2 rounded-lg border border-red-500/50 bg-red-500/5 p-4"
     >
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-semibold">דרישת הסכמה לשיחות AI</p>

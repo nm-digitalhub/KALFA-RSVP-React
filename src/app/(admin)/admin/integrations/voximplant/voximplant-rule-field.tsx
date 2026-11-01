@@ -80,12 +80,12 @@ export function VoximplantRuleField({
     setError(null);
     startTransition(async () => {
       const res = await loadVoximplantRulesAction();
-      if (res.ok) {
-        setRules(res.rules);
+      if (res.data) {
+        setRules(res.data.rules);
       } else {
         // Stay in manual mode — the field keeps working without the list.
         setRules(null);
-        setError(res.message);
+        setError(res.serverError ?? null);
       }
     });
   }

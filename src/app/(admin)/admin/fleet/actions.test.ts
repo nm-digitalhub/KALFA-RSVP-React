@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
@@ -47,31 +48,38 @@ describe('answerFleetRequestAction — authorization', () => {
   it('propagates the permission redirect instead of returning { error }', async () => {
     vi.mocked(requirePlatformPermission).mockRejectedValueOnce(NEXT_REDIRECT);
     await expect(
-      answerFleetRequestAction(null, fd({ id: REQUEST_ID, verdict: 'approved' })),
+      answerFleetRequestAction({}, fd({ id: REQUEST_ID, verdict: 'approved' })),
     ).rejects.toThrow('NEXT_REDIRECT');
     expect(answerFleetRequest).not.toHaveBeenCalled();
+  });
+
+  it('checks the permission before the form: an invalid form still gets the redirect, not field errors', async () => {
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(NEXT_REDIRECT);
+    await expect(answerFleetRequestAction({}, fd({ id: 'not-a-uuid', verdict: 'maybe' }))).rejects.toThrow('NEXT_REDIRECT');
+    vi.mocked(requirePlatformPermission).mockRejectedValueOnce(NEXT_REDIRECT);
+    await expect(createFleetRequestAction({}, fd({ role: 'ops-monitor', body: 'כן' }))).rejects.toThrow('NEXT_REDIRECT');
   });
 });
 
 describe('answerFleetRequestAction — validation', () => {
   it('rejects a non-uuid id', async () => {
-    const r = await answerFleetRequestAction(null, fd({ id: 'not-a-uuid', verdict: 'approved' }));
-    expect(r?.fieldErrors?.id?.length).toBeGreaterThan(0);
+    const r = await answerFleetRequestAction({}, fd({ id: 'not-a-uuid', verdict: 'approved' }));
+    expect(r.validationErrors?.fieldErrors?.id?.length).toBeGreaterThan(0);
     expect(answerFleetRequest).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown verdict', async () => {
-    const r = await answerFleetRequestAction(null, fd({ id: REQUEST_ID, verdict: 'maybe' }));
-    expect(r?.fieldErrors?.verdict?.length).toBeGreaterThan(0);
+    const r = await answerFleetRequestAction({}, fd({ id: REQUEST_ID, verdict: 'maybe' }));
+    expect(r.validationErrors?.fieldErrors?.verdict?.length).toBeGreaterThan(0);
     expect(answerFleetRequest).not.toHaveBeenCalled();
   });
 
   it('rejects an over-long answer', async () => {
     const r = await answerFleetRequestAction(
-      null,
+      {},
       fd({ id: REQUEST_ID, verdict: 'answered', answer: 'א'.repeat(2001) }),
     );
-    expect(r?.fieldErrors?.answer?.length).toBeGreaterThan(0);
+    expect(r.validationErrors?.fieldErrors?.answer?.length).toBeGreaterThan(0);
     expect(answerFleetRequest).not.toHaveBeenCalled();
   });
 });
@@ -79,10 +87,10 @@ describe('answerFleetRequestAction — validation', () => {
 describe('answerFleetRequestAction — behavior', () => {
   it('passes a trimmed answer and null for empty, and logs activity', async () => {
     const r = await answerFleetRequestAction(
-      null,
+      {},
       fd({ id: REQUEST_ID, verdict: 'approved', answer: '  ' }),
     );
-    expect(r?.notice).toBeTruthy();
+    expect(r.data?.notice).toBeTruthy();
     expect(answerFleetRequest).toHaveBeenCalledWith({
       id: REQUEST_ID,
       verdict: 'approved',
@@ -96,8 +104,8 @@ describe('answerFleetRequestAction — behavior', () => {
 
   it('returns the safe error message when the data layer rejects', async () => {
     vi.mocked(answerFleetRequest).mockRejectedValueOnce(new Error('הפנייה כבר נענתה או פגה'));
-    const r = await answerFleetRequestAction(null, fd({ id: REQUEST_ID, verdict: 'denied' }));
-    expect(r?.error).toBe('הפנייה כבר נענתה או פגה');
+    const r = await answerFleetRequestAction({}, fd({ id: REQUEST_ID, verdict: 'denied' }));
+    expect(r.serverError).toBe('הפנייה כבר נענתה או פגה');
     expect(logActivity).not.toHaveBeenCalled();
   });
 });
@@ -106,10 +114,10 @@ describe('answerFleetRequestAction — B1 self-answer', () => {
   it('surfaces the data-layer refusal for an owner-opened request and logs nothing', async () => {
     vi.mocked(answerFleetRequest).mockRejectedValueOnce(new Error('לא ניתן להשיב לפנייה ששלחת'));
     const r = await answerFleetRequestAction(
-      null,
+      {},
       fd({ id: REQUEST_ID, verdict: 'answered', answer: 'כן' }),
     );
-    expect(r?.error).toBe('לא ניתן להשיב לפנייה ששלחת');
+    expect(r.serverError).toBe('לא ניתן להשיב לפנייה ששלחת');
     expect(logActivity).not.toHaveBeenCalled();
   });
 });
@@ -124,7 +132,7 @@ describe('createFleetRequestAction — new message', () => {
 
   it('uses the visible subject, defaults kind/tier, and revalidates the layout', async () => {
     const r = await createFleetRequestAction(
-      null,
+      {},
       fd({ role: 'ops-monitor', title: 'בדיקת גיבויים', body: 'נא לבדוק שהגיבוי של הלילה עבר' }),
     );
     expect(createOwnerFleetRequest).toHaveBeenCalledWith({
@@ -135,39 +143,39 @@ describe('createFleetRequestAction — new message', () => {
       body: 'נא לבדוק שהגיבוי של הלילה עבר',
       threadRoot: null,
     });
-    expect(r).toMatchObject({ requestId: REQUEST_ID, deduplicated: false, role: 'ops-monitor' });
+    expect(r).toMatchObject({ data: { requestId: REQUEST_ID, deduplicated: false, role: 'ops-monitor' } });
     expect(revalidatePath).toHaveBeenCalledWith('/admin/fleet', 'layout');
   });
 
   it('falls back to "הודעה ל-<role>" when subject and first line are too short', async () => {
-    await createFleetRequestAction(null, fd({ role: 'ops-monitor', title: '', body: 'כן\nזה בסדר גמור לבצע' }));
+    await createFleetRequestAction({}, fd({ role: 'ops-monitor', title: '', body: 'כן\nזה בסדר גמור לבצע' }));
     expect(vi.mocked(createOwnerFleetRequest).mock.calls[0][0].title).toBe('הודעה ל-ops-monitor');
   });
 
   it('keeps the 10-character minimum so "כן" does not wake an agent run', async () => {
-    const r = await createFleetRequestAction(null, fd({ role: 'ops-monitor', body: 'כן' }));
-    expect(r?.fieldErrors?.body?.length).toBeGreaterThan(0);
+    const r = await createFleetRequestAction({}, fd({ role: 'ops-monitor', body: 'כן' }));
+    expect(r.validationErrors?.fieldErrors?.body?.length).toBeGreaterThan(0);
     expect(createOwnerFleetRequest).not.toHaveBeenCalled();
   });
 
   it('refuses a role that fleet.json does not define', async () => {
-    const r = await createFleetRequestAction(null, fd({ role: 'ghost-role', body: 'הודעה ארוכה מספיק' }));
-    expect(r?.fieldErrors?.role?.length).toBeGreaterThan(0);
+    const r = await createFleetRequestAction({}, fd({ role: 'ghost-role', body: 'הודעה ארוכה מספיק' }));
+    expect(r.validationErrors?.fieldErrors?.role?.length).toBeGreaterThan(0);
     expect(createOwnerFleetRequest).not.toHaveBeenCalled();
   });
 
   it('fails closed when fleet.json is unreadable', async () => {
     vi.mocked(readFleetRoles).mockResolvedValueOnce(null);
-    const r = await createFleetRequestAction(null, fd({ role: 'ops-monitor', body: 'הודעה ארוכה מספיק' }));
-    expect(r?.error).toBeTruthy();
+    const r = await createFleetRequestAction({}, fd({ role: 'ops-monitor', body: 'הודעה ארוכה מספיק' }));
+    expect(r.serverError).toBeTruthy();
     expect(createOwnerFleetRequest).not.toHaveBeenCalled();
   });
 
   it('reports a dedup hit with the existing id so the UI can focus it', async () => {
     vi.mocked(createOwnerFleetRequest).mockResolvedValueOnce({ id: REQUEST_ID, deduplicated: true });
-    const r = await createFleetRequestAction(null, fd({ role: 'ops-monitor', body: 'הודעה ארוכה מספיק' }));
-    expect(r).toMatchObject({ deduplicated: true, requestId: REQUEST_ID });
-    expect(r?.notice).toContain('כבר נשלחה היום');
+    const r = await createFleetRequestAction({}, fd({ role: 'ops-monitor', body: 'הודעה ארוכה מספיק' }));
+    expect(r).toMatchObject({ data: { deduplicated: true, requestId: REQUEST_ID } });
+    expect(r.data?.notice).toContain('כבר נשלחה היום');
   });
 });
 
@@ -179,20 +187,20 @@ describe('createFleetRequestAction — continuation ("השב" on a closed messag
       role: 'ops-monitor',
     });
     const r = await createFleetRequestAction(
-      null,
+      {},
       // a tampered hidden role/title must be ignored on this path
       fd({ continueFrom: REQUEST_ID, body: 'עוד', role: 'social-manager', title: 'x' }),
     );
     expect(createOwnerFleetContinuation).toHaveBeenCalledWith({ continueFrom: REQUEST_ID, body: 'עוד' });
     expect(createOwnerFleetRequest).not.toHaveBeenCalled();
-    expect(r).toMatchObject({ role: 'ops-monitor', requestId: REQUEST_ID });
+    expect(r).toMatchObject({ data: { role: 'ops-monitor', requestId: REQUEST_ID } });
   });
 
   it('needs at least 2 characters and a real uuid', async () => {
-    const short = await createFleetRequestAction(null, fd({ continueFrom: REQUEST_ID, body: 'א' }));
-    expect(short?.fieldErrors?.body?.length).toBeGreaterThan(0);
-    const bad = await createFleetRequestAction(null, fd({ continueFrom: 'nope', body: 'עוד פרט' }));
-    expect(bad?.fieldErrors?.continueFrom?.length).toBeGreaterThan(0);
+    const short = await createFleetRequestAction({}, fd({ continueFrom: REQUEST_ID, body: 'א' }));
+    expect(short.validationErrors?.fieldErrors?.body?.length).toBeGreaterThan(0);
+    const bad = await createFleetRequestAction({}, fd({ continueFrom: 'nope', body: 'עוד פרט' }));
+    expect(bad.validationErrors?.fieldErrors?.continueFrom?.length).toBeGreaterThan(0);
     expect(createOwnerFleetContinuation).not.toHaveBeenCalled();
   });
 });

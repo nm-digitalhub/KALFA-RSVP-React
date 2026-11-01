@@ -1,12 +1,13 @@
 'use server';
 
+import { returnValidationErrors } from 'next-safe-action';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
 
 import { createOffer, updateOffer, deleteOffer, OfferFloorError } from '@/lib/data/admin/offers';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { offerSchema } from '@/lib/validation/admin';
-import { issuesToFieldErrors } from '@/lib/validation/result';
-import type { FormState } from '@/lib/validation/result';
 
 // Read the offer fields from the form into the shape offerSchema parses. Checkboxes and numbers
 // are validated and coerced server-side; nothing is trusted from the browser. `packages` is edited
@@ -37,71 +38,53 @@ function readOfferForm(formData: FormData) {
   };
 }
 
+// The form, read by readOfferForm, then held to the shared schema.
+const offerInput = z.instanceof(FormData).pipe(z.preprocess(readOfferForm, offerSchema));
+
 // D14's refusal surfaces as a field error on the discount value — the field whose change fixes it.
-function floorFieldError(err: OfferFloorError): FormState {
-  return { fieldErrors: { value: [err.message] } };
+function floorFieldError(err: OfferFloorError): never {
+  return returnValidationErrors(offerSchema, { value: { _errors: [err.message] } });
 }
 
-export async function createOfferAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = offerSchema.safeParse(readOfferForm(formData));
-  if (!parsed.success) {
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
+export const createOfferAction = actionClient
+  .inputSchema(offerInput)
+  .stateAction(async ({ parsedInput }) => {
+    try {
+      await createOffer(parsedInput);
+    } catch (err) {
+      unstable_rethrow(err);
+      if (err instanceof OfferFloorError) floorFieldError(err);
+      returnUserError('יצירת ההצעה נכשלה. נסו שוב.');
+    }
 
-  try {
-    await createOffer(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    if (err instanceof OfferFloorError) return floorFieldError(err);
-    return { error: 'יצירת ההצעה נכשלה. נסו שוב.' };
-  }
+    revalidatePath('/admin/offers');
+    redirect('/admin/offers');
+  });
 
-  revalidatePath('/admin/offers');
-  redirect('/admin/offers');
-}
+export const updateOfferAction = actionClient
+  .inputSchema(offerInput)
+  .bindArgsSchemas([z.uuid()])
+  .stateAction(async ({ parsedInput, bindArgsParsedInputs: [id] }) => {
+    try {
+      await updateOffer(id, parsedInput);
+    } catch (err) {
+      unstable_rethrow(err);
+      if (err instanceof OfferFloorError) floorFieldError(err);
+      returnUserError('עדכון ההצעה נכשל. נסו שוב.');
+    }
 
-export async function updateOfferAction(
-  id: string,
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = offerSchema.safeParse(readOfferForm(formData));
-  if (!parsed.success) {
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
+    revalidatePath('/admin/offers');
+    revalidatePath(`/admin/offers/${id}`);
+    return { notice: 'ההצעה נשמרה' };
+  });
 
-  try {
-    await updateOffer(id, parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    if (err instanceof OfferFloorError) return floorFieldError(err);
-    return { error: 'עדכון ההצעה נכשל. נסו שוב.' };
-  }
-
-  revalidatePath('/admin/offers');
-  revalidatePath(`/admin/offers/${id}`);
-  return { notice: 'ההצעה נשמרה' };
-}
-
-export async function deleteOfferAction(
-  id: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  // Bound with the id; useActionState always supplies (state, formData), neither of which this
-  // destructive action reads. Marked intentionally unused.
-  void _prevState;
-  void _formData;
-  try {
+// Bound with the id; useActionState supplies the previous result and the form data, neither of which this destructive
+// action reads.
+export const deleteOfferAction = actionClient
+  .bindArgsSchemas([z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [id] }) => {
     await deleteOffer(id);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'מחיקת ההצעה נכשלה. נסו שוב.' };
-  }
 
-  revalidatePath('/admin/offers');
-  redirect('/admin/offers');
-}
+    revalidatePath('/admin/offers');
+    redirect('/admin/offers');
+  });

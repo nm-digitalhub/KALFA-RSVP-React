@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
+import { zfd } from 'zod-form-data';
 
 import { requirePlatformOwner } from '@/lib/auth/dal';
 import {
@@ -21,13 +22,12 @@ import {
   addAllowlistEntrySchema,
   addExternalAllowlistEntrySchema,
   agentNumberSchema,
-  allowlistEntryIdSchema,
   approveUnverifiedStaffSchema,
   dailyCapSchema,
   isOwnerAgentUserError,
   relabelAllowlistEntrySchema,
 } from '@/lib/validation/owner-agent';
-import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 
 // Thin by design: validate → owner gate → DAL → a safe Hebrew result.
 //
@@ -36,7 +36,8 @@ import { issuesToFieldErrors, type FormState } from '@/lib/validation/result';
 // is never the answer, and for this screen the answer is not a permission key at all:
 // owner decision 9.4 (2026-09-24). It runs outside the try so its redirect is never
 // caught and turned into a form error; everything after it goes through
-// unstable_rethrow for the same reason.
+// unstable_rethrow for the same reason. The input schema runs before the body, so a bad
+// form is refused before the gate, as it always was.
 //
 // Activity rows are written by the DAL, once, for every caller.
 
@@ -52,243 +53,205 @@ function revalidate(): void {
 /**
  * Only a message the DAL wrote for the owner (OWNER_AGENT_ERRORS) reaches the screen.
  * An exact match, not "contains Hebrew": a ZodError's message is the JSON of its
- * issues, which carries these very Hebrew strings alongside paths and codes.
+ * issues, which carries these very Hebrew strings alongside paths and codes. Stricter
+ * than the action client's own policy, so every catch below keeps it.
  */
 function safeMessage(err: unknown, fallback: string): string {
   const message = err instanceof Error ? err.message : '';
   return isOwnerAgentUserError(message) ? message : fallback;
 }
 
-export async function setOwnerAgentEnabledAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
+// The input schemas. A typed field is read as `formData.get(name) ?? ''` (`.prefault('')`):
+// an absent field is '', which the shared schema answers with its own Hebrew message. The
+// hidden id and target-state fields are typed by no one: a bad one is answered with one
+// sentence, which the row shows as its form message.
+const BAD_REQUEST = 'בקשה לא תקינה';
+const hiddenEntryId = z.uuid({ error: BAD_REQUEST });
+
+export const setOwnerAgentEnabledAction = actionClient
   // A checkbox posts 'on' when ticked and nothing when not.
-  const enabled = formData.get('owner_agent_enabled') === 'on';
+  .inputSchema(zfd.formData({ owner_agent_enabled: zfd.checkbox() }))
+  .stateAction(async ({ parsedInput: { owner_agent_enabled: enabled } }) => {
+    await requirePlatformOwner();
+    try {
+      await setOwnerAgentEnabled(enabled);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'עדכון מתג הסוכן נכשל'));
+    }
 
-  await requirePlatformOwner();
-  try {
-    await setOwnerAgentEnabled(enabled);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'עדכון מתג הסוכן נכשל') };
-  }
-
-  revalidate();
-  return { notice: enabled ? 'הסוכן הופעל' : 'הסוכן כובה' };
-}
-
-export async function setOwnerAgentNumberAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = agentNumberSchema.safeParse(formData.get('phoneNumberId') ?? '');
-  if (!parsed.success) {
-    return { fieldErrors: { phoneNumberId: [parsed.error.issues[0]?.message ?? 'מזהה מספר לא תקין'] } };
-  }
-
-  await requirePlatformOwner();
-  try {
-    await setOwnerAgentPhoneNumber(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'שמירת המספר נכשלה') };
-  }
-
-  revalidate();
-  return {
-    notice: parsed.data === null ? 'לא נבחר מספר — אין הסטה לסוכן' : 'המספר נשמר',
-  };
-}
-
-export async function setOwnerAgentDailyCapAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = dailyCapSchema.safeParse(formData.get('dailyCap') ?? '');
-  if (!parsed.success) {
-    return { fieldErrors: { dailyCap: [parsed.error.issues[0]?.message ?? 'ערך לא תקין'] } };
-  }
-
-  await requirePlatformOwner();
-  try {
-    await setOwnerAgentDailyCap(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'שמירת התקרה היומית נכשלה') };
-  }
-
-  revalidate();
-  return { notice: 'התקרה היומית נשמרה' };
-}
-
-export async function addAllowlistEntryAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  // issuesToFieldErrors carries MESSAGES, never the submitted value — a refused phone
-  // number is not echoed back into the response.
-  const parsed = addAllowlistEntrySchema.safeParse({
-    e164: formData.get('e164') ?? '',
-    staffUserId: formData.get('staffUserId') ?? '',
-    label: formData.get('label') ?? '',
+    revalidate();
+    return { notice: enabled ? 'הסוכן הופעל' : 'הסוכן כובה' };
   });
-  if (!parsed.success) {
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
 
-  await requirePlatformOwner();
-  try {
-    // The DAL re-validates (it has callers other than this form), so it receives the
-    // input shape: the normalised E.164, and '' rather than null for "no label".
-    await addOwnerAgentAllowlistEntry({ ...parsed.data, label: parsed.data.label ?? '' });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'הוספת המספר נכשלה') };
-  }
+export const setOwnerAgentNumberAction = actionClient
+  .inputSchema(zfd.formData({ phoneNumberId: agentNumberSchema.prefault('') }))
+  .stateAction(async ({ parsedInput: { phoneNumberId } }) => {
+    await requirePlatformOwner();
+    try {
+      await setOwnerAgentPhoneNumber(phoneNumberId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'שמירת המספר נכשלה'));
+    }
 
-  revalidate();
-  return { notice: 'המספר נוסף לרשימת ההיתר' };
-}
-
-const toggleSchema = z.object({
-  id: allowlistEntryIdSchema,
-  enabled: z.enum(['true', 'false']).transform((v) => v === 'true'),
-});
-
-export async function setAllowlistEntryEnabledAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = toggleSchema.safeParse({
-    id: formData.get('id'),
-    enabled: formData.get('enabled'),
+    revalidate();
+    return {
+      notice: phoneNumberId === null ? 'לא נבחר מספר — אין הסטה לסוכן' : 'המספר נשמר',
+    };
   });
-  if (!parsed.success) return { error: 'בקשה לא תקינה' };
 
-  await requirePlatformOwner();
-  try {
-    await setOwnerAgentAllowlistEnabled(parsed.data.id, parsed.data.enabled);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'עדכון הרשומה נכשל') };
-  }
+export const setOwnerAgentDailyCapAction = actionClient
+  .inputSchema(zfd.formData({ dailyCap: dailyCapSchema.prefault('') }))
+  .stateAction(async ({ parsedInput: { dailyCap } }) => {
+    await requirePlatformOwner();
+    try {
+      await setOwnerAgentDailyCap(dailyCap);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'שמירת התקרה היומית נכשלה'));
+    }
 
-  revalidate();
-  return { notice: parsed.data.enabled ? 'הרשומה הופעלה' : 'הרשומה הושבתה' };
-}
-
-export async function relabelAllowlistEntryAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = relabelAllowlistEntrySchema.safeParse({
-    id: formData.get('id'),
-    label: formData.get('label') ?? '',
+    revalidate();
+    return { notice: 'התקרה היומית נשמרה' };
   });
-  if (!parsed.success) {
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
 
-  await requirePlatformOwner();
-  try {
-    // The DAL re-parses the raw label, so the trimmed value is passed through as-is.
-    await relabelOwnerAgentAllowlistEntry(parsed.data.id, parsed.data.label ?? '');
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'עדכון התווית נכשל') };
-  }
+// The flattened validation errors carry MESSAGES, never the submitted value — a refused
+// phone number is not echoed back into the response.
+export const addAllowlistEntryAction = actionClient
+  .inputSchema(
+    zfd.formData({
+      e164: addAllowlistEntrySchema.shape.e164.prefault(''),
+      staffUserId: addAllowlistEntrySchema.shape.staffUserId.prefault(''),
+      label: addAllowlistEntrySchema.shape.label.prefault(''),
+    }),
+  )
+  .stateAction(async ({ parsedInput }) => {
+    await requirePlatformOwner();
+    try {
+      // The DAL re-validates (it has callers other than this form), so it receives the
+      // input shape: the normalised E.164, and '' rather than null for "no label".
+      await addOwnerAgentAllowlistEntry({ ...parsedInput, label: parsedInput.label ?? '' });
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'הוספת המספר נכשלה'));
+    }
 
-  revalidate();
-  return { notice: 'התווית נשמרה' };
-}
+    revalidate();
+    return { notice: 'המספר נוסף לרשימת ההיתר' };
+  });
 
-export async function removeAllowlistEntryAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = allowlistEntryIdSchema.safeParse(formData.get('id'));
-  if (!parsed.success) return { error: 'בקשה לא תקינה' };
+export const setAllowlistEntryEnabledAction = actionClient
+  .inputSchema(
+    zfd.formData({
+      id: hiddenEntryId,
+      enabled: z.enum(['true', 'false'], { error: BAD_REQUEST }).transform((v) => v === 'true'),
+    }),
+  )
+  .stateAction(async ({ parsedInput: { id, enabled } }) => {
+    await requirePlatformOwner();
+    try {
+      await setOwnerAgentAllowlistEnabled(id, enabled);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'עדכון הרשומה נכשל'));
+    }
 
-  await requirePlatformOwner();
-  try {
-    await removeOwnerAgentAllowlistEntry(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'הסרת המספר נכשלה') };
-  }
+    revalidate();
+    return { notice: enabled ? 'הרשומה הופעלה' : 'הרשומה הושבתה' };
+  });
 
-  revalidate();
-  return { notice: 'המספר הוסר מרשימת ההיתר' };
-}
+export const relabelAllowlistEntryAction = actionClient
+  .inputSchema(
+    zfd.formData({
+      id: relabelAllowlistEntrySchema.shape.id,
+      label: relabelAllowlistEntrySchema.shape.label.prefault(''),
+    }),
+  )
+  .stateAction(async ({ parsedInput: { id, label } }) => {
+    await requirePlatformOwner();
+    try {
+      // The DAL re-parses the raw label, so the trimmed value is passed through as-is.
+      await relabelOwnerAgentAllowlistEntry(id, label ?? '');
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'עדכון התווית נכשל'));
+    }
+
+    revalidate();
+    return { notice: 'התווית נשמרה' };
+  });
+
+export const removeAllowlistEntryAction = actionClient
+  .inputSchema(zfd.formData({ id: hiddenEntryId }))
+  .stateAction(async ({ parsedInput: { id } }) => {
+    await requirePlatformOwner();
+    try {
+      await removeOwnerAgentAllowlistEntry(id);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'הסרת המספר נכשלה'));
+    }
+
+    revalidate();
+    return { notice: 'המספר הוסר מרשימת ההיתר' };
+  });
 
 // ─── Manual approval (plans/owner-agent-allowlist-override-plan.md) ──────────
 
-export async function approveUnverifiedStaffAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = approveUnverifiedStaffSchema.safeParse({
-    id: formData.get('id'),
-    note: formData.get('note') ?? '',
+export const approveUnverifiedStaffAction = actionClient
+  .inputSchema(
+    zfd.formData({
+      id: approveUnverifiedStaffSchema.shape.id,
+      note: approveUnverifiedStaffSchema.shape.note.prefault(''),
+    }),
+  )
+  .stateAction(async ({ parsedInput: { id, note } }) => {
+    await requirePlatformOwner();
+    try {
+      await approveOwnerAgentUnverifiedStaff(id, note);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'האישור הידני נכשל'));
+    }
+
+    revalidate();
+    return { notice: 'אושר ידנית' };
   });
-  if (!parsed.success) {
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
 
-  await requirePlatformOwner();
-  try {
-    await approveOwnerAgentUnverifiedStaff(parsed.data.id, parsed.data.note);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'האישור הידני נכשל') };
-  }
+export const revokeManualApprovalAction = actionClient
+  .inputSchema(zfd.formData({ id: hiddenEntryId }))
+  .stateAction(async ({ parsedInput: { id } }) => {
+    await requirePlatformOwner();
+    try {
+      await revokeOwnerAgentManualApproval(id);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'ביטול האישור הידני נכשל'));
+    }
 
-  revalidate();
-  return { notice: 'אושר ידנית' };
-}
-
-export async function revokeManualApprovalAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = allowlistEntryIdSchema.safeParse(formData.get('id'));
-  if (!parsed.success) return { error: 'בקשה לא תקינה' };
-
-  await requirePlatformOwner();
-  try {
-    await revokeOwnerAgentManualApproval(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'ביטול האישור הידני נכשל') };
-  }
-
-  revalidate();
-  return { notice: 'האישור הידני בוטל' };
-}
-
-export async function addExternalAllowlistEntryAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  // Messages only, never the submitted value (issuesToFieldErrors).
-  const parsed = addExternalAllowlistEntrySchema.safeParse({
-    e164: formData.get('e164') ?? '',
-    name: formData.get('name') ?? '',
-    note: formData.get('note') ?? '',
+    revalidate();
+    return { notice: 'האישור הידני בוטל' };
   });
-  if (!parsed.success) {
-    return { fieldErrors: issuesToFieldErrors(parsed.error.issues) };
-  }
 
-  await requirePlatformOwner();
-  try {
-    await addOwnerAgentExternalEntry(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'הוספת האדם החיצוני נכשלה') };
-  }
+// Messages only, never the submitted value (flattened validation errors).
+export const addExternalAllowlistEntryAction = actionClient
+  .inputSchema(
+    zfd.formData({
+      e164: addExternalAllowlistEntrySchema.shape.e164.prefault(''),
+      name: addExternalAllowlistEntrySchema.shape.name.prefault(''),
+      note: addExternalAllowlistEntrySchema.shape.note.prefault(''),
+    }),
+  )
+  .stateAction(async ({ parsedInput }) => {
+    await requirePlatformOwner();
+    try {
+      await addOwnerAgentExternalEntry(parsedInput);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(safeMessage(err, 'הוספת האדם החיצוני נכשלה'));
+    }
 
-  revalidate();
-  return { notice: 'האדם החיצוני נוסף לרשימת ההיתר' };
-}
+    revalidate();
+    return { notice: 'האדם החיצוני נוסף לרשימת ההיתר' };
+  });

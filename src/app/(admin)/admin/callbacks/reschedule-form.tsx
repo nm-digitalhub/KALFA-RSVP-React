@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { rescheduleCallbackAction } from './actions';
 
 // <input type="datetime-local"> speaks wall time with no zone, not ISO instants.
@@ -29,7 +30,7 @@ function nowPlusOneHourLocal(): string {
 export function RescheduleForm({ id }: { id: string }) {
   const [state, formAction, pending] = useActionState(
     rescheduleCallbackAction,
-    null,
+    {},
   );
   const fieldId = `reschedule-${id}`;
   const [exactAt, setExactAt] = useState(nowPlusOneHourLocal);
@@ -57,9 +58,9 @@ export function RescheduleForm({ id }: { id: string }) {
           {pending ? 'מתזמן…' : 'תזמנו שיחה למועד הזה'}
         </button>
       </div>
-      <FieldError errors={state?.fieldErrors?.exactAt} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.exactAt} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }

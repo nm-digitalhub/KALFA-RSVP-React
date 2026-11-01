@@ -14,8 +14,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { recoverFromVersionSkew } from '@/components/use-version-skew-reload';
+import { actionFormError } from '@/lib/action-result';
 import type { GuestGroup } from '@/lib/data/guests';
-import type { FormState } from '@/lib/validation/result';
 
 import {
   createGroupAction,
@@ -29,16 +29,18 @@ import {
 // actions/data layer (groupSchema validation, requireEventAccess, activity
 // log); nothing is re-implemented here.
 
+type CreateGroupResult = Awaited<ReturnType<typeof createGroupAction>>;
+
 type BoundGroupAction = (
-  prev: FormState,
+  prev: CreateGroupResult,
   formData: FormData,
-) => Promise<FormState>;
+) => Promise<CreateGroupResult>;
 
 const fieldClass =
   'rounded-md border border-border bg-transparent px-3 py-2 text-sm';
 
 function CreateGroupForm({ action }: { action: BoundGroupAction }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
   return (
     <form action={formAction} className="space-y-1">
       <div className="flex flex-wrap items-center gap-2">
@@ -60,9 +62,9 @@ function CreateGroupForm({ action }: { action: BoundGroupAction }) {
           הוספת קבוצה
         </button>
       </div>
-      <FieldError errors={state?.fieldErrors?.name} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.name} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }
@@ -70,7 +72,7 @@ function CreateGroupForm({ action }: { action: BoundGroupAction }) {
 function GroupRow({ eventId, group }: { eventId: string; group: GuestGroup }) {
   const [state, renameAction] = useActionState(
     updateGroupAction.bind(null, eventId, group.id),
-    null,
+    {},
   );
   const [pending, startTransition] = useTransition();
   const [failed, setFailed] = useState(false);
@@ -81,7 +83,9 @@ function GroupRow({ eventId, group }: { eventId: string; group: GuestGroup }) {
     setFailed(false);
     startTransition(async () => {
       try {
-        await deleteGroupAction(eventId, group.id);
+        // A failure comes back as the result, not a throw.
+        const result = await deleteGroupAction({ eventId, groupId: group.id });
+        if (result.serverError || result.validationErrors) setFailed(true);
       } catch (err) {
         // A stale-deployment action id reloads the tab (shared recovery);
         // anything else keeps the inline "נכשל" indicator.
@@ -144,9 +148,9 @@ function GroupRow({ eventId, group }: { eventId: string; group: GuestGroup }) {
           נכשל
         </span>
       ) : null}
-      <FieldError errors={state?.fieldErrors?.name} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.name} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </li>
   );
 }

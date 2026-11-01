@@ -17,7 +17,7 @@ afterEach(cleanup);
 
 describe('package copy field', () => {
   it('applies only on confirmation, while preserving the submitted field name', async () => {
-    rewrite.mockResolvedValue({ ok: true, text: 'Improved' });
+    rewrite.mockResolvedValue({ data: { text: 'Improved' } });
     render(<form><PackageCopyField field="description" label="תיאור" initialValue="Original" rows={3} /></form>);
     fireEvent.click(screen.getByRole('button', { name: 'שפר ניסוח: תיאור' }));
     await screen.findByRole('button', { name: 'החל ניסוח' });
@@ -36,7 +36,7 @@ describe('package copy field', () => {
     const input = screen.getByLabelText('תיאור');
     fireEvent.change(input, { target: { value: 'Edited' } });
     fireEvent.change(input, { target: { value: 'Original' } });
-    await act(async () => { resolve({ ok: true, text: 'Stale' }); });
+    await act(async () => { resolve({ data: { text: 'Stale' } }); });
     await waitFor(() => expect(screen.queryByRole('button', { name: 'החל ניסוח' })).toBeNull());
     expect((input as HTMLTextAreaElement).value).toBe('Original');
   });
@@ -53,19 +53,19 @@ describe('package copy field', () => {
       expect(button.getAttribute('aria-busy')).toBe('true');
       fireEvent.click(button);
       expect(rewrite).toHaveBeenCalledTimes(1);
-      await act(async () => { resolve({ ok: true, text: 'Improved' }); });
+      await act(async () => { resolve({ data: { text: 'Improved' } }); });
       await screen.findByRole('button', { name: 'החל ניסוח' });
       expect(button.disabled).toBe(false);
       expect(button.getAttribute('aria-busy')).toBe('false');
     } finally {
       // An async transition that never settles holds up the commits of every test after it; a failing assertion above must not
       // turn into four failures. (A second resolve of a settled promise is ignored.)
-      resolve({ ok: false, error: 'cleanup' });
+      resolve({ serverError: 'cleanup' });
     }
   });
 
   it('shows the server\'s refusal under the field, offers no proposal and leaves the text as it was', async () => {
-    rewrite.mockResolvedValue({ ok: false, error: 'הניסוח שינה את מספר הפריטים. נסו שוב.' });
+    rewrite.mockResolvedValue({ serverError: 'הניסוח שינה את מספר הפריטים. נסו שוב.' });
     render(<form><PackageCopyField field="includes" label="כלול בחבילה" initialValue={'One\nTwo'} rows={5} /></form>);
     fireEvent.click(screen.getByRole('button', { name: 'שפר ניסוח: כלול בחבילה' }));
     expect((await screen.findByRole('alert')).textContent).toContain('הניסוח שינה את מספר הפריטים');
@@ -84,7 +84,7 @@ describe('package copy field', () => {
   });
 
   it('preserves the includes field and original lines on cancel', async () => {
-    rewrite.mockResolvedValue({ ok: true, text: 'One improved\nTwo improved' });
+    rewrite.mockResolvedValue({ data: { text: 'One improved\nTwo improved' } });
     render(<form><PackageCopyField field="includes" label="כלול בחבילה" initialValue={'One\nTwo'} rows={5} /></form>);
     fireEvent.click(screen.getByRole('button', { name: 'שפר ניסוח: כלול בחבילה' }));
     fireEvent.click(await screen.findByRole('button', { name: 'ביטול' }));

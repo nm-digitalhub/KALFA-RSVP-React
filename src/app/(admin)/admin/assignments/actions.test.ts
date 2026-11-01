@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn(), refresh: vi.fn() }));
+// redirect() throws Next's control-flow signal; the digest is what next-safe-action recognises and re-throws.
 vi.mock('next/navigation', () => ({
   redirect: vi.fn((target: string) => {
-    throw new Error(`REDIRECT:${target}`);
+    throw Object.assign(new Error(`REDIRECT:${target}`), { digest: `NEXT_REDIRECT;replace;${target};307;` });
   }),
   unstable_rethrow: vi.fn(),
 }));
@@ -20,6 +21,8 @@ import {
   voidStaffAssignment,
 } from '@/lib/data/admin/coupon-assignments';
 import { refresh } from 'next/cache';
+import { actionErrorMessage } from '@/lib/action-result';
+import { GENERIC_ACTION_ERROR } from '@/lib/safe-action';
 import { createAssignmentAction, voidAssignmentAction } from './actions';
 
 // The assign action (admin-panel ג.3, spec §8): every successful outcome navigates to the
@@ -47,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(findAccountByEmail).mockResolvedValue({ id: 'u-1', email: 'c@x.il', name: null });
 });
+afterEach(() => vi.restoreAllMocks());
 
 describe('createAssignmentAction', () => {
   it('created → redirects to the new assignment with notice=created, passing the confirmed terms', async () => {
@@ -59,7 +63,7 @@ describe('createAssignmentAction', () => {
       options: [],
     });
 
-    await expect(createAssignmentAction(null, form(VALID))).rejects.toThrow(
+    await expect(createAssignmentAction({}, form(VALID))).rejects.toThrow(
       'REDIRECT:/admin/assignments/a-new?notice=created',
     );
     expect(createStaffAssignment).toHaveBeenCalledWith(
@@ -81,7 +85,7 @@ describe('createAssignmentAction', () => {
       options: [],
     });
 
-    await expect(createAssignmentAction(null, form(VALID))).rejects.toThrow(
+    await expect(createAssignmentAction({}, form(VALID))).rejects.toThrow(
       'REDIRECT:/admin/assignments/a-old?notice=existing',
     );
   });
@@ -96,33 +100,45 @@ describe('createAssignmentAction', () => {
       options: [],
     });
 
-    await expect(createAssignmentAction(null, form(VALID))).rejects.toThrow(
+    await expect(createAssignmentAction({}, form(VALID))).rejects.toThrow(
       'REDIRECT:/admin/assignments/a-kept?notice=duplicate_kept',
     );
   });
 
   it('the stale-terms refusal surfaces as the re-confirm message', async () => {
     vi.mocked(createStaffAssignment).mockRejectedValue(new Error('תנאי ההצעה השתנו. בדקו ואשרו מחדש.'));
-    const r = await createAssignmentAction(null, form(VALID));
-    expect(r).toEqual({ error: 'תנאי ההצעה השתנו. בדקו ואשרו מחדש.' });
+    const r = await createAssignmentAction({}, form(VALID));
+    expect(r).toEqual({ serverError: 'תנאי ההצעה השתנו. בדקו ואשרו מחדש.' });
     // The router is refreshed inside the action, so the preview re-reads the CURRENT terms.
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
   it('tampered confirmed_terms fail validation before anything runs', async () => {
     const r = await createAssignmentAction(
-      null,
+      {},
       form({ ...VALID, confirmed_terms: '[{"packageId":"x","finalPrice":-1}]' }),
     );
-    expect(r?.error).toBeTruthy();
+    expect(actionErrorMessage(r)).toBeTruthy();
     expect(createStaffAssignment).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled(); // nothing on the server moved — no refresh round trip
   });
 
   it('a lookup failure at confirm time is an error, not a silent assignment', async () => {
     vi.mocked(findAccountByEmail).mockResolvedValue(null);
-    const r = await createAssignmentAction(null, form(VALID));
-    expect(r?.error).toContain('לא נמצא חשבון');
+    const r = await createAssignmentAction({}, form(VALID));
+    expect(r?.serverError).toContain('לא נמצא חשבון');
+    expect(createStaffAssignment).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled(); // nothing on the server moved
+  });
+
+  it.each([
+    ['an empty email', { email: '' }, 'נא להזין אימייל'],
+    ['a malformed email', { email: 'not-an-email' }, 'כתובת אימייל לא תקינה'],
+    ['no offer chosen', { offer_id: '', confirmed_terms: '' }, 'נא לבחור הצעה'],
+  ])('%s answers with the schema’s Hebrew message before anything runs', async (_label, override, message) => {
+    const r = await createAssignmentAction({}, form({ ...VALID, ...override }));
+    expect(actionErrorMessage(r)).toBe(message);
+    expect(findAccountByEmail).not.toHaveBeenCalled();
     expect(createStaffAssignment).not.toHaveBeenCalled();
   });
 });
@@ -133,7 +149,7 @@ describe('voidAssignmentAction', () => {
 
   it('a refusal navigates to the detail page with the refusal code and the list filters — the dialog may no longer exist there', async () => {
     vi.mocked(voidStaffAssignment).mockResolvedValue({ outcome: 'refused', reason: 'already_ended' });
-    await expect(voidAssignmentAction(ID, LIST, null, form({ reason: 'x' }))).rejects.toThrow(
+    await expect(voidAssignmentAction(ID, LIST, {}, form({ reason: 'x' }))).rejects.toThrow(
       `REDIRECT:/admin/assignments/${ID}?status=waiting&sort=expiry&page=2&notice=void_refused_already_ended`,
     );
   });
@@ -143,29 +159,47 @@ describe('voidAssignmentAction', () => {
       outcome: 'refused',
       reason: '<script>' as unknown as 'already_ended',
     });
-    const result = await voidAssignmentAction(ID, LIST, null, form({ reason: 'x' }));
-    expect(result).toEqual({ error: expect.stringContaining('המצב השתנה') });
+    const result = await voidAssignmentAction(ID, LIST, {}, form({ reason: 'x' }));
+    expect(result).toEqual({ serverError: expect.stringContaining('המצב השתנה') });
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it('an empty reason fails validation before anything runs', async () => {
-    const result = await voidAssignmentAction(ID, LIST, null, form({ reason: '   ' }));
-    expect(result).toEqual({ error: 'נדרשת סיבת ביטול' });
+  it.each(['   ', ''])('an empty reason (%j) fails validation before anything runs', async (reason) => {
+    const result = await voidAssignmentAction(ID, LIST, {}, form({ reason }));
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors: { reason: ['נדרשת סיבת ביטול'] } } });
+    expect(actionErrorMessage(result)).toBe('נדרשת סיבת ביטול');
     expect(voidStaffAssignment).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });
 
   it('an unexpected server failure keeps the dialog open and refreshes the details in the same round trip', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(voidStaffAssignment).mockRejectedValue(new Error('void: assignment changed'));
-    const result = await voidAssignmentAction(ID, LIST, null, form({ reason: 'x' }));
-    expect(result).toEqual({ error: 'void: assignment changed' });
+    const result = await voidAssignmentAction(ID, LIST, {}, form({ reason: 'x' }));
+    // An internal (non-Hebrew) message is logged on the server and replaced by the generic one (src/lib/safe-action.ts).
+    expect(result).toEqual({ serverError: GENERIC_ACTION_ERROR });
+    expect(log).toHaveBeenCalledWith('[action] Error: void: assignment changed');
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a data-layer Hebrew failure reaches the dialog as it is, after the same refresh', async () => {
+    vi.mocked(voidStaffAssignment).mockRejectedValue(new Error('ההטבה כבר בוטלה'));
+    const result = await voidAssignmentAction(ID, LIST, {}, form({ reason: 'x' }));
+    expect(result).toEqual({ serverError: 'ההטבה כבר בוטלה' });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('voids from an unfiltered list (an empty list query is a valid bound argument)', async () => {
+    vi.mocked(voidStaffAssignment).mockResolvedValue({ outcome: 'voided' });
+    await expect(voidAssignmentAction(ID, '', {}, form({ reason: 'x' }))).rejects.toThrow(
+      `REDIRECT:/admin/assignments/${ID}?notice=voided`,
+    );
   });
 
   it('a successful void carries the trimmed reason, then answers on the detail page keeping the filters', async () => {
     vi.mocked(voidStaffAssignment).mockResolvedValue({ outcome: 'voided' });
     await expect(
-      voidAssignmentAction(ID, LIST, null, form({ reason: '  טעות בהקצאה  ' })),
+      voidAssignmentAction(ID, LIST, {}, form({ reason: '  טעות בהקצאה  ' })),
     ).rejects.toThrow(`REDIRECT:/admin/assignments/${ID}?status=waiting&sort=expiry&page=2&notice=voided`);
     expect(voidStaffAssignment).toHaveBeenCalledWith(ID, 'טעות בהקצאה');
   });
@@ -173,7 +207,7 @@ describe('voidAssignmentAction', () => {
   it('the list filters are re-validated: unknown keys and malformed values are dropped, never echoed', async () => {
     vi.mocked(voidStaffAssignment).mockResolvedValue({ outcome: 'voided' });
     await expect(
-      voidAssignmentAction(ID, '?status=waiting&evil=https://x.example&page=abc&q=a/b', null, form({ reason: 'x' })),
+      voidAssignmentAction(ID, '?status=waiting&evil=https://x.example&page=abc&q=a/b', {}, form({ reason: 'x' })),
     ).rejects.toThrow(`REDIRECT:/admin/assignments/${ID}?status=waiting&notice=voided`);
   });
 });

@@ -6,6 +6,7 @@ import { CalendarClock, Loader2, RefreshCw, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { formatIsraelDateTime } from '@/lib/date';
+import { actionErrorMessage } from '@/lib/action-result';
 import type {
   AvailabilityBlock,
   PresenceSnapshot,
@@ -16,8 +17,14 @@ import {
   refreshAvailabilityAction,
   removeAvailabilityBlockAction,
   setAvailabilityBlockAction,
-  type AvailabilityActionResult,
 } from './actions';
+
+// What any of the four actions answers: the state re-read from the server (data), or the one message to show.
+type AvailabilityActionResult =
+  | Awaited<ReturnType<typeof refreshAvailabilityAction>>
+  | Awaited<ReturnType<typeof setAvailabilityBlockAction>>
+  | Awaited<ReturnType<typeof clearAvailabilityAction>>
+  | Awaited<ReturnType<typeof removeAvailabilityBlockAction>>;
 
 // Availability switcher for the admin account menu.
 //
@@ -143,11 +150,11 @@ export function AvailabilityMenuSection({
       setError(null);
       startTransition(async () => {
         const result = await action();
-        if (result.ok) {
-          setBlocks(result.blocks);
-          setPresence(result.presence);
+        if (result.data) {
+          setBlocks(result.data.blocks);
+          setPresence(result.data.presence);
         } else {
-          setError(result.message);
+          setError(actionErrorMessage(result) ?? null);
         }
       });
     },

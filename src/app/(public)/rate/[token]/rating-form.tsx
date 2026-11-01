@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { FormError } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 
 import { submitRatingAction } from './actions';
 
@@ -45,14 +46,14 @@ export function RatingForm({
 }) {
   const [state, formAction, pending] = useActionState(
     submitRatingAction.bind(null, token),
-    null,
+    {},
   );
   const [selected, setSelected] = useState<1 | 2 | 3 | null>(initialScore);
   // The picker sits above the <form> element (layout), so its radios join the
   // form through the `form` attribute rather than by nesting.
   const formId = useId();
 
-  if (state?.notice) {
+  if (state.data?.notice) {
     return (
       <Card role="status" className="mx-auto w-full max-w-sm motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 duration-500 ease-k-out">
         <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
@@ -112,7 +113,7 @@ export function RatingForm({
             <Label htmlFor="comment">רוצה להוסיף הערה? (לא חובה)</Label>
             <Textarea id="comment" name="comment" rows={3} maxLength={500} placeholder="ספר/י לנו קצת יותר…" />
           </div>
-          <FormError message={state?.error} />
+          <FormError message={actionErrorMessage(state)} />
           <Button type="submit" disabled={!selected || pending} className="w-full">
             {pending ? 'שולח…' : 'שליחת הדירוג'}
           </Button>

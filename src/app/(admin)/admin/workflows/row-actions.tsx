@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { actionErrorMessage } from '@/lib/action-result';
 
 import { cancelRunAction, deleteWorkflowAction } from './actions';
 
@@ -52,7 +53,10 @@ export function DeleteWorkflowButton({ id, name }: { id: string; name: string })
     startTransition(async () => {
       const formData = new FormData();
       formData.set('id', id);
-      const result = await deleteWorkflowAction(formData);
+      const res = await deleteWorkflowAction(formData);
+      // A failure (not a refusal) arrives as the result's error; it still ends in the error boundary.
+      if (!res.data) throw new Error(actionErrorMessage(res));
+      const result = res.data;
       setArmed(false);
       if (!result.ok) setErrors(result.errors);
       // On success the row is gone; `revalidatePath` re-renders the table
@@ -100,7 +104,10 @@ export function CancelRunButton({
       const formData = new FormData();
       formData.set('workflowId', workflowId);
       formData.set('runId', runId);
-      const result = await cancelRunAction(formData);
+      const res = await cancelRunAction(formData);
+      // A failure (not a refusal) arrives as the result's error; it still ends in the error boundary.
+      if (!res.data) throw new Error(actionErrorMessage(res));
+      const result = res.data;
       if (!result.ok) setErrors(result.errors);
     });
   };

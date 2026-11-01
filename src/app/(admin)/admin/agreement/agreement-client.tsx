@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { HelpTip } from '@/components/help-tip';
+import { actionFormError } from '@/lib/action-result';
 
 import { saveAgreementAction, approveAgreementAction } from './actions';
 import { ContractBodyEditor } from './contract-body-editor';
@@ -25,8 +26,8 @@ export function AgreementEditor({
   status: 'draft' | 'approved';
   tokens: readonly string[];
 }) {
-  const [saveState, saveAction] = useActionState(saveAgreementAction, null);
-  const [approveState, approveAction] = useActionState(approveAgreementAction, null);
+  const [saveState, saveAction] = useActionState(saveAgreementAction, {});
+  const [approveState, approveAction] = useActionState(approveAgreementAction, {});
 
   const approvedVersionSuggestion = version.replace(/^draft-/, '');
 
@@ -39,8 +40,8 @@ export function AgreementEditor({
           הנוסח כאן הוא המקור היחיד, ולקוח יקבל אותו רק לאחר שיאושר.
         </p>
         <form action={saveAction} className="space-y-3">
-          <FormError message={saveState?.error} />
-          <FormNotice message={saveState?.notice} />
+          <FormError message={actionFormError(saveState)} />
+          <FormNotice message={saveState.data?.notice} />
           <div className="max-w-xs">
             <div className="mb-1 flex items-center gap-1.5">
               <label htmlFor="version" className="text-sm font-medium">
@@ -57,7 +58,7 @@ export function AgreementEditor({
               dir="ltr"
               className={inputClass}
             />
-            <FieldError errors={saveState?.fieldErrors?.version} />
+            <FieldError errors={saveState.validationErrors?.fieldErrors?.version} />
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
@@ -65,7 +66,7 @@ export function AgreementEditor({
               <HelpTip text="ניתן לשבץ תחליפים (למשל שם האירוע או מחיר החבילה) שמוחלפים אוטומטית בערכים אמיתיים בעת ההצגה והאישור. השתמשו בכפתורי התחליפים מתחת לעורך." />
             </div>
             <ContractBodyEditor name="body_html" initialHtml={bodyHtml ?? ''} tokens={tokens} />
-            <FieldError errors={saveState?.fieldErrors?.body_html} />
+            <FieldError errors={saveState.validationErrors?.fieldErrors?.body_html} />
           </div>
           <SubmitButton>שמירה</SubmitButton>
         </form>
@@ -82,8 +83,8 @@ export function AgreementEditor({
           </p>
         )}
         <form action={approveAction} className="flex flex-wrap items-end gap-2">
-          <FormError message={approveState?.error} />
-          <FormNotice message={approveState?.notice} />
+          <FormError message={actionFormError(approveState)} />
+          <FormNotice message={approveState.data?.notice} />
           <div className="max-w-xs">
             <div className="mb-1 flex items-center gap-1.5">
               <label htmlFor="approve-version" className="text-sm font-medium">
@@ -100,7 +101,7 @@ export function AgreementEditor({
               dir="ltr"
               className={inputClass}
             />
-            <FieldError errors={approveState?.fieldErrors?.version} />
+            <FieldError errors={approveState.validationErrors?.fieldErrors?.version} />
           </div>
           <SubmitButton className="w-auto">
             {status === 'approved' ? 'עדכון אישור' : 'אישור והסרת טיוטה'}

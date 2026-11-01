@@ -9,6 +9,7 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import type { AdminFaqItem } from '@/lib/data/admin/faq';
 import {
   FAQ_CATEGORIES,
@@ -64,7 +65,7 @@ function StatusPill({ published }: { published: boolean }) {
 // src/app/(admin)/admin/packages/[id]/delete-package-form.tsx.
 function DeleteFaqItemButton({ id, question }: { id: string; question: string }) {
   const action = deleteFaqItemAction.bind(null, id);
-  const [state, formAction, pending] = useActionState(action, null);
+  const [state, formAction, pending] = useActionState(action, {});
   return (
     <form
       action={formAction}
@@ -74,7 +75,7 @@ function DeleteFaqItemButton({ id, question }: { id: string; question: string })
         }
       }}
     >
-      <FormError message={state?.error} />
+      <FormError message={actionErrorMessage(state)} />
       <button
         type="submit"
         disabled={pending}
@@ -93,7 +94,7 @@ function FaqItemRow({
   item: AdminFaqItem;
   protectedMandatorySentence: string;
 }) {
-  const [state, formAction] = useActionState(updateFaqItemAction, null);
+  const [state, formAction] = useActionState(updateFaqItemAction, {});
   const isProtected = item.item_key === PROTECTED_FAQ_ITEM_KEY;
   // Tier 2 that ISN'T also Tier 1 — is_structural rows keep a normal
   // editable form (unlike the protected row), just with the warning banner
@@ -125,8 +126,8 @@ function FaqItemRow({
         </p>
       ) : null}
 
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       {isProtected ? (
         <>
@@ -159,7 +160,7 @@ function FaqItemRow({
               onChange={(e) => setSupplement(e.target.value)}
               className={inputClass}
             />
-            <FieldError errors={state?.fieldErrors?.answer} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.answer} />
           </div>
 
           <div>
@@ -176,7 +177,7 @@ function FaqItemRow({
               defaultValue={item.sort_order}
               className={`${inputClass} max-w-[8rem]`}
             />
-            <FieldError errors={state?.fieldErrors?.sort_order} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.sort_order} />
           </div>
 
           <div className="flex items-center gap-2">
@@ -209,7 +210,7 @@ function FaqItemRow({
               className={inputClass}
               autoComplete="off"
             />
-            <FieldError errors={state?.fieldErrors?.question} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.question} />
           </div>
 
           <div>
@@ -223,7 +224,7 @@ function FaqItemRow({
               defaultValue={item.answer}
               className={inputClass}
             />
-            <FieldError errors={state?.fieldErrors?.answer} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.answer} />
           </div>
 
           <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
@@ -241,7 +242,7 @@ function FaqItemRow({
                 defaultValue={item.sort_order}
                 className={inputClass}
               />
-              <FieldError errors={state?.fieldErrors?.sort_order} />
+              <FieldError errors={state.validationErrors?.fieldErrors?.sort_order} />
             </div>
             <label className="flex items-end gap-2 pb-2 text-sm">
               <input
@@ -265,7 +266,7 @@ function FaqItemRow({
 }
 
 function NewFaqItemForm({ category }: { category: FaqCategory }) {
-  const [state, formAction] = useActionState(createFaqItemAction, null);
+  const [state, formAction] = useActionState(createFaqItemAction, {});
   const [open, setOpen] = useState(false);
 
   if (!open) {
@@ -286,8 +287,8 @@ function NewFaqItemForm({ category }: { category: FaqCategory }) {
       className="space-y-3 rounded-lg border border-dashed border-border p-4"
     >
       <input type="hidden" name="category" value={category} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <div>
         <label htmlFor={`new-question-${category}`} className={labelClass}>
@@ -299,7 +300,7 @@ function NewFaqItemForm({ category }: { category: FaqCategory }) {
           className={inputClass}
           autoComplete="off"
         />
-        <FieldError errors={state?.fieldErrors?.question} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.question} />
       </div>
 
       <div>
@@ -307,7 +308,7 @@ function NewFaqItemForm({ category }: { category: FaqCategory }) {
           תשובה
         </label>
         <textarea id={`new-answer-${category}`} name="answer" rows={4} className={inputClass} />
-        <FieldError errors={state?.fieldErrors?.answer} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.answer} />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
@@ -325,7 +326,7 @@ function NewFaqItemForm({ category }: { category: FaqCategory }) {
             defaultValue={0}
             className={inputClass}
           />
-          <FieldError errors={state?.fieldErrors?.sort_order} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.sort_order} />
         </div>
         <label className="flex items-end gap-2 pb-2 text-sm">
           <input

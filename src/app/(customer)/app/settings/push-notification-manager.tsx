@@ -139,8 +139,8 @@ export function PushNotificationManager() {
           JSON.parse(JSON.stringify(nextSubscription)),
         );
 
-        if (!result.success) {
-          setMessage(result.error ?? 'שמירת ההתראה נכשלה.');
+        if (!result.data?.success) {
+          setMessage(result.serverError ?? 'שמירת ההתראה נכשלה.');
           await nextSubscription.unsubscribe();
           return;
         }
@@ -172,8 +172,8 @@ export function PushNotificationManager() {
         await currentSubscription.unsubscribe();
 
         const result = await unsubscribePushAction(endpoint);
-        if (!result.success) {
-          setMessage(result.error ?? 'ביטול ההתראה נכשל.');
+        if (!result.data?.success) {
+          setMessage(result.serverError ?? 'ביטול ההתראה נכשל.');
           return;
         }
 
@@ -190,8 +190,8 @@ export function PushNotificationManager() {
       setMessage(null);
       const result = await sendTestPushAction();
 
-      if (!result.success) {
-        setMessage(result.error ?? 'שליחת התראת בדיקה נכשלה.');
+      if (!result.data?.success) {
+        setMessage(result.serverError ?? 'שליחת התראת בדיקה נכשלה.');
         return;
       }
 

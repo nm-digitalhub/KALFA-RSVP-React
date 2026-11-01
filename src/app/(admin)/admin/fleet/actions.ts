@@ -1,8 +1,14 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { unstable_rethrow } from 'next/navigation';
+import {
+  flattenValidationErrors,
+  returnValidationErrors,
+  type FlattenedValidationErrors,
+  type ValidationErrors,
+} from 'next-safe-action';
 import { z } from 'zod';
+import { zfd } from 'zod-form-data';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
@@ -18,9 +24,14 @@ import {
 } from '@/lib/data/admin/fleet';
 import { resolveOwnerTitle } from '@/lib/fleet/conversation';
 import { goalWakeAtSchema } from '@/lib/fleet/goal';
-import type { FormState } from '@/lib/validation/result';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 
 const PATH = '/admin/fleet';
+
+// Every action here checks the permission FIRST and only then validates the
+// form: the gate is a use() middleware, which runs before input validation.
+// Each form feeds its schema what the old code fed it: a missing field is ''
+// (and kind / tier fall back to 'question' / '0').
 
 // Owner -> agent, from the conversation composer (/admin/fleet?role=). Two
 // modes share this one action because they share one form:
@@ -64,32 +75,50 @@ const continueSchema = z.object({
     .max(8000, { message: 'ההודעה ארוכה מדי (עד 8000 תווים)' }),
 });
 
-/** FormState plus what the composer needs to focus the resulting message. */
-export type FleetComposeState =
-  | (NonNullable<FormState> & { requestId?: string; deduplicated?: boolean; role?: string })
-  | null;
+const continueForm = zfd.formData({
+  continueFrom: continueSchema.shape.continueFrom,
+  body: continueSchema.shape.body.prefault(''),
+});
+const composeForm = zfd.formData({
+  role: composeSchema.shape.role.prefault(''),
+  kind: z.preprocess((v) => v || 'question', composeSchema.shape.kind),
+  tier: z.preprocess((v) => v || '0', composeSchema.shape.tier),
+  title: composeSchema.shape.title.prefault(''),
+  body: composeSchema.shape.body.prefault(''),
+});
 
 const DEDUP_NOTICE = 'הודעה זהה כבר נשלחה היום — לא נוצרה כפילות.';
 
-export async function createFleetRequestAction(
-  _prevState: FleetComposeState,
-  formData: FormData,
-): Promise<FleetComposeState> {
-  await requirePlatformPermission('manage_settings');
-
-  const continueFrom = formData.get('continueFrom');
-  if (typeof continueFrom === 'string' && continueFrom !== '') {
-    const parsed = continueSchema.safeParse({ continueFrom, body: formData.get('body') ?? '' });
-    if (!parsed.success) return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-    try {
-      const result = await createOwnerFleetContinuation(parsed.data);
+// Returns what the composer needs to focus the resulting message: requestId, deduplicated, role.
+export const createFleetRequestAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformPermission('manage_settings');
+    return next();
+  })
+  .inputSchema(
+    // The mode decides the schema: a non-empty continueFrom is a continuation.
+    async (_prev, { clientInput }) => {
+      const continueFrom = clientInput instanceof FormData ? clientInput.get('continueFrom') : null;
+      return typeof continueFrom === 'string' && continueFrom !== '' ? continueForm : composeForm;
+    },
+    {
+      // Typed with both modes' fields, so the composer can read each one's message.
+      handleValidationErrorsShape: async (
+        ve,
+      ): Promise<FlattenedValidationErrors<ValidationErrors<typeof composeForm> & ValidationErrors<typeof continueForm>>> =>
+        flattenValidationErrors(ve),
+    },
+  )
+  .stateAction(async ({ parsedInput }) => {
+    if ('continueFrom' in parsedInput) {
+      const result = await createOwnerFleetContinuation(parsedInput);
       await logActivity({
         action: 'fleet_request.created_by_owner',
         meta: {
           request_id: result.id,
           role: result.role,
           kind: 'question',
-          continues: parsed.data.continueFrom,
+          continues: parsedInput.continueFrom,
           deduplicated: result.deduplicated,
         },
       });
@@ -100,63 +129,42 @@ export async function createFleetRequestAction(
         deduplicated: result.deduplicated,
         role: result.role,
       };
-    } catch (err) {
-      unstable_rethrow(err);
-      return { error: err instanceof Error ? err.message : 'פתיחת הפנייה נכשלה' };
     }
-  }
 
-  const parsed = composeSchema.safeParse({
-    role: formData.get('role') ?? '',
-    kind: formData.get('kind') || 'question',
-    tier: formData.get('tier') || '0',
-    title: formData.get('title') ?? '',
-    body: formData.get('body') ?? '',
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  let result: { id: string; deduplicated: boolean };
-  try {
     const roles = await readFleetRoles();
-    if (!roles) return { error: 'לא ניתן לקרוא את רשימת הסוכנים מ-fleet.json' };
-    if (!roles.some((r) => r.name === parsed.data.role)) {
-      return { fieldErrors: { role: ['הסוכן לא מוגדר ב-fleet.json'] } };
+    if (!roles) returnUserError('לא ניתן לקרוא את רשימת הסוכנים מ-fleet.json');
+    if (!roles.some((r) => r.name === parsedInput.role)) {
+      returnValidationErrors(composeForm, { role: { _errors: ['הסוכן לא מוגדר ב-fleet.json'] } });
     }
-    result = await createOwnerFleetRequest({
-      role: parsed.data.role,
-      kind: parsed.data.kind,
-      tier: parsed.data.tier,
-      title: resolveOwnerTitle(parsed.data.title, parsed.data.body, parsed.data.role),
-      body: parsed.data.body,
+    const result = await createOwnerFleetRequest({
+      role: parsedInput.role,
+      kind: parsedInput.kind,
+      tier: parsedInput.tier,
+      title: resolveOwnerTitle(parsedInput.title, parsedInput.body, parsedInput.role),
+      body: parsedInput.body,
       threadRoot: null,
     });
     await logActivity({
       action: 'fleet_request.created_by_owner',
       meta: {
         request_id: result.id,
-        role: parsed.data.role,
-        kind: parsed.data.kind,
+        role: parsedInput.role,
+        kind: parsedInput.kind,
         deduplicated: result.deduplicated,
       },
     });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'פתיחת הפנייה נכשלה' };
-  }
 
-  // 'layout': the conversation list lives in fleet/layout.tsx, which does not
-  // re-render on navigation — a page-only revalidation would leave its
-  // preview/badges stale.
-  revalidatePath(PATH, 'layout');
-  return {
-    notice: result.deduplicated ? DEDUP_NOTICE : 'ההודעה נשלחה.',
-    requestId: result.id,
-    deduplicated: result.deduplicated,
-    role: parsed.data.role,
-  };
-}
+    // 'layout': the conversation list lives in fleet/layout.tsx, which does not
+    // re-render on navigation — a page-only revalidation would leave its
+    // preview/badges stale.
+    revalidatePath(PATH, 'layout');
+    return {
+      notice: result.deduplicated ? DEDUP_NOTICE : 'ההודעה נשלחה.',
+      requestId: result.id,
+      deduplicated: result.deduplicated,
+      role: parsedInput.role,
+    };
+  });
 
 // One action serves all three request kinds; the verdict arrives from the
 // pressed submit button (name="verdict"). Kind<->verdict validity, pending-only
@@ -173,39 +181,28 @@ const answerSchema = z.object({
     .max(2000, { message: 'התשובה ארוכה מדי (עד 2000 תווים)' }),
 });
 
-export async function answerFleetRequestAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  await requirePlatformPermission('manage_settings');
+const answerForm = zfd.formData({
+  id: answerSchema.shape.id.prefault(''),
+  verdict: z.preprocess((v) => v ?? '', answerSchema.shape.verdict),
+  answer: answerSchema.shape.answer.prefault(''),
+});
 
-  const parsed = answerSchema.safeParse({
-    id: formData.get('id') ?? '',
-    verdict: formData.get('verdict') ?? '',
-    answer: formData.get('answer') ?? '',
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  try {
-    await answerFleetRequest({
-      id: parsed.data.id,
-      verdict: parsed.data.verdict,
-      answer: parsed.data.answer === '' ? null : parsed.data.answer,
-    });
+export const answerFleetRequestAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformPermission('manage_settings');
+    return next();
+  })
+  .inputSchema(answerForm)
+  .stateAction(async ({ parsedInput: { id, verdict, answer } }) => {
+    await answerFleetRequest({ id, verdict, answer: answer === '' ? null : answer });
     await logActivity({
       action: 'fleet_request.answered',
-      meta: { request_id: parsed.data.id, verdict: parsed.data.verdict },
+      meta: { request_id: id, verdict },
     });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'שמירת המענה נכשלה' };
-  }
 
-  revalidatePath(PATH, 'layout');
-  return { notice: 'המענה נשמר — הסוכן יקלוט אותו בריצה הבאה' };
-}
+    revalidatePath(PATH, 'layout');
+    return { notice: 'המענה נשמר — הסוכן יקלוט אותו בריצה הבאה' };
+  });
 
 // ── Fleet goals: owner creates, pauses, resumes, or abandons ────────────────
 // Shape only. The real gates: has_platform_permission('manage_settings') inside each SECDEF RPC, the CAS
@@ -230,37 +227,29 @@ const goalSchema = z.object({
     .max(8000, { message: 'התוכן ארוך מדי (עד 8000 תווים)' }),
 });
 
-export async function createFleetGoalAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  await requirePlatformPermission('manage_settings');
+const goalForm = zfd.formData({
+  role: goalSchema.shape.role.prefault(''),
+  title: goalSchema.shape.title.prefault(''),
+  body: goalSchema.shape.body.prefault(''),
+});
 
-  const parsed = goalSchema.safeParse({
-    role: formData.get('role') ?? '',
-    title: formData.get('title') ?? '',
-    body: formData.get('body') ?? '',
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  let goalId: string;
-  try {
-    ({ id: goalId } = await createFleetGoal(parsed.data));
+export const createFleetGoalAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformPermission('manage_settings');
+    return next();
+  })
+  .inputSchema(goalForm)
+  .stateAction(async ({ parsedInput }) => {
+    const { id: goalId } = await createFleetGoal(parsedInput);
     // PII-free: id + role only. Title/body stay in the table, not the log.
     await logActivity({
       action: 'fleet_goal.created',
-      meta: { goal_id: goalId, role: parsed.data.role },
+      meta: { goal_id: goalId, role: parsedInput.role },
     });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'יצירת המטרה נכשלה' };
-  }
 
-  revalidatePath(PATH, 'layout');
-  return { notice: 'המטרה נוצרה. הסוכן יקלוט אותה בהרצה הבאה שלו.' };
-}
+    revalidatePath(PATH, 'layout');
+    return { notice: 'המטרה נוצרה. הסוכן יקלוט אותה בהרצה הבאה שלו.' };
+  });
 
 const goalPauseSchema = z.object({
   id: z.uuid({ message: 'מזהה מטרה לא תקין' }),
@@ -272,25 +261,22 @@ const goalPauseSchema = z.object({
     .or(z.literal('').transform(() => undefined)),
 });
 
-export async function pauseFleetGoalAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  await requirePlatformPermission('manage_settings');
+const goalPauseForm = zfd.formData({
+  id: goalPauseSchema.shape.id.prefault(''),
+  note: goalPauseSchema.shape.note.prefault(''),
+});
 
-  const parsed = goalPauseSchema.safeParse({
-    id: formData.get('id') ?? '',
-    note: formData.get('note') ?? '',
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  try {
-    const outcome = await pauseFleetGoal(parsed.data.id, parsed.data.note);
+export const pauseFleetGoalAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformPermission('manage_settings');
+    return next();
+  })
+  .inputSchema(goalPauseForm)
+  .stateAction(async ({ parsedInput: { id, note } }) => {
+    const outcome = await pauseFleetGoal(id, note);
     await logActivity({
       action: 'fleet_goal.paused',
-      meta: { goal_id: parsed.data.id, outcome },
+      meta: { goal_id: id, outcome },
     });
     revalidatePath(PATH, 'layout');
     // A no-op is reported as such. 'not_active' is not an error — the goal is
@@ -298,11 +284,7 @@ export async function pauseFleetGoalAction(
     return outcome === 'paused'
       ? { notice: 'המטרה הושהתה. הסוכן לא יתעורר עבורה עד שתשחרר אותה.' }
       : { notice: 'המטרה אינה פעילה — לא בוצע שינוי.' };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'השהיית המטרה נכשלה' };
-  }
-}
+  });
 
 // nextWakeAt uses goalWakeAtSchema (offset:true) — the same rule the CLI's
 // goal-progress verb enforces server-side. A naive datetime-local value that
@@ -312,37 +294,37 @@ const goalResumeSchema = z.object({
   nextWakeAt: goalWakeAtSchema.optional().or(z.literal('').transform(() => undefined)),
 });
 
-export async function resumeFleetGoalAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  await requirePlatformPermission('manage_settings');
+// The form field is next_wake_at; the schema (and its field error) call it nextWakeAt, so the form is
+// mapped first and then validated.
+const goalResumeForm = zfd.formData(
+  z
+    .object({ id: z.unknown().optional(), next_wake_at: z.unknown().optional() })
+    .transform((form): { id: unknown; nextWakeAt?: unknown } => ({
+      id: form.id ?? '',
+      nextWakeAt: form.next_wake_at ?? '',
+    }))
+    .pipe(goalResumeSchema),
+);
 
-  const parsed = goalResumeSchema.safeParse({
-    id: formData.get('id') ?? '',
-    nextWakeAt: formData.get('next_wake_at') ?? '',
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  try {
+export const resumeFleetGoalAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformPermission('manage_settings');
+    return next();
+  })
+  .inputSchema(goalResumeForm)
+  .stateAction(async ({ parsedInput: { id, nextWakeAt } }) => {
     // undefined => the RPC applies its own default (an hour from now).
-    const outcome = await resumeFleetGoal(parsed.data.id, parsed.data.nextWakeAt);
+    const outcome = await resumeFleetGoal(id, nextWakeAt);
     await logActivity({
       action: 'fleet_goal.resumed',
       // The wake time itself is not PII and helps answer "why did it wake then".
-      meta: { goal_id: parsed.data.id, outcome, next_wake_at: parsed.data.nextWakeAt ?? null },
+      meta: { goal_id: id, outcome, next_wake_at: nextWakeAt ?? null },
     });
     revalidatePath(PATH, 'layout');
     return outcome === 'resumed'
       ? { notice: 'המטרה שוחררה ומונה הכשלים אופס.' }
       : { notice: 'המטרה אינה מושהית — לא בוצע שינוי.' };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'שחרור המטרה נכשל' };
-  }
-}
+  });
 
 // The RPC requires a note, so it is required here too — a goal closed without
 // a reason leaves a row nobody can explain a month from now.
@@ -355,32 +337,25 @@ const goalAbandonSchema = z.object({
     .max(500, { message: 'ההערה ארוכה מדי (עד 500 תווים)' }),
 });
 
-export async function abandonFleetGoalAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  await requirePlatformPermission('manage_settings');
+const goalAbandonForm = zfd.formData({
+  id: goalAbandonSchema.shape.id.prefault(''),
+  note: goalAbandonSchema.shape.note.prefault(''),
+});
 
-  const parsed = goalAbandonSchema.safeParse({
-    id: formData.get('id') ?? '',
-    note: formData.get('note') ?? '',
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  try {
-    const outcome = await abandonFleetGoal(parsed.data.id, parsed.data.note);
+export const abandonFleetGoalAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformPermission('manage_settings');
+    return next();
+  })
+  .inputSchema(goalAbandonForm)
+  .stateAction(async ({ parsedInput: { id, note } }) => {
+    const outcome = await abandonFleetGoal(id, note);
     await logActivity({
       action: 'fleet_goal.abandoned',
-      meta: { goal_id: parsed.data.id, outcome },
+      meta: { goal_id: id, outcome },
     });
     revalidatePath(PATH, 'layout');
     return outcome === 'abandoned'
       ? { notice: 'המטרה נסגרה כ-failed.' }
       : { notice: 'המטרה כבר סגורה — לא בוצע שינוי.' };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'סגירת המטרה נכשלה' };
-  }
-}
+  });

@@ -194,7 +194,11 @@ export function ReprocessButton({
     formData.set('id', id);
     startTransition(async () => {
       try {
-        await reprocessWebhookEventAction(formData);
+        const result = await reprocessWebhookEventAction(formData);
+        if (result.serverError || result.validationErrors) {
+          setFailed(true);
+          return;
+        }
         setOpen(false);
       } catch {
         setFailed(true);

@@ -3,13 +3,15 @@
 // Admin form for the callback-scheduling policy (business hours per weekday,
 // minimum notice, horizon, call duration, daily cap, motzash resume delay, the
 // actual-dial window and the dial attempt cap/window).
-// Follows the established admin-form pattern (useActionState + FormState +
-// FieldError/FormError/FormNotice/SubmitButton), mirroring agreement-config-form.tsx.
+// Follows the established admin-form pattern (useActionState + FieldError/FormError/FormNotice/SubmitButton),
+// mirroring agreement-config-form.tsx. A refused field is answered beside it; the top of the form carries only the
+// server's own message, as before.
 
 import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { HelpTip } from '@/components/help-tip';
+import { actionFormError } from '@/lib/action-result';
 import { Tabs, TabsList, TabsTab, TabsPanel } from '@/components/ui/tabs';
 import { saveCallbackPolicyAction } from './actions';
 import type { CallbackPolicyFormValues } from '@/lib/callbacks/policy-config-admin';
@@ -135,13 +137,14 @@ function NumberField({
 }
 
 export function CallbackPolicyForm({ values }: { values: CallbackPolicyFormValues }) {
-  const [state, action] = useActionState(saveCallbackPolicyAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(saveCallbackPolicyAction, {});
+  // Read by computed key (`${day}Start`, `dial${Day}Start`), so widened to a string-keyed map.
+  const e: Partial<Record<string, string[]>> | undefined = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-6">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <Tabs defaultValue="scheduling">
         <TabsList>

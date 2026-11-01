@@ -37,6 +37,7 @@ import {
   verifyPhoneChangeAction,
 } from './actions';
 import { formatIsraelDate } from '@/lib/date';
+import { actionFormError } from '@/lib/action-result';
 import { CustomerNumberField } from './customer-number-field';
 import { PasskeyManager } from './passkey-manager';
 import { PushNotificationManager } from './push-notification-manager';
@@ -90,7 +91,7 @@ function ProfileSection({
   profile: ProfileDTO | null;
   customerNumber: number | null;
 }) {
-  const [state, action] = useActionState(updateProfileAction, null);
+  const [state, action] = useActionState(updateProfileAction, {});
 
   // Plain uncontrolled inputs (name + defaultValue), NOT react-hook-form: a
   // Server Action resets the form on submit, and revalidatePath re-renders this
@@ -104,8 +105,8 @@ function ProfileSection({
         description="פרטים שיופיעו באזור החשבון ויעזרו לנו לזהות אתכם."
       />
       <form action={action} className="space-y-4">
-        <FormNotice message={state?.notice} />
-        <FormError message={state?.error} />
+        <FormNotice message={state.data?.notice} />
+        <FormError message={actionFormError(state)} />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -120,7 +121,7 @@ function ProfileSection({
               defaultValue={profile?.full_name ?? ''}
               className={inputClass}
             />
-            <FieldError errors={state?.fieldErrors?.full_name} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.full_name} />
           </div>
 
           {/* Read-only and nameless: shown, never submitted with the form. */}
@@ -163,11 +164,11 @@ function ToggleField({
 }
 
 function MarketingConsentForm({ consent }: { consent: { granted: boolean; wording: string } }) {
-  const [state, action] = useActionState(updateMarketingConsentAction, null);
+  const [state, action] = useActionState(updateMarketingConsentAction, {});
   return (
     <form action={action} className="space-y-4 border-t border-border pt-4">
-      <FormNotice message={state?.notice} />
-      <FormError message={state?.error} />
+      <FormNotice message={state.data?.notice} />
+      <FormError message={actionFormError(state)} />
       <ToggleField
         label="עדכונים והצעות בדוא״ל"
         description={consent.wording}
@@ -188,7 +189,7 @@ function NotificationsSection({
   settings: UserSettingsDTO;
   marketingConsent: { granted: boolean; wording: string } | null;
 }) {
-  const [state, action] = useActionState(updateSettingsAction, null);
+  const [state, action] = useActionState(updateSettingsAction, {});
 
   return (
     <section id="notifications" className={sectionClass}>
@@ -198,8 +199,8 @@ function NotificationsSection({
         description="בחירת סוגי העדכונים שתרצו לקבל מהמערכת."
       />
       <form action={action} className="space-y-4">
-        <FormNotice message={state?.notice} />
-        <FormError message={state?.error} />
+        <FormNotice message={state.data?.notice} />
+        <FormError message={actionFormError(state)} />
         <ToggleField
           label="עדכוני אירועים"
           description="שינויים ופעילות באירועים שלכם."
@@ -279,7 +280,7 @@ function SummarySection({
 
 
 function SecuritySection() {
-  const [state, action] = useActionState(sendPasswordResetAction, null);
+  const [state, action] = useActionState(sendPasswordResetAction, {});
 
   return (
     <section id="security" className={sectionClass}>
@@ -289,8 +290,8 @@ function SecuritySection() {
         description="ניהול גישה לחשבון ללא מחיקת חשבון בגרסה זו."
       />
       <form action={action} className="space-y-4">
-        <FormNotice message={state?.notice} />
-        <FormError message={state?.error} />
+        <FormNotice message={state.data?.notice} />
+        <FormError message={actionFormError(state)} />
         <div className="rounded-md border border-border p-4">
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 text-primary" aria-hidden />
@@ -323,7 +324,7 @@ function AccountSection({
 }) {
   const [emailState, emailAction] = useActionState(
     requestEmailChangeAction,
-    null,
+    {},
   );
 
   return (
@@ -342,8 +343,8 @@ function AccountSection({
           <Mail className="size-4 text-primary" aria-hidden />
           <span className="text-sm font-medium">שינוי כתובת מייל</span>
         </div>
-        <FormNotice message={emailState?.notice} />
-        <FormError message={emailState?.error} />
+        <FormNotice message={emailState.data?.notice} />
+        <FormError message={actionFormError(emailState)} />
         {/* The fallback is Hebrew, so the line cannot be LTR — only the
             address is. Same fix as the signing form's phone line. */}
         <p className="text-sm text-muted-foreground">
@@ -363,7 +364,7 @@ function AccountSection({
             placeholder="name@example.com"
             className={`${inputClass} text-start`}
           />
-          <FieldError errors={emailState?.fieldErrors?.email} />
+          <FieldError errors={emailState.validationErrors?.fieldErrors?.new_email} />
           <p className="mt-1 text-xs text-muted-foreground">
             לאבטחתכם, המייל יתחלף רק לאחר שתאשרו דרך קישור שיישלח לכתובת החדשה —
             בדיוק כמו בהרשמה. עד אז, נשארת הכתובת הנוכחית.
@@ -424,8 +425,8 @@ function PhoneVerification({
   phoneVerified: boolean;
 }) {
   const [phone, setPhone] = useState(profile?.phone ?? '');
-  const [sendState, sendAction] = useActionState(requestPhoneChangeAction, null);
-  const [verifyState, verifyAction] = useActionState(verifyPhoneChangeAction, null);
+  const [sendState, sendAction] = useActionState(requestPhoneChangeAction, {});
+  const [verifyState, verifyAction] = useActionState(verifyPhoneChangeAction, {});
   // Derived from the SEND actually succeeding, not from the click: a failed
   // send must not offer a code field there is no code for. `dirty` clears it
   // when the number is edited, so a code can never be redeemed against a
@@ -438,7 +439,7 @@ function PhoneVerification({
   const [editing, setEditing] = useState(false);
   const phoneInput = useRef<HTMLInputElement>(null);
 
-  const justVerified = verifyState?.notice != null;
+  const justVerified = verifyState.data?.notice != null;
   const storedVerified = phoneVerified;
   // justVerified locks immediately, without waiting for the revalidated
   // profile to arrive — otherwise the field would sit unlocked and editable in
@@ -448,8 +449,8 @@ function PhoneVerification({
   // `dirty` clears it when the number is edited, so a code can never be
   // redeemed against a number it was not sent to; `locked` closes it once the
   // proof lands.
-  const codeSent = sendState?.notice != null && !dirty && !locked;
-  const otpInvalid = Boolean(verifyState?.fieldErrors?.otp_code?.length);
+  const codeSent = sendState.data?.notice != null && !dirty && !locked;
+  const otpInvalid = Boolean(verifyState.validationErrors?.fieldErrors?.otp_code?.length);
 
   function beginEditing() {
     setEditing(true);
@@ -536,11 +537,11 @@ function PhoneVerification({
               </>
             ) : null}
           </div>
-          <FieldError errors={sendState?.fieldErrors?.phone} />
+          <FieldError errors={sendState.validationErrors?.fieldErrors?.phone} />
         </div>
 
-        <FormError message={sendState?.error} />
-        {locked ? null : <FormNotice message={sendState?.notice} />}
+        <FormError message={actionFormError(sendState)} />
+        {locked ? null : <FormNotice message={sendState.data?.notice} />}
 
         {/* No send button while the field is frozen: there is nothing to prove
             about a number already proved, and offering it was how "נשלח קוד"
@@ -607,11 +608,11 @@ function PhoneVerification({
                 ))}
               </InputOTPGroup>
             </InputOTP>
-            <FieldError errors={verifyState?.fieldErrors?.otp_code} />
+            <FieldError errors={verifyState.validationErrors?.fieldErrors?.otp_code} />
           </div>
 
-          <FormError message={verifyState?.error} />
-          <FormNotice message={verifyState?.notice} />
+          <FormError message={actionFormError(verifyState)} />
+          <FormNotice message={verifyState.data?.notice} />
 
           <div className="max-w-44">
             <SubmitButton>אימות מספר</SubmitButton>

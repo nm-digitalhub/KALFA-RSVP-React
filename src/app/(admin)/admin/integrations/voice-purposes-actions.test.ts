@@ -68,11 +68,11 @@ describe('one rule, one purpose — wiring', () => {
       voximplant_call_me_now_rule_id: '',
     });
     const r = await createVoicePurposeAction(
-      null,
+      {},
       form({ key: 'feedback', displayName: 'משוב', ruleId: '1523903' }),
     );
     expect(createMock).not.toHaveBeenCalled();
-    expect(r?.fieldErrors?.ruleId?.[0]).toContain('שיחות אישור פגישה');
+    expect(r?.validationErrors?.fieldErrors?.ruleId?.[0]).toContain('שיחות אישור פגישה');
   });
 
   it('refuses to update a purpose onto another PURPOSE\'s rule', async () => {
@@ -80,11 +80,11 @@ describe('one rule, one purpose — wiring', () => {
       { key: 'other', displayName: 'ייעוד אחר', ruleId: '1530001', isBuiltin: false },
     ]);
     const r = await updateVoicePurposeAction(
-      null,
+      {},
       form({ key: 'feedback', displayName: 'משוב', ruleId: '1530001', enabled: 'on', active: 'on' }),
     );
     expect(updateMock).not.toHaveBeenCalled();
-    expect(r?.fieldErrors?.ruleId?.[0]).toContain('ייעוד אחר');
+    expect(r?.validationErrors?.fieldErrors?.ruleId?.[0]).toContain('ייעוד אחר');
   });
 
   it('lets a purpose keep the rule it already holds', async () => {
@@ -94,37 +94,49 @@ describe('one rule, one purpose — wiring', () => {
       { key: 'feedback', displayName: 'משוב', ruleId: '1530001', isBuiltin: false },
     ]);
     const r = await updateVoicePurposeAction(
-      null,
+      {},
       form({ key: 'feedback', displayName: 'משוב', ruleId: '1530001', enabled: 'on', active: 'on' }),
     );
     expect(updateMock).toHaveBeenCalled();
-    expect(r?.fieldErrors).toBeUndefined();
+    expect(r?.validationErrors?.fieldErrors).toBeUndefined();
   });
 });
 
 describe('createVoicePurposeAction', () => {
   it('creates a purpose, and says it is OFF', async () => {
-    const r = await createVoicePurposeAction(null, form({ key: 'feedback', displayName: 'משוב' }));
+    const r = await createVoicePurposeAction({}, form({ key: 'feedback', displayName: 'משוב' }));
     expect(createMock).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'feedback', displayName: 'משוב' }),
     );
-    expect(r?.notice).toContain('כבוי');
+    expect(r?.data?.notice).toContain('כבוי');
   });
 
   it('⚠️ refuses a key the table would reject anyway', async () => {
     // The CHECK constraint is `^[a-z][a-z0-9_]{1,48}$`. Catching it here gives a
     // Hebrew field error instead of a 23514 the owner cannot read.
     for (const key of ['Feedback', '9feedback', 'feed-back', 'f', 'משוב', '']) {
-      const r = await createVoicePurposeAction(null, form({ key, displayName: 'משוב' }));
-      expect(r?.fieldErrors?.key, key).toBeTruthy();
+      const r = await createVoicePurposeAction({}, form({ key, displayName: 'משוב' }));
+      expect(r?.validationErrors?.fieldErrors?.key, key).toEqual(['המזהה חייב להיות באנגלית קטנה, ספרות וקו תחתון']);
     }
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('answers an empty or missing key and name with their Hebrew field messages', async () => {
+    const expected = {
+      key: ['המזהה חייב להיות באנגלית קטנה, ספרות וקו תחתון'],
+      displayName: ['נא למלא שם'],
+    };
+    const empty = await createVoicePurposeAction({}, form({ key: '', displayName: '' }));
+    expect(empty?.validationErrors?.fieldErrors).toEqual(expected);
+    const missing = await createVoicePurposeAction({}, form({}));
+    expect(missing?.validationErrors?.fieldErrors).toEqual(expected);
     expect(createMock).not.toHaveBeenCalled();
   });
 
   it('surfaces a duplicate key as a message, not a crash', async () => {
     createMock.mockRejectedValue(new Error('כבר קיים ייעוד עם המזהה הזה'));
-    const r = await createVoicePurposeAction(null, form({ key: 'feedback', displayName: 'משוב' }));
-    expect(r?.error).toContain('כבר קיים');
+    const r = await createVoicePurposeAction({}, form({ key: 'feedback', displayName: 'משוב' }));
+    expect(r?.serverError).toContain('כבר קיים');
   });
 });
 
@@ -133,36 +145,36 @@ describe('updateVoicePurposeAction', () => {
     // An enabled purpose with no rule cannot dial. Refusing here means the owner
     // reads it on the form instead of finding it in a run log.
     const r = await updateVoicePurposeAction(
-      null,
+      {},
       form({ key: 'feedback', displayName: 'משוב', enabled: 'on', ruleId: '' }),
     );
-    expect(r?.error).toContain('Rule ID');
+    expect(r?.serverError).toContain('Rule ID');
     expect(updateMock).not.toHaveBeenCalled();
   });
 
   it('allows saving a disabled purpose with no rule — that is a draft', async () => {
     const r = await updateVoicePurposeAction(
-      null,
+      {},
       form({ key: 'feedback', displayName: 'משוב', ruleId: '' }),
     );
-    expect(r?.error).toBeUndefined();
+    expect(r?.serverError).toBeUndefined();
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
   });
 
   it('enables with a rule, and says plainly what that permits', async () => {
     const r = await updateVoicePurposeAction(
-      null,
+      {},
       form({ key: 'feedback', displayName: 'משוב', enabled: 'on', ruleId: '1521999', active: 'on' }),
     );
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({ enabled: true, ruleId: '1521999', active: true }),
     );
-    expect(r?.notice).toContain('שיחות אמיתיות');
+    expect(r?.data?.notice).toContain('שיחות אמיתיות');
   });
 
   it('trims the rule id — a pasted value carries whitespace', async () => {
     await updateVoicePurposeAction(
-      null,
+      {},
       form({ key: 'feedback', displayName: 'משוב', enabled: 'on', ruleId: '  1521999  ' }),
     );
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ ruleId: '1521999' }));

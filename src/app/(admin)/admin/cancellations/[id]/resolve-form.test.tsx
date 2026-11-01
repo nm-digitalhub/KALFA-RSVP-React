@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../actions', () => ({ resolveCancellationRequestAction: vi.fn(async () => null) }));
+vi.mock('../actions', () => ({ resolveCancellationRequestAction: vi.fn(async () => ({})) }));
 
 import { resolveCancellationRequestAction } from '../actions';
 import { ResolveForm } from './resolve-form';
@@ -316,7 +316,8 @@ describe('ResolveForm — the three choices', () => {
 // After a failed resolve the screen says whether approving again is safe: "do NOT approve again" (the money may be back)
 // must never look like an ordinary "try again".
 describe('ResolveForm — what a failure says about trying again', () => {
-  async function failWith(result: { error: string; retry?: 'allowed' | 'forbidden' | 'wait' }) {
+  // A refusal with advice comes back as data; any other failure is the action's server error.
+  async function failWith(result: { data: { error: string; retry: 'allowed' | 'forbidden' | 'wait' } } | { serverError: string }) {
     vi.mocked(resolveCancellationRequestAction).mockResolvedValue(result as never);
     const user = setup();
     await user.type(screen.getByLabelText('הודעה ללקוח (נשלחת במייל)'), 'בוטל');
@@ -329,13 +330,13 @@ describe('ResolveForm — what a failure says about trying again', () => {
     ['forbidden', 'אל תאשרו שוב'],
     ['wait', 'ממתין לסיום ניסיון קודם'],
   ] as const)('%s → "%s", with the message', async (retry, title) => {
-    const alert = await failWith({ error: 'הודעת השרת', retry });
+    const alert = await failWith({ data: { error: 'הודעת השרת', retry } });
     expect(alert.textContent).toContain(title);
     expect(alert.textContent).toContain('הודעת השרת');
   });
 
   it('a failure with no advice (validation, anything else) is the plain message', async () => {
-    const alert = await failWith({ error: 'הודעת השרת' });
+    const alert = await failWith({ serverError: 'הודעת השרת' });
     expect(alert.textContent).toBe('הודעת השרת');
   });
 });
@@ -344,7 +345,7 @@ describe('ResolveForm — what a failure says about trying again', () => {
 // race the refund). useActionState's `pending` locks the button and the dialog's confirm, and the button says so.
 describe('ResolveForm — while the server works', () => {
   it('locks the button and shows that it is working, then shows the result above the form', async () => {
-    let finish: (value: { error: string }) => void = () => {};
+    let finish: (value: { serverError: string }) => void = () => {};
     vi.mocked(resolveCancellationRequestAction).mockImplementation(
       () => new Promise((resolve) => { finish = resolve as typeof finish; }),
     );
@@ -358,7 +359,7 @@ describe('ResolveForm — while the server works', () => {
     await user.click(working);
     expect(resolveCancellationRequestAction).toHaveBeenCalledTimes(1);
 
-    await act(async () => finish({ error: 'הזיכוי נדחה על ידי חברת הסליקה — לא הוחזר כסף.' }));
+    await act(async () => finish({ serverError: 'הזיכוי נדחה על ידי חברת הסליקה — לא הוחזר כסף.' }));
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('הזיכוי נדחה');
     // Above the form's fields, where it is seen — not under the button.

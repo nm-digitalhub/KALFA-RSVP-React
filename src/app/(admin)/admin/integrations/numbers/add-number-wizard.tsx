@@ -25,11 +25,15 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { actionFormError } from '@/lib/action-result';
 import type { ProviderNumber } from '@/lib/data/admin/integrations/provider-numbers';
 import { CODE_METHOD_LABELS, CONFIRM_WORD } from '@/lib/validation/whatsapp-numbers';
-import type { FormState } from '@/lib/validation/result';
+import type * as numberActions from './actions';
 
-import type { AddNumberState } from './actions';
+type AddNumberResult = Awaited<ReturnType<typeof numberActions.addNumberAction>>;
+type RequestCodeResult = Awaited<ReturnType<typeof numberActions.requestCodeAction>>;
+type VerifyCodeResult = Awaited<ReturnType<typeof numberActions.verifyCodeAction>>;
+type RegisterResult = Awaited<ReturnType<typeof numberActions.registerNumberAction>>;
 
 // The four steps Meta actually requires, in the order it requires them, each its own
 // Server Action and its own round-trip.
@@ -107,10 +111,10 @@ export function AddNumberWizard({
   isOwner: boolean;
   /** Meta numbers already on the WABA — the ones a resume can point at. */
   candidates: ProviderNumber[];
-  addAction: (prev: AddNumberState | null, fd: FormData) => Promise<AddNumberState>;
-  requestCodeAction: (prev: FormState, fd: FormData) => Promise<FormState>;
-  verifyCodeAction: (prev: FormState, fd: FormData) => Promise<FormState>;
-  registerAction: (prev: FormState, fd: FormData) => Promise<FormState>;
+  addAction: (prev: AddNumberResult, fd: FormData) => Promise<AddNumberResult>;
+  requestCodeAction: (prev: RequestCodeResult, fd: FormData) => Promise<RequestCodeResult>;
+  verifyCodeAction: (prev: VerifyCodeResult, fd: FormData) => Promise<VerifyCodeResult>;
+  registerAction: (prev: RegisterResult, fd: FormData) => Promise<RegisterResult>;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('add');
@@ -144,44 +148,45 @@ export function AddNumberWizard({
     };
   }, [phone]);
 
-  const [addState, runAdd] = useActionState<AddNumberState | null, FormData>(
+  const [addState, runAdd] = useActionState<AddNumberResult, FormData>(
     async (prev, fd) => {
       const next = await addAction(prev, fd);
       // Advancing on the ID, not on the absence of an error: the id is the thing the
       // next three steps cannot run without.
-      if (next.phoneNumberId) {
-        setPhoneNumberId(next.phoneNumberId);
+      const added = next.data?.phoneNumberId;
+      if (added) {
+        setPhoneNumberId(added);
         setStep('code');
       }
       return next;
     },
-    null,
+    {},
   );
 
-  const [codeState, runCode] = useActionState<FormState, FormData>(
+  const [codeState, runCode] = useActionState<RequestCodeResult, FormData>(
     async (prev, fd) => {
       const next = await requestCodeAction(prev, fd);
-      if (next?.notice) setStep('verify');
+      if (next.data?.notice) setStep('verify');
       return next;
     },
-    null,
+    {},
   );
 
-  const [verifyState, runVerify] = useActionState<FormState, FormData>(
+  const [verifyState, runVerify] = useActionState<VerifyCodeResult, FormData>(
     async (prev, fd) => {
       const next = await verifyCodeAction(prev, fd);
-      if (next?.notice) setStep('register');
+      if (next.data?.notice) setStep('register');
       return next;
     },
-    null,
+    {},
   );
 
-  const [registerState, runRegister] = useActionState<FormState, FormData>(
+  const [registerState, runRegister] = useActionState<RegisterResult, FormData>(
     async (prev, fd) => registerAction(prev, fd),
-    null,
+    {},
   );
 
-  const otpInvalid = Boolean(verifyState?.fieldErrors?.code?.length);
+  const otpInvalid = Boolean(verifyState.validationErrors?.fieldErrors.code?.length);
 
   function reset() {
     setStep('add');
@@ -305,7 +310,7 @@ export function AddNumberWizard({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     aria-describedby="phone-preview"
-                    aria-invalid={addState?.fieldErrors?.phone ? true : undefined}
+                    aria-invalid={addState.validationErrors?.fieldErrors.phone ? true : undefined}
                   />
                   {/* aria-live: the preview appears and changes as the number is
                       typed, and a screen-reader user gets no other signal that the
@@ -327,7 +332,7 @@ export function AddNumberWizard({
                       'המספר יוצג כאן בדיוק כפי שיישלח ל-Meta, אחרי שיהיה תקין.'
                     )}
                   </p>
-                  <FieldError errors={addState?.fieldErrors?.phone} />
+                  <FieldError errors={addState.validationErrors?.fieldErrors.phone} />
                 </div>
 
                 <div>
@@ -341,19 +346,19 @@ export function AddNumberWizard({
                   <Input
                     id="verifiedName"
                     name="verifiedName"
-                    defaultValue={addState?.verifiedName ?? ''}
+                    defaultValue={addState.validationErrors?.verifiedName ?? ''}
                     maxLength={75}
                     required
                     aria-describedby="verifiedName-hint"
-                    aria-invalid={addState?.fieldErrors?.verifiedName ? true : undefined}
+                    aria-invalid={addState.validationErrors?.fieldErrors.verifiedName ? true : undefined}
                   />
                   <p id="verifiedName-hint" className="mt-1 text-xs text-muted-foreground">
                     2–75 תווים. Meta מאשרת את השם בנפרד, והוא מה שהאורחים יראו.
                   </p>
-                  <FieldError errors={addState?.fieldErrors?.verifiedName} />
+                  <FieldError errors={addState.validationErrors?.fieldErrors.verifiedName} />
                 </div>
 
-                <FormError message={addState?.error} />
+                <FormError message={actionFormError(addState)} />
                 <SubmitButton>הוספה</SubmitButton>
 
                 {/* The way back IN. Meta has no delete-number API, so a number added
@@ -402,8 +407,8 @@ export function AddNumberWizard({
                   ושליחה בשפה לא נתמכת נכשלת בשקט ולא בשגיאה.
                 </p>
 
-                <FormError message={codeState?.error} />
-                <FormNotice message={codeState?.notice} />
+                <FormError message={actionFormError(codeState)} />
+                <FormNotice message={codeState.data?.notice} />
                 <SubmitButton>שליחת הקוד</SubmitButton>
 
                 {/* Free to go back and forth here: requesting a code costs nothing
@@ -453,11 +458,11 @@ export function AddNumberWizard({
                       ))}
                     </InputOTPGroup>
                   </InputOTP>
-                  <FieldError errors={verifyState?.fieldErrors?.code} />
+                  <FieldError errors={verifyState.validationErrors?.fieldErrors.code} />
                 </div>
 
-                <FormError message={verifyState?.error} />
-                <FormNotice message={verifyState?.notice} />
+                <FormError message={actionFormError(verifyState)} />
+                <FormNotice message={verifyState.data?.notice} />
                 <SubmitButton>אימות</SubmitButton>
 
                 <Button
@@ -501,14 +506,14 @@ export function AddNumberWizard({
                       maxLength={6}
                       required
                       aria-describedby="pin-hint"
-                      aria-invalid={registerState?.fieldErrors?.pin ? true : undefined}
+                      aria-invalid={registerState.validationErrors?.fieldErrors.pin ? true : undefined}
                     />
                     <p id="pin-hint" className="mt-1 text-xs text-muted-foreground">
                       אם למספר כבר יש אימות דו-שלבי — זהו ה-PIN הקיים. אם אין, הקוד
                       שתזינו כאן <strong>יהפוך</strong> ל-PIN של המספר, ו-Meta תדרוש
                       אותו כדי לשנות אותו או למחוק את המספר. המערכת אינה שומרת אותו.
                     </p>
-                    <FieldError errors={registerState?.fieldErrors?.pin} />
+                    <FieldError errors={registerState.validationErrors?.fieldErrors.pin} />
                   </div>
 
                   <div>
@@ -521,13 +526,13 @@ export function AddNumberWizard({
                       dir="ltr"
                       autoComplete="off"
                       required
-                      aria-invalid={registerState?.fieldErrors?.confirm ? true : undefined}
+                      aria-invalid={registerState.validationErrors?.fieldErrors.confirm ? true : undefined}
                     />
-                    <FieldError errors={registerState?.fieldErrors?.confirm} />
+                    <FieldError errors={registerState.validationErrors?.fieldErrors.confirm} />
                   </div>
 
-                  <FormError message={registerState?.error} />
-                  <FormNotice message={registerState?.notice} />
+                  <FormError message={actionFormError(registerState)} />
+                  <FormNotice message={registerState.data?.notice} />
                   <SubmitButton>רישום המספר</SubmitButton>
                 </form>
               ) : (

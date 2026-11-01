@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { HelpTip } from '@/components/help-tip';
 import { updateSendPolicyAction } from '@/app/(admin)/admin/integrations/actions';
+import { actionFormError, type ActionFormResult } from '@/lib/action-result';
 import type { AdminSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { EDITABLE_WEEKDAYS, WEEKDAY_LABELS } from '@/lib/validation/send-policy-form';
 
@@ -114,8 +115,11 @@ function SourceBadge({ source }: { source: AdminSendPolicy['source'] }) {
 }
 
 export function SendPolicyForm({ policy: admin }: { policy: AdminSendPolicy }) {
-  const [state, action] = useActionState(updateSendPolicyAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(updateSendPolicyAction, {});
+  // The action reports each refusal under the input's own name (`weekday.0.start`, `_root` for a whole-policy one),
+  // not under a SendPolicy key, so the messages are looked up by name.
+  const e: NonNullable<ActionFormResult['validationErrors']>['fieldErrors'] | undefined =
+    state.validationErrors?.fieldErrors;
   const p = admin.policy;
 
   // Existing keys first (newest touchpoint first), then ONE blank row so a
@@ -128,8 +132,8 @@ export function SendPolicyForm({ policy: admin }: { policy: AdminSendPolicy }) {
 
   return (
     <form action={action} className="space-y-5">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <FieldError errors={e?._root} />
 
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-4">

@@ -11,6 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { actionErrorMessage } from '@/lib/action-result';
 import { formatIsraelDate } from '@/lib/date';
 
 import { Badge } from '../_components';
@@ -26,8 +27,9 @@ const inputClass =
 const sectionClass = 'space-y-3 rounded-lg border border-border bg-card p-5';
 
 // Read-only support surface. Two steps, both client-driven via useTransition +
-// the ActionResult<T> server actions (the same useTransition pattern as the
-// staff-role selector in ../users/[id]/user-actions.tsx):
+// the server actions, read as `result.data` or else the action's one message
+// (the same useTransition pattern as the staff-role selector in
+// ../users/[id]/user-actions.tsx):
 //   1. Find candidate event(s) by event id OR the owner's phone/email.
 //   2. Pick one and view it — REQUIRES a break-glass reason; the server action
 //      (via getEventForSupportView) writes the audit row before returning data.
@@ -59,15 +61,16 @@ export function SupportClient() {
         owner_email: ownerEmail,
         reason,
       });
-      if (!result.ok) {
-        setFindError(result.error);
+      const found = result.data;
+      if (!found) {
+        setFindError(actionErrorMessage(result));
         return;
       }
-      if (result.data.length === 0) {
+      if (found.length === 0) {
         setFindError('לא נמצא אירוע תואם');
         return;
       }
-      setCandidates(result.data);
+      setCandidates(found);
     });
   };
 
@@ -76,8 +79,8 @@ export function SupportClient() {
     setDossier(null);
     startView(async () => {
       const result = await viewSupportEventAction({ event_id: id, reason });
-      if (!result.ok) {
-        setViewError(result.error);
+      if (!result.data) {
+        setViewError(actionErrorMessage(result));
         return;
       }
       setDossier(result.data);

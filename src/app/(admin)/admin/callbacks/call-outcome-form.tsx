@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import { CALL_OUTCOMES } from '@/lib/validation/admin';
 import { CALL_OUTCOME_LABELS } from '@/lib/data/admin/labels';
 import { FieldError, FormError, FormNotice } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { updateCallOutcomeAction } from './actions';
 
 // Records what happened when the owner actually made the call — a dimension
@@ -20,7 +21,7 @@ export function CallOutcomeForm({
 }) {
   const [state, formAction, pending] = useActionState(
     updateCallOutcomeAction,
-    null,
+    {},
   );
 
   const isKnown = (CALL_OUTCOMES as readonly string[]).includes(currentOutcome);
@@ -54,9 +55,9 @@ export function CallOutcomeForm({
           {pending ? 'שומר…' : 'עדכון'}
         </button>
       </div>
-      <FieldError errors={state?.fieldErrors?.callOutcome} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.callOutcome} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }

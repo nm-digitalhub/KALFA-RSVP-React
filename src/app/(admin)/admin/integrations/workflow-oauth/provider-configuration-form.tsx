@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -17,13 +18,13 @@ export function ProviderConfigurationForm({
   enabled: boolean;
   hasStoredSecret: boolean;
 }) {
-  const [state, action] = useActionState(saveMicrosoftWorkflowOAuthProviderAction, null);
-  const errors = state?.fieldErrors;
+  const [state, action] = useActionState(saveMicrosoftWorkflowOAuthProviderAction, {});
+  const errors = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <div className="space-y-1.5">
         <Label htmlFor="clientId">Client ID</Label>

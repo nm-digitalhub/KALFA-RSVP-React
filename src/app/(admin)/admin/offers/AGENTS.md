@@ -6,8 +6,10 @@ Shared rules live in the root AGENTS.md and CLAUDE.md; this file covers only wha
 ## Map
 
 - `page.tsx`: list (active and inactive), not paginated. `new/page.tsx`: create. `[id]/page.tsx`: edit + delete.
-- `actions.ts`: `createOfferAction`, `updateOfferAction(id, ...)`, `deleteOfferAction(id, ...)`.
-  The id actions are pre-bound with `.bind(null, id)` so the client gets `(prevState, formData)`.
+- `actions.ts`: `createOfferAction`, `updateOfferAction(id, ...)`, `deleteOfferAction(id, ...)`, built from the shared
+  next-safe-action client (`src/lib/safe-action.ts`). The id actions are pre-bound with `.bind(null, id)` (the id is a
+  bind argument validated as a UUID), so the client gets `(prevResult, formData)` and reads
+  `{ data, serverError, validationErrors }` with `useActionState(action, {})`.
 - `offer-form.tsx`: shared client form for create and edit (`initial` absent means create).
 - `[id]/delete-offer-form.tsx`: confirm-gated delete (`window.confirm`).
 - Data layer: `src/lib/data/admin/offers.ts`. Schema: `offerSchema` / `OfferInput` in `src/lib/validation/admin.ts`.
@@ -35,13 +37,14 @@ Shared rules live in the root AGENTS.md and CLAUDE.md; this file covers only wha
   either direction; an empty list matches any objection.
 - `value_override` blank means "use the offer's value"; it is preprocessed to `null` before coercion.
 - Floor rule (D14): every allowed package's final price must stay positive. The DAL is the single enforcement
-  point (`assertPositiveFloors` throws `OfferFloorError`); the actions map it to `fieldErrors.value`.
+  point (`assertPositiveFloors` throws `OfferFloorError`); the actions map it to a `value` field error (`returnValidationErrors`).
   The form preview calls the same `computeOfferOption`, so preview and refusal cannot disagree.
 - The form hides inactive packages unless the offer already allows them. The server does not refuse an
   inactive package, only a package id that no longer exists.
-- Catch blocks call `unstable_rethrow(err)` first, so `redirect()` / `notFound()` are not swallowed.
+- Catch blocks that remain call `unstable_rethrow(err)` first, so `redirect()` / `notFound()` are not swallowed.
 - Create and delete `redirect('/admin/offers')`; update returns `{ notice }` and revalidates both paths.
-- `deleteOfferAction` shows `err.message`. FK 23503 (a `coupon_assignments` row references the offer,
+- `deleteOfferAction` has no catch of its own: the client's `handleServerError` passes a Hebrew message from the DAL to
+  the form as it is (any other text becomes the generic one). FK 23503 (a `coupon_assignments` row references the offer,
   ON DELETE RESTRICT) becomes the Hebrew "deactivate instead" message.
 
 ## Data invariants

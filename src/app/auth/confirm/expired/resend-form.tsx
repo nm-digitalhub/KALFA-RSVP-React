@@ -3,16 +3,17 @@
 import { useActionState } from 'react';
 
 import { resendConfirmationEmail } from '../../actions';
-import { FieldError, FormNotice, SubmitButton } from '@/components/forms';
+import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 
 // Reached from a dead confirmation link, so the address is NOT known here — the
 // token carried it and the token is gone. Asking for it again is the price of
 // not leaking: this page is reachable by anyone with a malformed link, so the
 // action answers with the same notice whether or not the address is registered.
 export function ResendConfirmationForm() {
-  const [state, action] = useActionState(resendConfirmationEmail, null);
+  const [state, action] = useActionState(resendConfirmationEmail, {});
 
-  if (state?.notice) return <FormNotice message={state.notice} />;
+  if (state.data?.notice) return <FormNotice message={state.data.notice} />;
 
   return (
     <form action={action} className="space-y-3 text-start">
@@ -28,8 +29,10 @@ export function ResendConfirmationForm() {
           required
           className="w-full rounded-md border border-border bg-transparent px-3 py-2"
         />
-        <FieldError errors={state?.fieldErrors?.email} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.email} />
       </div>
+      {/* A failed send; the address's own message shows under its field. */}
+      <FormError message={actionFormError(state)} />
       <SubmitButton>שליחת קישור חדש</SubmitButton>
     </form>
   );

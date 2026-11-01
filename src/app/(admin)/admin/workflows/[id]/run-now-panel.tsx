@@ -12,6 +12,7 @@ import { useEffect, useState, useTransition } from 'react';
 // The editor's own component library (@workflowbuilder/ui, the SDK's successor to
 // overflow-ui), not the app's shadcn primitives: it carries the editor's tokens.
 import { Button } from '@workflowbuilder/ui';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { ManualRunContact, ManualRunEvent } from '@/lib/data/admin/workflows';
 
 import {
@@ -57,7 +58,9 @@ export function RunNowPanel({
   useEffect(() => {
     let cancelled = false;
     void listManualRunEventsAction()
-      .then((rows) => {
+      .then(({ data: rows }) => {
+        // A failure now arrives as a result rather than a rejection; it ends in the same notice.
+        if (!rows) throw new Error('events');
         if (cancelled) return;
         setEvents(rows);
         // A scoped workflow has nothing to choose; a global one starts on the
@@ -80,7 +83,9 @@ export function RunNowPanel({
     if (!eventId) return;
     let cancelled = false;
     void listManualRunContactsAction(eventId)
-      .then((rows) => {
+      .then(({ data: rows }) => {
+        // A failure now arrives as a result rather than a rejection; it ends in the same notice.
+        if (!rows) throw new Error('contacts');
         if (!cancelled) setContacts(rows);
       })
       .catch(() => {
@@ -111,13 +116,17 @@ export function RunNowPanel({
     setNotice(null);
     startTransition(async () => {
       try {
-        const result = await startManualRunAction(workflowId, {
+        const res = await startManualRunAction(workflowId, {
           eventId,
           contactId,
           messageText,
           buttonPayload,
         });
-        if (result.ok) {
+        const result = res.data;
+        if (!result) {
+          // The server's failure, which used to arrive as a thrown error.
+          setNotice({ kind: 'error', text: actionErrorMessage(res) ?? 'ההרצה נכשלה.' });
+        } else if (result.ok) {
           setArmed(false);
           setNotice({
             kind: 'ok',

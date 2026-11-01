@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import { updateOutreachMasterSwitchAction } from '@/app/(admin)/admin/integrations/actions';
 
 // The ONE global outreach switch (app_settings.outreach_enabled). It gates every
@@ -28,7 +29,7 @@ export function OutreachMasterSwitch({
   enabled: boolean;
   anyChannelReady: boolean;
 }) {
-  const [state, action] = useActionState(updateOutreachMasterSwitchAction, null);
+  const [state, action] = useActionState(updateOutreachMasterSwitchAction, {});
   return (
     <form
       action={action}
@@ -40,8 +41,8 @@ export function OutreachMasterSwitch({
           מפעיל שליחות/שיחות חיות בכל ערוץ מוגדר. שיחות Voximplant דורשות בנוסף
           את מתג השרת VOXIMPLANT_LIVE_CALLS.
         </p>
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionErrorMessage(state)} />
+        <FormNotice message={state.data?.notice} />
       </div>
       <div className="flex shrink-0 items-center justify-end gap-3">
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">

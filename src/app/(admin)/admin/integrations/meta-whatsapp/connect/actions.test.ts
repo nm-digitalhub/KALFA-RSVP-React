@@ -14,17 +14,18 @@ beforeEach(() => vi.clearAllMocks());
 
 describe('connectEmbeddedSignupAction', () => {
   it('rejects malformed input without calling the domain', async () => {
-    await expect(connectEmbeddedSignupAction({ code: 'x', finishEvent: 'NOPE' })).resolves.toEqual({
-      ok: false,
-      message: 'נתוני החיבור אינם תקינים',
+    await expect(connectEmbeddedSignupAction({ code: 'x', finishEvent: 'NOPE' } as never)).resolves.toEqual({
+      validationErrors: { formErrors: ['נתוני החיבור אינם תקינים'], fieldErrors: {} },
     });
-    await expect(connectEmbeddedSignupAction(null)).resolves.toMatchObject({ ok: false });
+    await expect(connectEmbeddedSignupAction(null as never)).resolves.toMatchObject({
+      validationErrors: { formErrors: ['נתוני החיבור אינם תקינים'] },
+    });
     expect(connectMock).not.toHaveBeenCalled();
   });
 
   it('passes a valid code and finish event through', async () => {
     connectMock.mockResolvedValue({ ok: false, message: 'm' });
-    const input = { code: 'AQBhlXsctMxJ', finishEvent: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' };
+    const input = { code: 'AQBhlXsctMxJ', finishEvent: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' } as const;
     await connectEmbeddedSignupAction(input);
     expect(connectMock).toHaveBeenCalledWith(input);
   });
@@ -36,6 +37,6 @@ describe('connectEmbeddedSignupAction', () => {
         code: 'AQBhlXsctMxJ',
         finishEvent: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
       }),
-    ).resolves.toEqual({ ok: false, message: 'החיבור נכשל. נסו שוב.' });
+    ).resolves.toEqual({ serverError: 'החיבור נכשל. נסו שוב.' });
   });
 });

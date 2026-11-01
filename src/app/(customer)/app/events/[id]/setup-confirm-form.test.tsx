@@ -15,7 +15,7 @@ const items = [
   { name: 'ack_lock', label: 'הבנתי שלא ניתן לשנות לאחר האישור' },
 ] as const;
 
-function setup(action = vi.fn(async () => null)) {
+function setup(action = vi.fn(async () => ({}))) {
   render(
     <SetupConfirmForm action={action} items={items} warning="אזהרת הנעילה" submitLabel="אישור פרטי האירוע והמשך" />,
   );
@@ -48,7 +48,7 @@ describe('SetupConfirmForm', () => {
   });
 
   it('posts each acknowledgment under its key when submitted', async () => {
-    const action = vi.fn(async (_prev: unknown, _fd: FormData) => null);
+    const action = vi.fn(async (_prev: unknown, _fd: FormData) => ({}));
     const { user } = setup(action as never);
     for (const box of screen.getAllByRole('checkbox')) await user.click(box);
 
@@ -62,7 +62,7 @@ describe('SetupConfirmForm', () => {
   });
 
   it("shows the server's error next to the button", async () => {
-    const { user } = setup(vi.fn(async () => ({ error: 'יש להשלים לפני האישור: שעת האירוע' })) as never);
+    const { user } = setup(vi.fn(async () => ({ serverError: 'יש להשלים לפני האישור: שעת האירוע' })) as never);
     for (const box of screen.getAllByRole('checkbox')) await user.click(box);
     await user.click(screen.getByRole('button', { name: 'אישור פרטי האירוע והמשך' }));
 
@@ -73,7 +73,7 @@ describe('SetupConfirmForm', () => {
 describe('SetupConfirmForm — flat inside the step surface (design D3, task 4.3)', () => {
   it('draws no framed panel: only the lock warning is a notice', () => {
     const { container } = render(
-      <SetupConfirmForm action={vi.fn(async () => null)} items={items} warning="אזהרת הנעילה" submitLabel="אישור" />,
+      <SetupConfirmForm action={vi.fn(async () => ({}))} items={items} warning="אזהרת הנעילה" submitLabel="אישור" />,
     );
     expect(framedPanels(container.innerHTML)).toEqual([]);
   });

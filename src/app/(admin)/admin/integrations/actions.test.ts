@@ -50,6 +50,7 @@ import {
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { DEFAULT_SEND_POLICY } from '@/lib/outreach/send-policy';
+import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
 import {
   updateWhatsAppChannelAction,
   updateVoximplantLiveCallsAction,
@@ -90,7 +91,7 @@ describe.each([
     vi.mocked(getVoximplantChannelConfig).mockResolvedValue({} as VoxChannelConfig);
     vi.mocked(listVoicePurposesForAdmin).mockResolvedValue([]);
     write.mockRejectedValueOnce(NEXT_REDIRECT);
-    await expect(action(null, fd({ key: 'test_purpose', displayName: 'ייעוד בדיקה' }))).rejects.toBe(NEXT_REDIRECT);
+    await expect(action({}, fd({ key: 'test_purpose', displayName: 'ייעוד בדיקה' }))).rejects.toBe(NEXT_REDIRECT);
   });
 });
 
@@ -99,16 +100,16 @@ describe('updateWhatsAppChannelAction — Next.js control-flow signals (requireP
     vi.mocked(updateWhatsAppChannelConfig).mockRejectedValue(NEXT_REDIRECT);
 
     await expect(
-      updateWhatsAppChannelAction(null, fd(FIELDS)),
+      updateWhatsAppChannelAction({}, fd(FIELDS)),
     ).rejects.toThrow('NEXT_REDIRECT');
   });
 
   it('converts a genuine (non-framework) error into the existing friendly message, not a thrown error', async () => {
     vi.mocked(updateWhatsAppChannelConfig).mockRejectedValue(new Error('db down'));
 
-    const result = await updateWhatsAppChannelAction(null, fd(FIELDS));
+    const result = await updateWhatsAppChannelAction({}, fd(FIELDS));
 
-    expect(result).toEqual({ error: 'עדכון הגדרות הערוץ נכשל. נסו שוב.' });
+    expect(result).toEqual({ serverError: 'עדכון הגדרות הערוץ נכשל. נסו שוב.' });
   });
 });
 
@@ -119,11 +120,11 @@ describe('updateVoximplantLiveCallsAction — fail-closed live-dial toggle', () 
     } as VoxChannelConfig);
 
     const result = await updateVoximplantLiveCallsAction(
-      null,
+      {},
       fd({ voximplant_live_calls: 'on' }),
     );
 
-    expect(result?.error).toContain('קונפיג מלא');
+    expect(result?.serverError).toContain('קונפיג מלא');
     expect(updateVoximplantLiveCalls).not.toHaveBeenCalled();
   });
 
@@ -133,52 +134,52 @@ describe('updateVoximplantLiveCallsAction — fail-closed live-dial toggle', () 
     } as VoxChannelConfig);
 
     const result = await updateVoximplantLiveCallsAction(
-      null,
+      {},
       fd({ voximplant_live_calls: 'on' }),
     );
 
     expect(updateVoximplantLiveCalls).toHaveBeenCalledWith(true);
-    expect(result?.notice).toBeTruthy();
+    expect(result?.data?.notice).toBeTruthy();
   });
 
   it('DISABLES without a config check (no fail-closed guard on turning off)', async () => {
-    const result = await updateVoximplantLiveCallsAction(null, fd({}));
+    const result = await updateVoximplantLiveCallsAction({}, fd({}));
 
     expect(getVoximplantChannelConfig).not.toHaveBeenCalled();
     expect(updateVoximplantLiveCalls).toHaveBeenCalledWith(false);
-    expect(result?.notice).toBeTruthy();
+    expect(result?.data?.notice).toBeTruthy();
   });
 });
 
 describe('updateCallConsentRequiredAction — the AI-call consent gate toggle', () => {
   it('checkbox present → REQUIRES consent (true)', async () => {
     const result = await updateCallConsentRequiredAction(
-      null,
+      {},
       fd({ call_consent_required: 'on' }),
     );
     expect(updateCallConsentRequired).toHaveBeenCalledWith(true);
-    expect(result?.notice).toBeTruthy();
+    expect(result?.data?.notice).toBeTruthy();
   });
 
   // The security-relevant direction: an absent checkbox LIFTS the requirement,
   // permitting dials without prior consent. It must still write false (not refuse).
   it('checkbox absent → LIFTS the requirement (false)', async () => {
-    const result = await updateCallConsentRequiredAction(null, fd({}));
+    const result = await updateCallConsentRequiredAction({}, fd({}));
     expect(updateCallConsentRequired).toHaveBeenCalledWith(false);
-    expect(result?.notice).toBeTruthy();
+    expect(result?.data?.notice).toBeTruthy();
   });
 
   it('propagates a framework redirect instead of swallowing it', async () => {
     vi.mocked(updateCallConsentRequired).mockRejectedValueOnce(NEXT_REDIRECT);
     await expect(
-      updateCallConsentRequiredAction(null, fd({ call_consent_required: 'on' })),
+      updateCallConsentRequiredAction({}, fd({ call_consent_required: 'on' })),
     ).rejects.toBe(NEXT_REDIRECT);
   });
 
   it('a genuine error becomes a friendly message, not a throw', async () => {
     vi.mocked(updateCallConsentRequired).mockRejectedValueOnce(new Error('db down'));
-    const result = await updateCallConsentRequiredAction(null, fd({}));
-    expect(result?.error).toBeTruthy();
+    const result = await updateCallConsentRequiredAction({}, fd({}));
+    expect(result?.serverError).toBe('עדכון מתג ההסכמה נכשל. נסו שוב.');
   });
 });
 
@@ -193,15 +194,15 @@ describe('updateChannelCatalogAction — catalog display-metadata edit', () => {
 
   it('rejects an empty display_name and does NOT write', async () => {
     const result = await updateChannelCatalogAction(
-      null,
+      {},
       fd({ ...OK, display_name: '' }),
     );
-    expect(result?.fieldErrors?.display_name).toBeTruthy();
+    expect(result?.validationErrors?.fieldErrors?.display_name).toEqual(['שם תצוגה חובה']);
     expect(updateChannelMetadata).not.toHaveBeenCalled();
   });
 
   it('saves valid metadata (checkboxes → booleans, sort coerced to number)', async () => {
-    const result = await updateChannelCatalogAction(null, fd(OK));
+    const result = await updateChannelCatalogAction({}, fd(OK));
     expect(updateChannelMetadata).toHaveBeenCalledWith({
       key: 'call',
       display_name: 'שיחת AI',
@@ -209,12 +210,12 @@ describe('updateChannelCatalogAction — catalog display-metadata edit', () => {
       active: true,
       sort_order: 2,
     });
-    expect(result?.notice).toBeTruthy();
+    expect(result?.data?.notice).toBeTruthy();
   });
 
   it('absent checkboxes → false (hidden / not-built)', async () => {
     await updateChannelCatalogAction(
-      null,
+      {},
       fd({ key: 'call', display_name: 'x', sort_order: '0' }),
     );
     expect(updateChannelMetadata).toHaveBeenCalledWith(
@@ -224,15 +225,15 @@ describe('updateChannelCatalogAction — catalog display-metadata edit', () => {
 
   it('propagates a framework redirect instead of swallowing it', async () => {
     vi.mocked(updateChannelMetadata).mockRejectedValueOnce(NEXT_REDIRECT);
-    await expect(updateChannelCatalogAction(null, fd(OK))).rejects.toBe(
+    await expect(updateChannelCatalogAction({}, fd(OK))).rejects.toBe(
       NEXT_REDIRECT,
     );
   });
 
   it('a genuine error becomes a friendly message, not a throw', async () => {
     vi.mocked(updateChannelMetadata).mockRejectedValueOnce(new Error('db down'));
-    const result = await updateChannelCatalogAction(null, fd(OK));
-    expect(result?.error).toBe('עדכון הערוץ נכשל. נסו שוב.');
+    const result = await updateChannelCatalogAction({}, fd(OK));
+    expect(result?.serverError).toBe('עדכון הערוץ נכשל. נסו שוב.');
   });
 });
 
@@ -261,7 +262,7 @@ describe('updateSendPolicyAction', () => {
 
   it('saves a narrowed window', async () => {
     const result = await updateSendPolicyAction(
-      null,
+      {},
       policyForm({ 'weekday.0.start': '10:00', 'weekday.0.end': '18:00' }),
     );
     expect(updateSendPolicy).toHaveBeenCalledWith(
@@ -269,26 +270,29 @@ describe('updateSendPolicyAction', () => {
         weekday: expect.arrayContaining([{ start: '10:00', end: '18:00' }]),
       }),
     );
-    expect(result?.notice).toBeTruthy();
+    expect(result?.data?.notice).toBeTruthy();
   });
 
   it('a window past the ceiling is REFUSED and never reaches the DAL', async () => {
-    const result = await updateSendPolicyAction(
-      null,
-      policyForm({ 'weekday.1.end': '22:00' }),
-    );
-    expect(result?.fieldErrors).toBeTruthy();
+    const form = policyForm({ 'weekday.1.end': '22:00' });
+    const result = await updateSendPolicyAction({}, form);
+    expect(result?.validationErrors?.fieldErrors).toBeTruthy();
     expect(updateSendPolicy).not.toHaveBeenCalled();
+    // The refusal reaches the form exactly as the pure translation states it: the same field names (dotted, or
+    // `_root`) and the same text.
+    const refused = sendPolicyFromFormData(form);
+    expect(refused.ok).toBe(false);
+    expect(result?.validationErrors?.fieldErrors).toEqual(refused.ok ? undefined : refused.fieldErrors);
   });
 
   it('a crafted Saturday window does not open Shabbat sends', async () => {
     // The page renders no Saturday inputs. Anything arriving under those names is
     // a hand-built request, and it must change nothing.
     const result = await updateSendPolicyAction(
-      null,
+      {},
       policyForm({ 'weekday.6.start': '09:00', 'weekday.6.end': '20:30' }),
     );
-    expect(result?.notice).toBeTruthy();
+    expect(result?.data?.notice).toBeTruthy();
     expect(updateSendPolicy).toHaveBeenCalledWith(
       expect.objectContaining({ weekday: expect.arrayContaining([null]) }),
     );
@@ -298,14 +302,14 @@ describe('updateSendPolicyAction', () => {
 
   it('propagates a framework redirect instead of swallowing it', async () => {
     vi.mocked(updateSendPolicy).mockRejectedValueOnce(NEXT_REDIRECT);
-    await expect(updateSendPolicyAction(null, policyForm())).rejects.toBe(
+    await expect(updateSendPolicyAction({}, policyForm())).rejects.toBe(
       NEXT_REDIRECT,
     );
   });
 
   it('a write failure becomes a friendly message', async () => {
     vi.mocked(updateSendPolicy).mockRejectedValueOnce(new Error('db down'));
-    const result = await updateSendPolicyAction(null, policyForm());
-    expect(result?.error).toContain('מדיניות השליחה');
+    const result = await updateSendPolicyAction({}, policyForm());
+    expect(result?.serverError).toBe('שמירת מדיניות השליחה נכשלה. נסו שוב.');
   });
 });

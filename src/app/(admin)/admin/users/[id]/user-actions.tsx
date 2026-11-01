@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 
 import {
   suspendUserAction,
@@ -75,9 +75,13 @@ function RowSubmit({
   );
 }
 
+type StaffRoleResult =
+  | Awaited<ReturnType<typeof assignStaffRoleAction>>
+  | Awaited<ReturnType<typeof revokeStaffRoleAction>>;
+
 // Platform staff-role selector (single role per user). Shown only to platform
 // owners. Choosing "ללא" revokes staff membership; any role assigns it. Awaits
-// the server action and surfaces its FormState (the last-owner guard may reject).
+// the server action and surfaces its result (the last-owner guard may reject).
 function StaffRoleSelector({
   userId,
   roles,
@@ -88,11 +92,11 @@ function StaffRoleSelector({
   currentRoleId: string | null;
 }) {
   const [selected, setSelected] = useState(currentRoleId ?? '');
-  const [state, setState] = useState<FormState>(null);
+  const [state, setState] = useState<StaffRoleResult>({});
   const [pending, startTransition] = useTransition();
 
   const onSave = (): void => {
-    setState(null);
+    setState({});
     startTransition(async () => {
       const result =
         selected === ''
@@ -109,8 +113,8 @@ function StaffRoleSelector({
         תפקיד הצוות של המשתמש בפלטפורמה (בעל מערכת / צוות). בחירת &quot;ללא&quot;
         מסירה את חברות הצוות.
       </p>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-52">
           <label htmlFor="staff-role" className="mb-1 block text-sm font-medium">
@@ -149,6 +153,11 @@ function StaffRoleSelector({
 // (FK to platform_staff, 20260721005100), so offering the control before then would
 // only produce a rejection. Removing the staff role cascades this away — the copy
 // says so, because that happens elsewhere on this screen.
+//
+// Enrolment's result is the widest of the four (its field error is `displayName`); block, unblock and remove return a
+// subset of it.
+type ConsoleAgentResult = Awaited<ReturnType<typeof enrollConsoleAgentAction>>;
+
 function ConsoleAgentSection({
   userId,
   isStaff,
@@ -159,11 +168,11 @@ function ConsoleAgentSection({
   current: ConsoleAgentState | null;
 }) {
   const [displayName, setDisplayName] = useState(current?.displayName ?? '');
-  const [state, setState] = useState<FormState>(null);
+  const [state, setState] = useState<ConsoleAgentResult>({});
   const [pending, startTransition] = useTransition();
 
-  const run = (fn: () => Promise<FormState>): void => {
-    setState(null);
+  const run = (fn: () => Promise<ConsoleAgentResult>): void => {
+    setState({});
     startTransition(async () => setState(await fn()));
   };
 
@@ -180,8 +189,8 @@ function ConsoleAgentSection({
         האזנה לשיחה חיה והשתלטות עליה עדיין בפיתוח, וגם נציג מוקצה אינו יכול
         לבצע אותן כרגע.
       </p>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
 
       {!isStaff ? (
         <p className="text-sm text-muted-foreground">
@@ -269,7 +278,7 @@ function ConsoleAgentSection({
               disabled={pending}
               className={inputClass}
             />
-            <FieldError errors={state?.fieldErrors?.displayName} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.displayName} />
           </div>
           <button
             type="button"
@@ -304,9 +313,9 @@ export function UserActions({
 }) {
   const [suspendState, suspendAction] = useActionState(
     suspended ? reactivateUserAction : suspendUserAction,
-    null,
+    {},
   );
-  const [creditState, creditAction] = useActionState(grantCreditAction, null);
+  const [creditState, creditAction] = useActionState(grantCreditAction, {});
   // Credit scope: controlled event choice so the optional campaign-scope
   // checkbox can follow the selected event's (single) campaign.
   const [creditEventId, setCreditEventId] = useState('');
@@ -342,8 +351,8 @@ export function UserActions({
             </form>
           )}
         </div>
-        {suspendState?.error ? <FormError message={suspendState.error} /> : null}
-        {suspendState?.notice ? <FormNotice message={suspendState.notice} /> : null}
+        <FormError message={actionFormError(suspendState)} />
+        {suspendState.data?.notice ? <FormNotice message={suspendState.data.notice} /> : null}
       </section>
 
       {platformStaff ? (
@@ -367,8 +376,8 @@ export function UserActions({
           <form action={creditAction} className="space-y-3">
             {/* The server re-verifies the chosen event is owned by this user. */}
             <input type="hidden" name="user_id" value={userId} />
-            <FormError message={creditState?.error} />
-            <FormNotice message={creditState?.notice} />
+            <FormError message={actionFormError(creditState)} />
+            <FormNotice message={creditState.data?.notice} />
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <label htmlFor="credit-event" className="mb-1 block text-sm font-medium">
@@ -394,7 +403,7 @@ export function UserActions({
                     </option>
                   ))}
                 </select>
-                <FieldError errors={creditState?.fieldErrors?.event_id} />
+                <FieldError errors={creditState.validationErrors?.fieldErrors?.event_id} />
               </div>
               <div>
                 <label htmlFor="credit-amount" className="mb-1 block text-sm font-medium">
@@ -409,14 +418,14 @@ export function UserActions({
                   required
                   className={inputClass}
                 />
-                <FieldError errors={creditState?.fieldErrors?.amount} />
+                <FieldError errors={creditState.validationErrors?.fieldErrors?.amount} />
               </div>
               <div>
                 <label htmlFor="credit-reason" className="mb-1 block text-sm font-medium">
                   סיבה
                 </label>
                 <input id="credit-reason" name="reason" type="text" required className={inputClass} />
-                <FieldError errors={creditState?.fieldErrors?.reason} />
+                <FieldError errors={creditState.validationErrors?.fieldErrors?.reason} />
               </div>
             </div>
             {creditCampaignId ? (
@@ -435,7 +444,7 @@ export function UserActions({
               name="campaign_id"
               value={scopeToCampaign && creditCampaignId ? creditCampaignId : ''}
             />
-            <FieldError errors={creditState?.fieldErrors?.campaign_id} />
+            <FieldError errors={creditState.validationErrors?.fieldErrors?.campaign_id} />
             <RowSubmit>מתן הטבה</RowSubmit>
           </form>
         </section>

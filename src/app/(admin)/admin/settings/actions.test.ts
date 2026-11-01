@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The action client (src/lib/safe-action.ts) is server-only.
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
@@ -30,7 +32,7 @@ describe('updateSettingsAction — Next.js control-flow signals (requirePlatform
   it('propagates a NEXT_REDIRECT from updateAppSettings instead of returning { error }', async () => {
     vi.mocked(updateAppSettings).mockRejectedValue(NEXT_REDIRECT);
 
-    await expect(updateSettingsAction(null, fd(FIELDS))).rejects.toThrow(
+    await expect(updateSettingsAction({}, fd(FIELDS))).rejects.toThrow(
       'NEXT_REDIRECT',
     );
   });
@@ -38,9 +40,9 @@ describe('updateSettingsAction — Next.js control-flow signals (requirePlatform
   it('converts a genuine (non-framework) error into the existing friendly message, not a thrown error', async () => {
     vi.mocked(updateAppSettings).mockRejectedValue(new Error('db down'));
 
-    const result = await updateSettingsAction(null, fd(FIELDS));
+    const result = await updateSettingsAction({}, fd(FIELDS));
 
-    expect(result).toEqual({ error: 'עדכון ההגדרות נכשל. נסו שוב.' });
+    expect(result).toEqual({ serverError: 'עדכון ההגדרות נכשל. נסו שוב.' });
   });
 });
 
@@ -48,7 +50,7 @@ describe('updateSettingsAction — what it writes', () => {
   it('a checked box is on and an absent one is off', async () => {
     vi.mocked(updateAppSettings).mockResolvedValue(undefined);
 
-    await updateSettingsAction(null, fd(FIELDS));
+    await updateSettingsAction({}, fd(FIELDS));
 
     expect(updateAppSettings).toHaveBeenCalledWith(
       expect.objectContaining({ payments_enabled: true, billing_exposure_gate: true, monitor_enabled: false }),
@@ -59,7 +61,7 @@ describe('updateSettingsAction — what it writes', () => {
     vi.mocked(updateAppSettings).mockResolvedValue(undefined);
 
     await updateSettingsAction(
-      null,
+      {},
       fd({ ...FIELDS, close_charge_enabled: 'on', campaign_holds_enabled: 'on', reasonable_coverage_contacts: '300' }),
     );
 

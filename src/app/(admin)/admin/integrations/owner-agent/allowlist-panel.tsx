@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PhoneInput } from '@/components/ui/phone-input';
@@ -81,7 +82,7 @@ function personName(entry: OwnerAgentAllowlistEntry): string {
 // "אשר ידנית" for a staff row whose phone is not the verified one. Opens an inline
 // panel (no browser confirm()) that asks for the reason and says what it does.
 function ApproveManuallyForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
-  const [state, action] = useActionState(approveUnverifiedStaffAction, null);
+  const [state, action] = useActionState(approveUnverifiedStaffAction, {});
   const [open, setOpen] = useState(false);
   const noteId = `approve-note-${entry.id}`;
   const hintId = `approve-hint-${entry.id}`;
@@ -115,10 +116,10 @@ function ApproveManuallyForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
         required
         maxLength={500}
         aria-describedby={hintId}
-        aria-invalid={state?.fieldErrors?.note ? true : undefined}
+        aria-invalid={state.validationErrors?.fieldErrors?.note ? true : undefined}
       />
-      <FieldError errors={state?.fieldErrors?.note} />
-      <FormError message={state?.error} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.note} />
+      <FormError message={actionFormError(state)} />
       <div className="flex flex-wrap items-center gap-2">
         <SubmitButton className="w-auto" size="sm">
           אישור ידני<span className="sr-only">{` ${entry.maskedNumber}`}</span>
@@ -133,7 +134,7 @@ function ApproveManuallyForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
 
 // Take back a manual approval of a staff row (two steps, like removal).
 function RevokeApprovalForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
-  const [state, action] = useActionState(revokeManualApprovalAction, null);
+  const [state, action] = useActionState(revokeManualApprovalAction, {});
   const [confirming, setConfirming] = useState(false);
   if (!confirming) {
     return (
@@ -157,13 +158,13 @@ function RevokeApprovalForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
       <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)}>
         חזרה
       </Button>
-      <FormError message={state?.error} />
+      <FormError message={actionErrorMessage(state)} />
     </form>
   );
 }
 
 function RelabelForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
-  const [state, action] = useActionState(relabelAllowlistEntryAction, null);
+  const [state, action] = useActionState(relabelAllowlistEntryAction, {});
   const inputId = `allowlist-label-${entry.id}`;
   return (
     <form action={action} className="space-y-1">
@@ -184,9 +185,9 @@ function RelabelForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
           שמירה<span className="sr-only">{` תווית עבור ${entry.maskedNumber}`}</span>
         </SubmitButton>
       </div>
-      <FieldError errors={state?.fieldErrors?.label} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.label} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }
@@ -194,8 +195,8 @@ function RelabelForm({ entry }: { entry: OwnerAgentAllowlistEntry }) {
 // Every row has the same buttons, so each one carries the row's masked number for a
 // screen reader — "השבתה" alone, heard while tabbing through a table, names no row.
 function RowActions({ entry }: { entry: OwnerAgentAllowlistEntry }) {
-  const [toggleState, toggleAction] = useActionState(setAllowlistEntryEnabledAction, null);
-  const [removeState, removeAction] = useActionState(removeAllowlistEntryAction, null);
+  const [toggleState, toggleAction] = useActionState(setAllowlistEntryEnabledAction, {});
+  const [removeState, removeAction] = useActionState(removeAllowlistEntryAction, {});
   // Two steps for removal. It is recoverable (add the number again), but it cuts a
   // person off from the agent at once, and one mis-click in a table is easy.
   const [confirming, setConfirming] = useState(false);
@@ -243,14 +244,14 @@ function RowActions({ entry }: { entry: OwnerAgentAllowlistEntry }) {
         <ApproveManuallyForm entry={entry} />
       ) : null}
       {entry.approvalKind === 'staff_unverified_override' ? <RevokeApprovalForm entry={entry} /> : null}
-      <FormError message={toggleState?.error ?? removeState?.error} />
-      <FormNotice message={toggleState?.notice} />
+      <FormError message={actionErrorMessage(toggleState) ?? actionErrorMessage(removeState)} />
+      <FormNotice message={toggleState.data?.notice} />
     </div>
   );
 }
 
 function AddEntryForm({ staff }: { staff: OwnerAgentStaffOption[] }) {
-  const [state, action] = useActionState(addAllowlistEntryAction, null);
+  const [state, action] = useActionState(addAllowlistEntryAction, {});
   // PhoneInput is controlled; it never rewrites what was typed. Normalisation to
   // E.164 happens once, on the server, in allowlistPhoneSchema.
   const [phone, setPhone] = useState('');
@@ -270,12 +271,12 @@ function AddEntryForm({ staff }: { staff: OwnerAgentStaffOption[] }) {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             aria-describedby="allowlist-e164-hint"
-            aria-invalid={state?.fieldErrors?.e164 ? true : undefined}
+            aria-invalid={state.validationErrors?.fieldErrors?.e164 ? true : undefined}
           />
           <p id="allowlist-e164-hint" className="mt-1 text-xs text-muted-foreground">
             עם קידומת מדינה (+972…) או מספר ישראלי שמתחיל ב-0.
           </p>
-          <FieldError errors={state?.fieldErrors?.e164} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.e164} />
         </div>
         <div>
           <label htmlFor="allowlist-staff" className="mb-1 block text-sm font-medium">
@@ -286,7 +287,7 @@ function AddEntryForm({ staff }: { staff: OwnerAgentStaffOption[] }) {
             name="staffUserId"
             required
             defaultValue=""
-            aria-invalid={state?.fieldErrors?.staffUserId ? true : undefined}
+            aria-invalid={state.validationErrors?.fieldErrors?.staffUserId ? true : undefined}
             className={inputClass}
           >
             <option value="" disabled>
@@ -304,18 +305,18 @@ function AddEntryForm({ staff }: { staff: OwnerAgentStaffOption[] }) {
               </option>
             ))}
           </select>
-          <FieldError errors={state?.fieldErrors?.staffUserId} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.staffUserId} />
         </div>
         <div>
           <label htmlFor="allowlist-label" className="mb-1 block text-sm font-medium">
             תווית (לא חובה)
           </label>
           <input id="allowlist-label" name="label" maxLength={120} className={inputClass} />
-          <FieldError errors={state?.fieldErrors?.label} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.label} />
         </div>
       </div>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <SubmitButton className="w-auto">הוספה</SubmitButton>
     </form>
   );
@@ -324,7 +325,7 @@ function AddEntryForm({ staff }: { staff: OwnerAgentStaffOption[] }) {
 // A person who is not platform staff, approved by hand. The warning states what the
 // owner's free-read decisions give them, so the approval is an informed one.
 function AddExternalForm() {
-  const [state, action] = useActionState(addExternalAllowlistEntryAction, null);
+  const [state, action] = useActionState(addExternalAllowlistEntryAction, {});
   const [phone, setPhone] = useState('');
 
   return (
@@ -346,12 +347,12 @@ function AddExternalForm() {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             aria-describedby="external-e164-hint"
-            aria-invalid={state?.fieldErrors?.e164 ? true : undefined}
+            aria-invalid={state.validationErrors?.fieldErrors?.e164 ? true : undefined}
           />
           <p id="external-e164-hint" className="mt-1 text-xs text-muted-foreground">
             עם קידומת מדינה (+972…) או מספר ישראלי שמתחיל ב-0.
           </p>
-          <FieldError errors={state?.fieldErrors?.e164} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.e164} />
         </div>
         <div>
           <label htmlFor="external-name" className="mb-1 block text-sm font-medium">
@@ -362,10 +363,10 @@ function AddExternalForm() {
             name="name"
             required
             maxLength={120}
-            aria-invalid={state?.fieldErrors?.name ? true : undefined}
+            aria-invalid={state.validationErrors?.fieldErrors?.name ? true : undefined}
             className={inputClass}
           />
-          <FieldError errors={state?.fieldErrors?.name} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.name} />
         </div>
       </div>
       <div>
@@ -378,12 +379,12 @@ function AddExternalForm() {
           required
           maxLength={500}
           aria-describedby="external-warning"
-          aria-invalid={state?.fieldErrors?.note ? true : undefined}
+          aria-invalid={state.validationErrors?.fieldErrors?.note ? true : undefined}
         />
-        <FieldError errors={state?.fieldErrors?.note} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.note} />
       </div>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <SubmitButton className="w-auto">אישור והוספה</SubmitButton>
     </form>
   );

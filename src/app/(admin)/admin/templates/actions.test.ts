@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
@@ -17,6 +18,7 @@ vi.mock('@/lib/data/admin/whatsapp-templates', () => ({
   requestTemplateSync: vi.fn(),
 }));
 
+import { actionErrorMessage } from '@/lib/action-result';
 import { saveTemplateParameters, setTemplateRoute } from '@/lib/data/admin/whatsapp-templates';
 import {
   acknowledgeTemplateCategory,
@@ -52,7 +54,7 @@ describe('updateTemplateAction — Next.js control-flow signals (requirePlatform
   it('propagates a NEXT_REDIRECT from updateMessageTemplate instead of returning { error }', async () => {
     vi.mocked(updateMessageTemplate).mockRejectedValue(NEXT_REDIRECT);
 
-    await expect(updateTemplateAction(null, fd(FIELDS))).rejects.toThrow(
+    await expect(updateTemplateAction({}, fd(FIELDS))).rejects.toThrow(
       'NEXT_REDIRECT',
     );
   });
@@ -60,9 +62,9 @@ describe('updateTemplateAction — Next.js control-flow signals (requirePlatform
   it('converts a genuine (non-framework) error into the existing friendly message, not a thrown error', async () => {
     vi.mocked(updateMessageTemplate).mockRejectedValue(new Error('db down'));
 
-    const result = await updateTemplateAction(null, fd(FIELDS));
+    const result = await updateTemplateAction({}, fd(FIELDS));
 
-    expect(result).toEqual({ error: 'עדכון התבנית נכשל. נסו שוב.' });
+    expect(result).toEqual({ serverError: 'עדכון התבנית נכשל. נסו שוב.' });
   });
 });
 
@@ -75,9 +77,9 @@ describe('acknowledgeTemplateCategoryAction', () => {
       from: 'UTILITY',
       to: 'MARKETING',
     });
-    const result = await acknowledgeTemplateCategoryAction(null, fd(OK));
+    const result = await acknowledgeTemplateCategoryAction({}, fd(OK));
     expect(acknowledgeTemplateCategory).toHaveBeenCalledWith(FIELDS.id, 'MARKETING');
-    expect(result?.notice).toBeTruthy();
+    expect(result.data?.notice).toBeTruthy();
   });
 
   it('says plainly that acknowledging does not change the billing or the limits', async () => {
@@ -88,8 +90,8 @@ describe('acknowledgeTemplateCategoryAction', () => {
       from: 'UTILITY',
       to: 'MARKETING',
     });
-    const result = await acknowledgeTemplateCategoryAction(null, fd(OK));
-    expect(result?.notice).toContain('החיוב והמגבלות');
+    const result = await acknowledgeTemplateCategoryAction({}, fd(OK));
+    expect(result.data?.notice).toContain('החיוב והמגבלות');
   });
 
   it('a refusal from the DAL is shown as its own reason, not a generic failure', async () => {
@@ -97,28 +99,28 @@ describe('acknowledgeTemplateCategoryAction', () => {
       ok: false,
       reason: 'הקטגוריה השתנתה מאז שהעמוד נטען. רעננו ובדקו שוב לפני האישור.',
     });
-    const result = await acknowledgeTemplateCategoryAction(null, fd(OK));
-    expect(result?.error).toContain('רעננו');
+    const result = await acknowledgeTemplateCategoryAction({}, fd(OK));
+    expect(result.serverError).toContain('רעננו');
   });
 
   it('rejects a missing observed category rather than accepting whatever is current', async () => {
-    const result = await acknowledgeTemplateCategoryAction(null, fd({ id: FIELDS.id }));
-    expect(result?.error).toBe('בקשה לא תקינה');
+    const result = await acknowledgeTemplateCategoryAction({}, fd({ id: FIELDS.id }));
+    expect(actionErrorMessage(result)).toBe('בקשה לא תקינה');
     expect(acknowledgeTemplateCategory).not.toHaveBeenCalled();
   });
 
   it('rejects a non-uuid id', async () => {
     const result = await acknowledgeTemplateCategoryAction(
-      null,
+      {},
       fd({ id: 'nope', observed_category: 'MARKETING' }),
     );
-    expect(result?.error).toBe('בקשה לא תקינה');
+    expect(actionErrorMessage(result)).toBe('בקשה לא תקינה');
     expect(acknowledgeTemplateCategory).not.toHaveBeenCalled();
   });
 
   it('propagates a framework redirect instead of swallowing it', async () => {
     vi.mocked(acknowledgeTemplateCategory).mockRejectedValueOnce(NEXT_REDIRECT);
-    await expect(acknowledgeTemplateCategoryAction(null, fd(OK))).rejects.toBe(
+    await expect(acknowledgeTemplateCategoryAction({}, fd(OK))).rejects.toBe(
       NEXT_REDIRECT,
     );
   });
@@ -126,24 +128,25 @@ describe('acknowledgeTemplateCategoryAction', () => {
 
 describe('setTemplateRouteAction', () => {
   it('rejects malformed input without calling the data layer', async () => {
-    expect(await setTemplateRouteAction({ messageKey: 'invite', eventType: 'party', withMedia: false, templateId: '1' }))
-      .toEqual({ ok: false, problems: ['בקשה לא תקינה'] });
+    // 'party' is not an event type: the point of this case (as never only to get it past the typed input).
+    expect(await setTemplateRouteAction({ messageKey: 'invite', eventType: 'party' as never, withMedia: false, templateId: '1' }))
+      .toEqual({ validationErrors: { formErrors: ['בקשה לא תקינה'], fieldErrors: {} } });
     expect(await setTemplateRouteAction({ messageKey: 'invite', eventType: null, withMedia: false, templateId: 'abc' }))
-      .toEqual({ ok: false, problems: ['בקשה לא תקינה'] });
+      .toEqual({ validationErrors: { formErrors: ['בקשה לא תקינה'], fieldErrors: {} } });
     expect(setTemplateRoute).not.toHaveBeenCalled();
   });
 
   it('passes validated input through and returns the data layer result', async () => {
     vi.mocked(setTemplateRoute).mockResolvedValueOnce({ ok: true, warning: 'w' });
-    const input = { messageKey: 'invite', eventType: 'brit', withMedia: true, templateId: '123' };
-    expect(await setTemplateRouteAction(input)).toEqual({ ok: true, warning: 'w' });
+    const input = { messageKey: 'invite', eventType: 'brit', withMedia: true, templateId: '123' } as const;
+    expect(await setTemplateRouteAction(input)).toEqual({ data: { ok: true, warning: 'w' } });
     expect(setTemplateRoute).toHaveBeenCalledWith(input);
   });
 
   it('hides internal failures behind a generic message', async () => {
     vi.mocked(setTemplateRoute).mockRejectedValueOnce(new Error('db exploded'));
     expect(await setTemplateRouteAction({ messageKey: 'invite', eventType: null, withMedia: false, templateId: '1' }))
-      .toEqual({ ok: false, problems: ['השמירה נכשלה. נסו שוב.'] });
+      .toEqual({ serverError: 'השמירה נכשלה. נסו שוב.' });
   });
 });
 
@@ -152,9 +155,10 @@ describe('saveTemplateParametersAction', () => {
     expect(
       await saveTemplateParametersAction({
         templateId: '1',
-        values: [{ type: 'footer', sub_type: null, index: null, position: 1, source_path: 'guest.first_name' }],
+        // 'footer' is not a component type: the point of this case (as never only to get it past the typed input).
+        values: [{ type: 'footer' as never, sub_type: null, index: null, position: 1, source_path: 'guest.first_name' }],
       }),
-    ).toEqual({ ok: false, problems: ['בקשה לא תקינה'] });
+    ).toEqual({ validationErrors: { formErrors: ['בקשה לא תקינה'], fieldErrors: {} } });
     expect(saveTemplateParameters).not.toHaveBeenCalled();
   });
 });

@@ -3,11 +3,12 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { ConsoleAgentOption, ConsoleQueue } from '@/lib/data/console-queues';
 import { toggleQueueActiveAction, updateQueueMembersAction } from './actions';
 
 function QueueToggleForm({ queue }: { queue: ConsoleQueue }) {
-  const [state, action] = useActionState(toggleQueueActiveAction, null);
+  const [state, action] = useActionState(toggleQueueActiveAction, {});
   return (
     <form action={action} className="flex flex-wrap items-center gap-3">
       <input type="hidden" name="queue_id" value={queue.id} />
@@ -21,8 +22,8 @@ function QueueToggleForm({ queue }: { queue: ConsoleQueue }) {
         פעילה
       </label>
       <SubmitButton className="w-auto">עדכון</SubmitButton>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }
@@ -36,7 +37,7 @@ function QueueMembersForm({
   agents: ConsoleAgentOption[];
   memberIds: string[];
 }) {
-  const [state, action] = useActionState(updateQueueMembersAction, null);
+  const [state, action] = useActionState(updateQueueMembersAction, {});
   const memberSet = new Set(memberIds);
   return (
     <form action={action} className="space-y-2">
@@ -62,8 +63,8 @@ function QueueMembersForm({
         </ul>
       )}
       <SubmitButton className="w-auto">עדכון חברים</SubmitButton>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }

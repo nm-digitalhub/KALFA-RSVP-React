@@ -46,7 +46,8 @@ import { DIAGRAM_TEMPLATES } from "@/lib/workflow/catalogue/templates";
 import * as startVoiceCallDefinition from "@/lib/workflow/nodes/action-start-voice-call/definition";
 import { applyHebrewToSdk } from "@/lib/workflow/i18n-he";
 
-import { loadVoiceDialListsAction } from "../actions";
+import { actionErrorMessage } from "@/lib/action-result";
+import { loadVoiceDialListsAction, type saveWorkflowAction } from "../actions";
 
 import { appBarPlugin } from "./app-bar";
 import { copyPastePlugin } from "./copy-paste";
@@ -92,10 +93,10 @@ type Props = {
    * data layer — nothing here is authorization, and the browser's copy of the id
    * is not trusted by it.
    *
-   * It THROWS on failure rather than returning a falsy value. See the comment on
-   * `makeSaveHandler`.
+   * A failure comes back as the result's error, which `makeSaveHandler` turns
+   * into a THROW. See the comment there.
    */
-  saveAction: (workflowId: string, definition: unknown) => Promise<void>;
+  saveAction: typeof saveWorkflowAction;
   /**
    * Our WhatsApp lines, for the trigger node's "which number" dropdown.
    *
@@ -255,7 +256,9 @@ export function WorkflowEditor({
     // `startTransition` because this dispatches a Server Function; see the same
     // note on the Voximplant rule field under /admin/integrations.
     startDialListLoad(async () => {
-      const res = await loadVoiceDialListsAction();
+      const { data: res, ...failure } = await loadVoiceDialListsAction();
+      // A failure (not a vendor's own refusal, which is per list below) still ends in the error boundary.
+      if (!res) throw new Error(actionErrorMessage(failure));
       setDialLists({
         rules: res.rules.ok ? res.rules.items : [],
         agents: res.agents.ok ? res.agents.items : [],
@@ -769,7 +772,7 @@ function WorkflowEditorLayout({
  * Resolving `'error'` therefore tells the owner their workflow was saved when it
  * was not. Upstream is explicit that you must THROW to surface an error.
  *
- * So: this only ever resolves `'success'`, and lets the action's throw through.
+ * So: this only ever resolves `'success'`, and throws the action's failure.
  */
 function makeSaveHandler(
   workflowId: string,
@@ -807,7 +810,10 @@ function makeSaveHandler(
     //
     // Two keys removed by name, everything else copied: this is not the
     // cherry-picking the comment above warns about.
-    await saveAction(workflowId, stripComputedErrors(data));
+    const result = await saveAction(workflowId, stripComputedErrors(data));
+    if (result.serverError || result.validationErrors) {
+      throw new Error(actionErrorMessage(result));
+    }
 
     return "success";
   };

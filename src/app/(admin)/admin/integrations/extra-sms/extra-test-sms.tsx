@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 
 import { sendExtraTestSmsAction } from './actions';
 
@@ -18,7 +19,7 @@ import { sendExtraTestSmsAction } from './actions';
 // staff id, and the number is validated there. Nothing here is load-bearing.
 
 export function ExtraTestSms() {
-  const [state, action] = useActionState(sendExtraTestSmsAction, null);
+  const [state, action] = useActionState(sendExtraTestSmsAction, {});
 
   return (
     <form action={action} className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
@@ -31,8 +32,8 @@ export function ExtraTestSms() {
         </p>
       </div>
 
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
         <div className="min-w-0 flex-1">
@@ -49,7 +50,7 @@ export function ExtraTestSms() {
             placeholder="050-0000000"
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
-          <FieldError errors={state?.fieldErrors?.test_destination} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.test_destination} />
         </div>
         <SubmitButton className="w-auto shrink-0">שליחת בדיקה</SubmitButton>
       </div>

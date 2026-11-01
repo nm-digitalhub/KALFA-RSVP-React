@@ -9,6 +9,7 @@ import {
   AccordionPanel,
 } from '@/components/ui/accordion';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { HelpTip } from '@/components/help-tip';
 import { updateVoximplantChannelAction } from '@/app/(admin)/admin/integrations/actions';
 
@@ -54,13 +55,13 @@ export function VoximplantCredentialsForm({
   voxCtxBase: string;
   voxCbBase: string;
 }) {
-  const [state, action] = useActionState(updateVoximplantChannelAction, null);
-  const ve = state?.fieldErrors;
+  const [state, action] = useActionState(updateVoximplantChannelAction, {});
+  const ve = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="mt-4 space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <Accordion defaultValue={['vox-creds']}>
         <AccordionItem value="vox-creds">

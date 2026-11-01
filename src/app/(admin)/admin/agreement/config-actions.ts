@@ -18,68 +18,57 @@
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
+import { zfd } from 'zod-form-data';
 
 import { requirePlatformPermission } from '@/lib/auth/dal';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { createClient } from '@/lib/supabase/server';
-import type { FormState } from '@/lib/validation/result';
 
 // The app_settings singleton is keyed by a constant boolean id (see
 // src/lib/data/admin/settings.ts).
 const SETTINGS_ID = true;
 
 // All values are trimmed strings. Empty is allowed (an intentional unset →
-// stored as NULL below), matching the company/app-settings save behaviour.
-const agreementConfigSchema = z.object({
-  serviceActivationWindow: z.string().trim(),
-  offerValidityDays: z.string().trim(),
-  liabilityCap: z.string().trim(),
-  retentionDays: z.string().trim(),
-  recordRetentionMonths: z.string().trim(),
+// stored as NULL below), matching the company/app-settings save behaviour. A
+// field the form did not send reads as empty, as it always has.
+const agreementConfigValue = z.string().trim().prefault('');
+
+const agreementConfigSchema = zfd.formData({
+  serviceActivationWindow: agreementConfigValue,
+  offerValidityDays: agreementConfigValue,
+  liabilityCap: agreementConfigValue,
+  retentionDays: agreementConfigValue,
+  recordRetentionMonths: agreementConfigValue,
 });
 
-export async function saveAgreementConfigAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = agreementConfigSchema.safeParse({
-    serviceActivationWindow: formData.get('serviceActivationWindow') ?? '',
-    offerValidityDays: formData.get('offerValidityDays') ?? '',
-    liabilityCap: formData.get('liabilityCap') ?? '',
-    retentionDays: formData.get('retentionDays') ?? '',
-    recordRetentionMonths: formData.get('recordRetentionMonths') ?? '',
-  });
+export const saveAgreementConfigAction = actionClient
+  .inputSchema(agreementConfigSchema)
+  .stateAction(async ({ parsedInput }) => {
+    let saved = false;
+    try {
+      // `manage_settings`, not the retired coarse `requireAdmin()` flag. The agreement config decides the
+      // terms a customer approves.
+      await requirePlatformPermission('manage_settings');
+      const supabase = await createClient();
 
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  try {
-    // `manage_settings`, not the retired coarse `requireAdmin()` flag. The agreement config decides the
-    // terms a customer approves.
-    await requirePlatformPermission('manage_settings');
-    const supabase = await createClient();
-
-    // The form is prefilled with current values, so every save submits every
-    // field. Empty → null (intentional unset).
-    const { error } = await supabase
-      .from('app_settings')
-      .update({
-        agr_service_activation_window: parsed.data.serviceActivationWindow || null,
-        agr_offer_validity_days: parsed.data.offerValidityDays || null,
-        agr_liability_cap: parsed.data.liabilityCap || null,
-        agr_retention_days: parsed.data.retentionDays || null,
-        agr_record_retention_months: parsed.data.recordRetentionMonths || null,
-      })
-      .eq('id', SETTINGS_ID);
-
-    if (error) {
-      return { error: 'עדכון הגדרות החוזה נכשל. נסו שוב.' };
+      // The form is prefilled with current values, so every save submits every
+      // field. Empty → null (intentional unset).
+      const { error } = await supabase
+        .from('app_settings')
+        .update({
+          agr_service_activation_window: parsedInput.serviceActivationWindow || null,
+          agr_offer_validity_days: parsedInput.offerValidityDays || null,
+          agr_liability_cap: parsedInput.liabilityCap || null,
+          agr_retention_days: parsedInput.retentionDays || null,
+          agr_record_retention_months: parsedInput.recordRetentionMonths || null,
+        })
+        .eq('id', SETTINGS_ID);
+      saved = !error;
+    } catch (err) {
+      unstable_rethrow(err);
     }
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'עדכון הגדרות החוזה נכשל. נסו שוב.' };
-  }
+    if (!saved) returnUserError('עדכון הגדרות החוזה נכשל. נסו שוב.');
 
-  revalidatePath('/admin/agreement');
-  return { notice: 'הגדרות החוזה נשמרו' };
-}
+    revalidatePath('/admin/agreement');
+    return { notice: 'הגדרות החוזה נשמרו' };
+  });

@@ -13,15 +13,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { FormError, FormNotice } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { FormError } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { EventStatus } from '@/lib/data/events';
 import type { VariantProps } from 'class-variance-authority';
 
+import type { closeEventAction } from './campaign/campaign-actions';
+
+// The close answers with a message on failure and redirects on success: it has no notice to show.
+type CloseEventResult = Awaited<ReturnType<typeof closeEventAction>>;
 type BoundAction = (
-  prevState: FormState,
+  prevState: CloseEventResult,
   formData: FormData,
-) => Promise<FormState>;
+) => Promise<CloseEventResult>;
 
 // Shared Button/buttonVariants — same component the page's nav links (ניהול
 // מוזמנים/סטטיסטיקות) already use — so every action on this page shares one
@@ -42,7 +46,7 @@ function ActionButton({
   disabled?: boolean;
   disabledHint?: string;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
   const formRef = useRef<HTMLFormElement>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   return (
@@ -83,8 +87,7 @@ function ActionButton({
       {disabled && disabledHint ? (
         <p className="text-xs text-muted-foreground">{disabledHint}</p>
       ) : null}
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
     </form>
   );
 }

@@ -3,14 +3,17 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, FieldError, SubmitButton } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionFormError } from '@/lib/action-result';
 import type { OwnCancellationRequest } from '@/lib/data/event-cancellation';
 import { cancellationReference } from '@/lib/data/cancellation-reference';
 
+import type { createCancellationRequestAction } from './actions';
+
+type CancellationRequestResult = Awaited<ReturnType<typeof createCancellationRequestAction>>;
 type BoundAction = (
-  prevState: FormState,
+  prevState: CancellationRequestResult,
   formData: FormData,
-) => Promise<FormState>;
+) => Promise<CancellationRequestResult>;
 
 const RESOLUTION_LABELS: Record<string, string> = {
   full_cancellation: 'הביטול אושר במלואו',
@@ -31,7 +34,7 @@ export function CancellationRequestForm({
   existingRequest: OwnCancellationRequest | null;
   action: BoundAction;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
 
   if (existingRequest && existingRequest.status === 'pending') {
     return (
@@ -70,7 +73,7 @@ export function CancellationRequestForm({
             rows={3}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
-          <FieldError errors={state?.fieldErrors?.reason} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.reason} />
         </div>
 
         <label className="flex items-start gap-2 text-sm">
@@ -87,8 +90,8 @@ export function CancellationRequestForm({
           שליחת בקשת ביטול
         </SubmitButton>
 
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
       </form>
     </details>
   );

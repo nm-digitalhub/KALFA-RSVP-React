@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import { VoximplantRuleField } from './voximplant-rule-field';
 import {
   updateVoximplantLiveCallsAction,
@@ -34,14 +35,14 @@ export function VoximplantLiveCallsToggle({
   liveCalls: boolean;
   fullyConfigured: boolean;
 }) {
-  const [state, action] = useActionState(updateVoximplantLiveCallsAction, null);
+  const [state, action] = useActionState(updateVoximplantLiveCallsAction, {});
   return (
     <form
       action={action}
       className="mt-4 space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4"
     >
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-semibold">שיחות חיות (Live calls)</p>
@@ -80,14 +81,14 @@ export function VoximplantMeetingConfirmToggle({
   enabled: boolean;
   fullyConfigured: boolean;
 }) {
-  const [state, action] = useActionState(updateMeetingConfirmChannelAction, null);
+  const [state, action] = useActionState(updateMeetingConfirmChannelAction, {});
   return (
     <form
       action={action}
       className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
     >
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-semibold">שיחות אישור פגישה (Meeting-confirm)</p>
@@ -129,14 +130,14 @@ export function VoximplantSalesCallToggle({
   enabled: boolean;
   fullyConfigured: boolean;
 }) {
-  const [state, action] = useActionState(updateSalesCallChannelAction, null);
+  const [state, action] = useActionState(updateSalesCallChannelAction, {});
   return (
     <form
       action={action}
       className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
     >
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-sm font-semibold">שיחות סגירת מכירה (Sales-closing)</p>

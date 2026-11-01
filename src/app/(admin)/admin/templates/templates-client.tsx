@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { HelpTip } from '@/components/help-tip';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import type { components } from '@/lib/whatsapp/generated/message-templates';
 import {
   FieldError,
@@ -158,10 +159,10 @@ function TemplateHealth({
 }
 
 function TemplateForm({ template }: { template: Template }) {
-  const [state, action] = useActionState(updateTemplateAction, null);
+  const [state, action] = useActionState(updateTemplateAction, {});
   const [ackState, ackAction, ackPending] = useActionState(
     acknowledgeTemplateCategoryAction,
-    null,
+    {},
   );
   const isCall = template.channel === 'call';
 
@@ -193,10 +194,10 @@ function TemplateForm({ template }: { template: Template }) {
         </span>
       </div>
 
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
-      <FormError message={ackState?.error} />
-      <FormNotice message={ackState?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
+      <FormError message={actionErrorMessage(ackState)} />
+      <FormNotice message={ackState.data?.notice} />
 
       {isCall ? null : (
         <TemplateHealth
@@ -225,7 +226,7 @@ function TemplateForm({ template }: { template: Template }) {
             className={inputClass}
             placeholder={isCall ? 'לדוגמה: אישור הגעה' : 'rsvp_invite_he'}
           />
-          <FieldError errors={state?.fieldErrors?.name} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.name} />
         </div>
         <div>
           <label htmlFor={`language-${template.id}`} className={labelClass}>
@@ -239,7 +240,7 @@ function TemplateForm({ template }: { template: Template }) {
             className={inputClass}
             placeholder="he"
           />
-          <FieldError errors={state?.fieldErrors?.language} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.language} />
         </div>
       </div>
 

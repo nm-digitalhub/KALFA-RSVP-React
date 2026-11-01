@@ -1,7 +1,9 @@
 'use server';
 
 import { unstable_rethrow } from 'next/navigation';
+import type { z } from 'zod';
 
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import {
   createMyExchangeCalendarEvent,
   deleteMyExchangeCalendarEvent,
@@ -9,10 +11,7 @@ import {
   listMyExchangeCalendarEvents,
   listMyExchangeCategories,
   updateMyExchangeCalendarEvent,
-  type CalendarEventDTO,
-  type CalendarEventDetailDTO,
 } from '@/lib/data/exchange-connections';
-import type { ExchangeCategory } from '@/lib/exchange-ews/types';
 import { logActivity } from '@/lib/data/activity';
 import { QUEUES } from '@/lib/queue/queues';
 import { getWebJobSender } from '@/lib/queue/web-sender';
@@ -30,32 +29,34 @@ import {
 // call) — these stay thin: validate shape, call domain logic, return a safe
 // result. No revalidatePath: the calendar owns its own refresh cycle
 // (op-tracker) and nothing here feeds a server-rendered cache.
+//
+// The calendar shows ONE sentence per failure. A rejected input is answered with a
+// fixed sentence (the reads) or with the first problem the schema found (the writes).
 
-export type CalendarFetchResult =
-  | { ok: true; events: CalendarEventDTO[] }
-  | { ok: false; message: string };
-
-export async function fetchCalendarEventsAction(input: {
-  connectionId: string;
-  startIso: string;
-  endIso: string;
-}): Promise<CalendarFetchResult> {
-  const parsed = calendarRangeSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, message: 'טווח תאריכים לא תקין' };
-  try {
-    return await listMyExchangeCalendarEvents(parsed.data.connectionId, {
-      startIso: parsed.data.startIso,
-      endIso: parsed.data.endIso,
-    });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, message: 'טעינת היומן נכשלה. נסו שוב.' };
-  }
+function fixedMessage(message: string) {
+  return async () => ({ formErrors: [message], fieldErrors: {} });
 }
 
-export type CalendarCategoriesResult =
-  | { ok: true; categories: ExchangeCategory[] }
-  | { ok: false; message: string };
+function firstIssue(schema: z.ZodType) {
+  return async (_errors: unknown, { clientInput }: { clientInput: unknown }) => ({
+    formErrors: [schema.safeParse(clientInput).error?.issues[0]?.message ?? 'קלט לא תקין'],
+    fieldErrors: {},
+  });
+}
+
+export const fetchCalendarEventsAction = actionClient
+  .inputSchema(calendarRangeSchema, { handleValidationErrorsShape: fixedMessage('טווח תאריכים לא תקין') })
+  .action(async ({ parsedInput: { connectionId, startIso, endIso } }) => {
+    let result: Awaited<ReturnType<typeof listMyExchangeCalendarEvents>>;
+    try {
+      result = await listMyExchangeCalendarEvents(connectionId, { startIso, endIso });
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('טעינת היומן נכשלה. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.message);
+    return { events: result.events };
+  });
 
 /**
  * The mailbox's category list, for the pickers in both forms.
@@ -64,99 +65,64 @@ export type CalendarCategoriesResult =
  * property of the mailbox, it changes only when the owner edits it in Outlook,
  * and a mailbox round-trip on every dialog open would be paid for nothing.
  */
-export async function fetchCalendarCategoriesAction(input: {
-  connectionId: string;
-}): Promise<CalendarCategoriesResult> {
-  const parsed = calendarConnectionSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, message: 'מזהה חיבור לא תקין' };
-  try {
-    return await listMyExchangeCategories(parsed.data.connectionId);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, message: 'טעינת הקטגוריות נכשלה.' };
-  }
-}
+export const fetchCalendarCategoriesAction = actionClient
+  .inputSchema(calendarConnectionSchema, { handleValidationErrorsShape: fixedMessage('מזהה חיבור לא תקין') })
+  .action(async ({ parsedInput: { connectionId } }) => {
+    let result: Awaited<ReturnType<typeof listMyExchangeCategories>>;
+    try {
+      result = await listMyExchangeCategories(connectionId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('טעינת הקטגוריות נכשלה.');
+    }
+    if (!result.ok) returnUserError(result.message);
+    return { categories: result.categories };
+  });
 
-export type CalendarWriteResult = { ok: true } | { ok: false; message: string };
-
-export type CalendarAttendeeInput = { email: string; name?: string; optional?: boolean };
-export type CalendarRecurrenceInput = {
-  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
-  interval: number;
-  daysOfWeek?: number[];
-  dayOfMonth?: number;
-  month?: number;
-  occurrences?: number;
-  endDateIso?: string;
-};
-
-export async function createCalendarEventAction(input: {
-  connectionId: string;
-  subject: string;
-  startIso: string;
-  endIso: string;
-  allDay: boolean;
-  location?: string;
-  body?: string;
-  reminderMinutes?: number;
-  showAs?: 'free' | 'tentative' | 'busy' | 'oof' | 'working_elsewhere';
-  sensitivity?: 'normal' | 'personal' | 'private' | 'confidential';
-  category?: string;
-  attendees?: CalendarAttendeeInput[];
-  recurrence?: CalendarRecurrenceInput;
-}): Promise<CalendarWriteResult> {
-  const parsed = calendarCreateEventSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? 'קלט לא תקין' };
-  }
-  if (new Date(parsed.data.endIso) <= new Date(parsed.data.startIso)) {
-    return { ok: false, message: 'שעת הסיום חייבת להיות אחרי שעת ההתחלה' };
-  }
-  try {
-    const result = await createMyExchangeCalendarEvent(parsed.data.connectionId, {
-      subject: parsed.data.subject,
-      startIso: parsed.data.startIso,
-      endIso: parsed.data.endIso,
-      allDay: parsed.data.allDay,
-      ...(parsed.data.location !== undefined ? { location: parsed.data.location } : {}),
-      ...(parsed.data.body !== undefined ? { body: parsed.data.body } : {}),
-      ...(parsed.data.reminderMinutes !== undefined
-        ? { reminderMinutes: parsed.data.reminderMinutes }
-        : {}),
-      ...(parsed.data.sensitivity ? { sensitivity: parsed.data.sensitivity } : {}),
-      ...(parsed.data.category ? { category: parsed.data.category } : {}),
-      ...(parsed.data.attendees?.length ? { attendees: parsed.data.attendees } : {}),
-      ...(parsed.data.recurrence ? { recurrence: parsed.data.recurrence } : {}),
-    });
-    return result.ok ? { ok: true } : { ok: false, message: result.message };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, message: 'יצירת האירוע נכשלה. נסו שוב.' };
-  }
-}
-
-export type CalendarDetailResult =
-  | { ok: true; event: CalendarEventDetailDTO }
-  | { ok: false; message: string };
+export const createCalendarEventAction = actionClient
+  .inputSchema(calendarCreateEventSchema, { handleValidationErrorsShape: firstIssue(calendarCreateEventSchema) })
+  .action(async ({ parsedInput }) => {
+    if (new Date(parsedInput.endIso) <= new Date(parsedInput.startIso)) {
+      returnUserError('שעת הסיום חייבת להיות אחרי שעת ההתחלה');
+    }
+    let result: Awaited<ReturnType<typeof createMyExchangeCalendarEvent>>;
+    try {
+      result = await createMyExchangeCalendarEvent(parsedInput.connectionId, {
+        subject: parsedInput.subject,
+        startIso: parsedInput.startIso,
+        endIso: parsedInput.endIso,
+        allDay: parsedInput.allDay,
+        ...(parsedInput.location !== undefined ? { location: parsedInput.location } : {}),
+        ...(parsedInput.body !== undefined ? { body: parsedInput.body } : {}),
+        ...(parsedInput.reminderMinutes !== undefined
+          ? { reminderMinutes: parsedInput.reminderMinutes }
+          : {}),
+        ...(parsedInput.sensitivity ? { sensitivity: parsedInput.sensitivity } : {}),
+        ...(parsedInput.category ? { category: parsedInput.category } : {}),
+        ...(parsedInput.attendees?.length ? { attendees: parsedInput.attendees } : {}),
+        ...(parsedInput.recurrence ? { recurrence: parsedInput.recurrence } : {}),
+      });
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('יצירת האירוע נכשלה. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.message);
+  });
 
 /** Full detail for the edit dialog (location/body/reminder are not in the grid). */
-export async function fetchCalendarEventAction(input: {
-  connectionId: string;
-  appointmentId: string;
-}): Promise<CalendarDetailResult> {
-  const parsed = calendarEventIdSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, message: 'מזהה אירוע לא תקין' };
-  try {
-    return await getMyExchangeCalendarEvent(
-      parsed.data.connectionId,
-      parsed.data.appointmentId,
-    );
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, message: 'טעינת פרטי האירוע נכשלה.' };
-  }
-}
-
+export const fetchCalendarEventAction = actionClient
+  .inputSchema(calendarEventIdSchema, { handleValidationErrorsShape: fixedMessage('מזהה אירוע לא תקין') })
+  .action(async ({ parsedInput: { connectionId, appointmentId } }) => {
+    let result: Awaited<ReturnType<typeof getMyExchangeCalendarEvent>>;
+    try {
+      result = await getMyExchangeCalendarEvent(connectionId, appointmentId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('טעינת פרטי האירוע נכשלה.');
+    }
+    if (!result.ok) returnUserError(result.message);
+    return { event: result.event };
+  });
 
 // An appointment edited here can BE a scheduled callback, and moving it moves
 // when the AI actually dials. Two things follow.
@@ -200,81 +166,53 @@ async function noteCalendarWrite(
   }
 }
 
-export async function updateCalendarEventAction(input: {
-  connectionId: string;
-  appointmentId: string;
-  startIso: string;
-  endIso: string;
-  subject?: string;
-  location?: string;
-  body?: string;
-  allDay?: boolean;
-  reminderMinutes?: number;
-  showAs?: 'free' | 'tentative' | 'busy' | 'oof' | 'working_elsewhere';
-  sensitivity?: 'normal' | 'personal' | 'private' | 'confidential';
-  category?: string;
-  attendees?: CalendarAttendeeInput[];
-}): Promise<CalendarWriteResult> {
-  const parsed = calendarUpdateEventSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? 'קלט לא תקין' };
-  }
-  if (new Date(parsed.data.endIso) <= new Date(parsed.data.startIso)) {
-    return { ok: false, message: 'שעת הסיום חייבת להיות אחרי שעת ההתחלה' };
-  }
-  try {
-    const result = await updateMyExchangeCalendarEvent(parsed.data.connectionId, {
-      appointmentId: parsed.data.appointmentId,
-      startIso: parsed.data.startIso,
-      endIso: parsed.data.endIso,
-      ...(parsed.data.subject !== undefined ? { subject: parsed.data.subject } : {}),
-      ...(parsed.data.location !== undefined ? { location: parsed.data.location } : {}),
-      ...(parsed.data.body !== undefined ? { body: parsed.data.body } : {}),
-      ...(parsed.data.allDay !== undefined ? { allDay: parsed.data.allDay } : {}),
-      ...(parsed.data.reminderMinutes !== undefined
-        ? { reminderMinutes: parsed.data.reminderMinutes }
-        : {}),
-      ...(parsed.data.showAs !== undefined ? { showAs: parsed.data.showAs } : {}),
-      ...(parsed.data.sensitivity !== undefined
-        ? { sensitivity: parsed.data.sensitivity }
-        : {}),
-      ...(parsed.data.category !== undefined ? { category: parsed.data.category } : {}),
-      ...(parsed.data.attendees !== undefined ? { attendees: parsed.data.attendees } : {}),
+export const updateCalendarEventAction = actionClient
+  .inputSchema(calendarUpdateEventSchema, { handleValidationErrorsShape: firstIssue(calendarUpdateEventSchema) })
+  .action(async ({ parsedInput }) => {
+    if (new Date(parsedInput.endIso) <= new Date(parsedInput.startIso)) {
+      returnUserError('שעת הסיום חייבת להיות אחרי שעת ההתחלה');
+    }
+    let result: Awaited<ReturnType<typeof updateMyExchangeCalendarEvent>>;
+    try {
+      result = await updateMyExchangeCalendarEvent(parsedInput.connectionId, {
+        appointmentId: parsedInput.appointmentId,
+        startIso: parsedInput.startIso,
+        endIso: parsedInput.endIso,
+        ...(parsedInput.subject !== undefined ? { subject: parsedInput.subject } : {}),
+        ...(parsedInput.location !== undefined ? { location: parsedInput.location } : {}),
+        ...(parsedInput.body !== undefined ? { body: parsedInput.body } : {}),
+        ...(parsedInput.allDay !== undefined ? { allDay: parsedInput.allDay } : {}),
+        ...(parsedInput.reminderMinutes !== undefined
+          ? { reminderMinutes: parsedInput.reminderMinutes }
+          : {}),
+        ...(parsedInput.showAs !== undefined ? { showAs: parsedInput.showAs } : {}),
+        ...(parsedInput.sensitivity !== undefined
+          ? { sensitivity: parsedInput.sensitivity }
+          : {}),
+        ...(parsedInput.category !== undefined ? { category: parsedInput.category } : {}),
+        ...(parsedInput.attendees !== undefined ? { attendees: parsedInput.attendees } : {}),
+      });
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('עדכון האירוע נכשל. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.message);
+    await noteCalendarWrite('calendar.event_updated', {
+      appointment_id: parsedInput.appointmentId,
+      start_iso: parsedInput.startIso,
     });
-    if (result.ok) {
-      await noteCalendarWrite('calendar.event_updated', {
-        appointment_id: parsed.data.appointmentId,
-        start_iso: parsed.data.startIso,
-      });
-    }
-    return result.ok ? { ok: true } : { ok: false, message: result.message };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, message: 'עדכון האירוע נכשל. נסו שוב.' };
-  }
-}
+  });
 
-export async function deleteCalendarEventAction(input: {
-  connectionId: string;
-  appointmentId: string;
-}): Promise<CalendarWriteResult> {
-  const parsed = calendarDeleteEventSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? 'קלט לא תקין' };
-  }
-  try {
-    const result = await deleteMyExchangeCalendarEvent(
-      parsed.data.connectionId,
-      parsed.data.appointmentId,
-    );
-    if (result.ok) {
-      await noteCalendarWrite('calendar.event_deleted', {
-        appointment_id: parsed.data.appointmentId,
-      });
+export const deleteCalendarEventAction = actionClient
+  .inputSchema(calendarDeleteEventSchema, { handleValidationErrorsShape: firstIssue(calendarDeleteEventSchema) })
+  .action(async ({ parsedInput: { connectionId, appointmentId } }) => {
+    let result: Awaited<ReturnType<typeof deleteMyExchangeCalendarEvent>>;
+    try {
+      result = await deleteMyExchangeCalendarEvent(connectionId, appointmentId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('מחיקת האירוע נכשלה. נסו שוב.');
     }
-    return result.ok ? { ok: true } : { ok: false, message: result.message };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, message: 'מחיקת האירוע נכשלה. נסו שוב.' };
-  }
-}
+    if (!result.ok) returnUserError(result.message);
+    await noteCalendarWrite('calendar.event_deleted', { appointment_id: appointmentId });
+  });

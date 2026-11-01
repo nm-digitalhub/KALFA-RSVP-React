@@ -12,8 +12,10 @@ function read(path: string): string {
   return readFileSync(join(process.cwd(), path), 'utf8');
 }
 
+// An action is either a plain `export async function` or a next-safe-action client chain (`export const x = actionClient…`).
 function actionBody(source: string, name: string): string {
-  const start = source.indexOf(`export async function ${name}(`);
+  const declared = [`export async function ${name}(`, `export const ${name} =`].map((head) => source.indexOf(head));
+  const start = Math.max(...declared);
   expect(start, `expected to find ${name}`).toBeGreaterThanOrEqual(0);
   const next = source.indexOf('\nexport ', start + 1);
   return source.slice(start, next === -1 ? undefined : next);

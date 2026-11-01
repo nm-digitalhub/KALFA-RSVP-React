@@ -3,7 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionErrorMessage } from '@/lib/action-result';
 import { saveElevenLabsKeyAction } from '../actions';
 
 // Write-only secret field for the ElevenLabs API key. Never pre-filled with the
@@ -14,10 +14,7 @@ export function ElevenLabsKeyForm({
 }: {
   keySource: 'db' | 'env' | null;
 }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(
-    saveElevenLabsKeyAction,
-    null,
-  );
+  const [state, action, pending] = useActionState(saveElevenLabsKeyAction, {});
   const label =
     keySource === 'db'
       ? 'מפתח ElevenLabs API (מוגדר ב־DB — הזן חדש להחלפה, ריק לניקוי)'
@@ -47,8 +44,8 @@ export function ElevenLabsKeyForm({
           {pending ? 'שומר…' : 'שמור'}
         </button>
       </div>
-      <FormNotice message={state?.notice} />
-      <FormError message={state?.error} />
+      <FormNotice message={state.data?.notice} />
+      <FormError message={actionErrorMessage(state)} />
     </form>
   );
 }

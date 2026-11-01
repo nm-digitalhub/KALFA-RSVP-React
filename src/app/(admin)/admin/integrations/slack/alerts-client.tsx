@@ -10,6 +10,7 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import type { SlackAlertsView } from '@/lib/data/admin/alerts';
 import type { AlertCategoryKey } from '@/lib/data/admin/alerts';
 import {
@@ -56,10 +57,10 @@ function ToggleRow({
     setChecked(next); // optimistic
     setError(null);
     startTransition(async () => {
-      const result = await setAlertToggleAction({ enabled: next, category });
-      if (result && 'error' in result && result.error) {
+      const message = actionErrorMessage(await setAlertToggleAction({ enabled: next, category }));
+      if (message) {
         setChecked(!next); // revert
-        setError(result.error);
+        setError(message);
       }
     });
   };
@@ -82,16 +83,16 @@ function ToggleRow({
 }
 
 export function AlertsClient({ view }: { view: SlackAlertsView }) {
-  const [saveState, saveAction] = useActionState(saveSlackConnectionAction, null);
-  const [testState, testAction] = useActionState(sendTestAlertAction, null);
+  const [saveState, saveAction] = useActionState(saveSlackConnectionAction, {});
+  const [testState, testAction] = useActionState(sendTestAlertAction, {});
   const [clearState, clearAction] = useActionState(
     clearSlackConnectionAction,
-    null,
+    {},
   );
-  const [mentionState, mentionAction] = useActionState(saveSlackMentionAction, null);
+  const [mentionState, mentionAction] = useActionState(saveSlackMentionAction, {});
   const [showToken, setShowToken] = useState(false);
-  const fieldErrors = saveState?.fieldErrors;
-  const mentionFieldErrors = mentionState?.fieldErrors;
+  const fieldErrors = saveState.validationErrors?.fieldErrors;
+  const mentionFieldErrors = mentionState.validationErrors?.fieldErrors;
 
   return (
     <div className="space-y-6">
@@ -109,8 +110,9 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
         </div>
 
         <form action={saveAction} className="space-y-4">
-          <FormError message={saveState?.error} />
-          <FormNotice message={saveState?.notice} />
+          {/* A refused field's message is beside it; here, the server's or a form-level one. */}
+          <FormError message={actionFormError(saveState)} />
+          <FormNotice message={saveState.data?.notice} />
 
           <div className="space-y-1">
             <label htmlFor="slack_bot_token" className="text-sm font-medium">
@@ -194,10 +196,10 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
             </button>
           </form>
         </div>
-        <FormError message={testState?.error} />
-        <FormNotice message={testState?.notice} />
-        <FormError message={clearState?.error} />
-        <FormNotice message={clearState?.notice} />
+        <FormError message={actionErrorMessage(testState)} />
+        <FormNotice message={testState.data?.notice} />
+        <FormError message={actionErrorMessage(clearState)} />
+        <FormNotice message={clearState.data?.notice} />
       </section>
 
       {/* Personal @mention */}
@@ -211,8 +213,8 @@ export function AlertsClient({ view }: { view: SlackAlertsView }) {
         </div>
 
         <form action={mentionAction} className="space-y-4">
-          <FormError message={mentionState?.error} />
-          <FormNotice message={mentionState?.notice} />
+          <FormError message={actionFormError(mentionState)} />
+          <FormNotice message={mentionState.data?.notice} />
 
           <div className="space-y-1">
             <label htmlFor="slack_mention_user_id" className="text-sm font-medium">

@@ -7,6 +7,7 @@ import { Check, Copy, MessageSquareReply, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { FormError } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { answerFleetRequestAction } from './actions';
 import { useComposer } from './fleet-composer';
 
@@ -55,7 +56,7 @@ export function PendingRequestActions({
   /** id of the bubble's title element, for aria-describedby. */
   titleId: string;
 }) {
-  const [state, action] = useActionState(answerFleetRequestAction, null);
+  const [state, action] = useActionState(answerFleetRequestAction, {});
   const { start, busy } = useComposer();
 
   const replyButton = (label: string) => (
@@ -105,7 +106,7 @@ export function PendingRequestActions({
           replyButton('השב')
         )}
       </div>
-      <FormError message={state?.error} />
+      <FormError message={actionFormError(state)} />
     </form>
   );
 }

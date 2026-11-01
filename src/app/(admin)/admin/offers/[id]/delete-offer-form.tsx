@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import { deleteOfferAction } from '../actions';
 
 // Confirm-gated delete (the packages precedent). The action is pre-bound with the id; on success
@@ -10,7 +11,7 @@ import { deleteOfferAction } from '../actions';
 // RESTRICT FK — the server answers with the deactivate-instead message, surfaced via FormError.
 export function DeleteOfferForm({ id, title }: { id: string; title: string }) {
   const action = deleteOfferAction.bind(null, id);
-  const [state, formAction, pending] = useActionState(action, null);
+  const [state, formAction, pending] = useActionState(action, {});
 
   return (
     <form
@@ -22,7 +23,7 @@ export function DeleteOfferForm({ id, title }: { id: string; title: string }) {
       }}
       className="space-y-2"
     >
-      <FormError message={state?.error} />
+      <FormError message={actionErrorMessage(state)} />
       <button
         type="submit"
         disabled={pending}

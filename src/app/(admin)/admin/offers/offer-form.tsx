@@ -6,9 +6,11 @@ import { Info } from 'lucide-react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { actionFormError } from '@/lib/action-result';
 import { computeOfferOption, type OfferKind } from '@/lib/offers/pricing';
 import type { OfferPackageChoice } from '@/lib/data/admin/offers';
-import type { FormState } from '@/lib/validation/result';
+
+import type { updateOfferAction } from './actions';
 
 // Shared create/edit form for an offer (personal-coupons D14/D23, mockup ui/OfferEdit.dc.html).
 // The parent binds the correct Server Action (create, or update with the id pre-bound) and passes
@@ -47,7 +49,7 @@ const EMPTY: OfferFormInitial = {
   packages: [],
 };
 
-type FormAction = (state: FormState, formData: FormData) => Promise<FormState>;
+type OfferResult = Awaited<ReturnType<typeof updateOfferAction>>;
 
 const labelClass = 'block text-sm font-medium';
 const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
@@ -86,12 +88,14 @@ export function OfferForm({
   submitLabel,
   packageChoices,
 }: {
-  action: FormAction;
+  // Method syntax on purpose (its parameters are compared both ways): createOfferAction redirects instead of returning
+  // data, so its previous-result type is narrower than the update's. Neither action reads it.
+  action(prev: OfferResult, formData: FormData): Promise<OfferResult>;
   initial?: OfferFormInitial;
   submitLabel: string;
   packageChoices: OfferPackageChoice[];
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
   const values = initial ?? EMPTY;
   const formId = useId();
 
@@ -130,12 +134,13 @@ export function OfferForm({
     return computeOfferOption(choice.price_with_vat, kind, effective).finalPrice;
   };
 
-  const fieldErrors = state?.fieldErrors ?? {};
+  const fieldErrors = state.validationErrors?.fieldErrors;
 
   return (
     <form action={formAction} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      {/* A refused field's message is beside it; above, the server's or a form-level one. */}
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <div className="space-y-1">
         <label htmlFor={`${formId}-title`} className={labelClass}>
@@ -149,7 +154,7 @@ export function OfferForm({
           maxLength={120}
         />
         <p className="text-xs text-muted-foreground">לצוות בלבד. הלקוח לא רואה את השם.</p>
-        <FieldError errors={fieldErrors.title} />
+        <FieldError errors={fieldErrors?.title} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -167,7 +172,7 @@ export function OfferForm({
             <option value="percent">אחוז ממחיר החבילה</option>
             <option value="amount">סכום קבוע בשקלים</option>
           </select>
-          <FieldError errors={fieldErrors.kind} />
+          <FieldError errors={fieldErrors?.kind} />
         </div>
         <div className="space-y-1">
           <label htmlFor={`${formId}-value`} className={labelClass}>
@@ -181,7 +186,7 @@ export function OfferForm({
             onChange={(e) => setValue(e.target.value)}
             className={inputClass}
           />
-          <FieldError errors={fieldErrors.value} />
+          <FieldError errors={fieldErrors?.value} />
         </div>
       </div>
 
@@ -196,7 +201,7 @@ export function OfferForm({
           defaultValue={values.validity_days === '' ? '' : String(values.validity_days)}
           className={inputClass}
         />
-        <FieldError errors={fieldErrors.validity_days} />
+        <FieldError errors={fieldErrors?.validity_days} />
       </div>
 
       <hr className="border-border" />
@@ -263,7 +268,7 @@ export function OfferForm({
           רק חבילות פעילות שמוצעות ללקוחות מופיעות כאן.
         </p>
         <input type="hidden" name="packages_json" value={packagesJson} />
-        <FieldError errors={fieldErrors.packages} />
+        <FieldError errors={fieldErrors?.packages} />
       </fieldset>
 
       <hr className="border-border" />
@@ -336,7 +341,7 @@ export function OfferForm({
           <p className="text-xs text-muted-foreground">
             הסוכן מדווח את התנגדות הלקוח במילים; השרת מתאים את הדיווח לרשימה זו ובוחר את ההצעה.
           </p>
-          <FieldError errors={fieldErrors.agent_objections} />
+          <FieldError errors={fieldErrors?.agent_objections} />
         </div>
         <div className="flex items-center gap-2">
           <input

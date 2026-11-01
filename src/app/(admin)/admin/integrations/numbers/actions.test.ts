@@ -79,7 +79,7 @@ describe('assignRoleAction', () => {
       form({ role: 'whatsapp_import_sender', numberId: NUMBER_ID }),
     );
     expect(assignMock).toHaveBeenCalledWith('whatsapp_import_sender', NUMBER_ID);
-    expect(state).toEqual({ notice: 'השיוך נשמר' });
+    expect(state).toEqual({ data: { notice: 'השיוך נשמר' } });
   });
 
   it('treats an EMPTY select as "nobody", not as an invalid id', async () => {
@@ -88,12 +88,12 @@ describe('assignRoleAction', () => {
     const state = await assignRoleAction(form({ role: 'sms_sender', numberId: '' }));
     expect(clearMock).toHaveBeenCalledWith('sms_sender');
     expect(assignMock).not.toHaveBeenCalled();
-    expect(state).toEqual({ notice: 'השיוך בוטל' });
+    expect(state).toEqual({ data: { notice: 'השיוך בוטל' } });
   });
 
   it('refuses a role that is not in the database vocabulary', async () => {
     const state = await assignRoleAction(form({ role: 'not_a_role', numberId: NUMBER_ID }));
-    expect(state).toEqual({ error: 'תפקיד לא מוכר' });
+    expect(state).toEqual({ validationErrors: { formErrors: [], fieldErrors: { role: ['תפקיד לא מוכר'] } } });
     expect(assignMock).not.toHaveBeenCalled();
     expect(clearMock).not.toHaveBeenCalled();
   });
@@ -102,7 +102,7 @@ describe('assignRoleAction', () => {
     const state = await assignRoleAction(
       form({ role: 'sms_sender', numberId: 'not-a-uuid' }),
     );
-    expect(state).toEqual({ error: 'מזהה מספר לא תקין' });
+    expect(state).toEqual({ validationErrors: { formErrors: [], fieldErrors: { numberId: ['מזהה מספר לא תקין'] } } });
     expect(assignMock).not.toHaveBeenCalled();
   });
 
@@ -111,7 +111,7 @@ describe('assignRoleAction', () => {
     const state = await assignRoleAction(
       form({ role: 'sms_sender', numberId: NUMBER_ID }),
     );
-    expect(state).toEqual({ error: 'המספר שנבחר אינו קיים' });
+    expect(state).toEqual({ serverError: 'המספר שנבחר אינו קיים' });
   });
 
   it('does not leak an internal error message to the form', async () => {
@@ -119,7 +119,7 @@ describe('assignRoleAction', () => {
     const state = await assignRoleAction(
       form({ role: 'sms_sender', numberId: NUMBER_ID }),
     );
-    expect(state).toEqual({ error: 'שמירת השיוך נכשלה' });
+    expect(state).toEqual({ serverError: 'שמירת השיוך נכשלה' });
   });
 
   it('refreshes the webhook inbox too — it names the number from these rows', async () => {
@@ -152,18 +152,18 @@ describe('sync actions', () => {
   it('reports a degraded Meta read rather than swallowing it', async () => {
     syncMetaMock.mockResolvedValue({ count: 2, deactivated: 0, degraded: true });
     const state = await syncMetaNumbersAction();
-    expect(state?.notice).toContain('2');
-    expect(state?.notice).toContain('לא הוחזרו מ-Meta');
+    expect(state.data?.notice).toContain('2');
+    expect(state.data?.notice).toContain('לא הוחזרו מ-Meta');
   });
 
   it('passes the DAL\'s "not configured" message through, and nothing else', async () => {
     syncMetaMock.mockRejectedValue(new Error('חסרים פרטי חיבור ל-Meta (WABA ID או טוקן)'));
     expect(await syncMetaNumbersAction()).toEqual({
-      error: 'חסרים פרטי חיבור ל-Meta (WABA ID או טוקן)',
+      serverError: 'חסרים פרטי חיבור ל-Meta (WABA ID או טוקן)',
     });
 
     syncMetaMock.mockRejectedValue(new Error('Meta phone_numbers fetch failed: HTTP 401'));
-    expect(await syncMetaNumbersAction()).toEqual({ error: 'סנכרון המספרים מ-Meta נכשל' });
+    expect(await syncMetaNumbersAction()).toEqual({ serverError: 'סנכרון המספרים מ-Meta נכשל' });
   });
 
   it('says out loud when a sync switched numbers off', async () => {
@@ -172,16 +172,16 @@ describe('sync actions', () => {
     // pointing the other way.
     syncMetaMock.mockResolvedValue({ count: 4, deactivated: 1, degraded: false });
     const state = await syncMetaNumbersAction();
-    expect(state?.notice).toContain('4');
-    expect(state?.notice).toContain('1 מספרים שכבר אינם ב-Meta');
+    expect(state.data?.notice).toContain('4');
+    expect(state.data?.notice).toContain('1 מספרים שכבר אינם ב-Meta');
     // And it says the row and its roles were kept, so nobody re-adds a number
     // thinking the record was deleted.
-    expect(state?.notice).toContain('השיוכים נשמרו');
+    expect(state.data?.notice).toContain('השיוכים נשמרו');
   });
 
   it('stays quiet about deactivation when nothing was switched off', async () => {
     syncMetaMock.mockResolvedValue({ count: 4, deactivated: 0, degraded: false });
-    expect((await syncMetaNumbersAction())?.notice).not.toContain('לא פעילים');
+    expect((await syncMetaNumbersAction()).data?.notice).not.toContain('לא פעילים');
   });
 
   it('audits the deactivation count, not just how many were seen', async () => {
@@ -197,7 +197,7 @@ describe('sync actions', () => {
 
   it('counts what Voximplant returned', async () => {
     syncVoxMock.mockResolvedValue({ count: 1, deactivated: 0, degraded: false });
-    expect((await syncVoximplantNumbersAction())?.notice).toContain('1');
+    expect((await syncVoximplantNumbersAction()).data?.notice).toContain('1');
   });
 });
 
@@ -214,11 +214,11 @@ describe('addNumberAction', () => {
   it('returns the new phone_number_id so the wizard can continue', async () => {
     addMock.mockResolvedValue(META_ID);
     const state = await addNumberAction(
-      null,
+      {},
       form({ phone: '+972501234567', verifiedName: 'KALFA' }),
     );
     expect(addMock).toHaveBeenCalledWith(EXPECTED);
-    expect(state.phoneNumberId).toBe(META_ID);
+    expect(state.data?.phoneNumberId).toBe(META_ID);
   });
 
   it('splits ONE typed number into the two fields Meta wants', async () => {
@@ -228,7 +228,7 @@ describe('addNumberAction', () => {
     for (const typed of ['0501234567', '+972 50-123 4567', '972-50-123-4567']) {
       addMock.mockClear();
       addMock.mockResolvedValue(META_ID);
-      await addNumberAction(null, form({ phone: typed, verifiedName: 'KALFA' }));
+      await addNumberAction({}, form({ phone: typed, verifiedName: 'KALFA' }));
       expect(addMock, `typed as ${typed}`).toHaveBeenCalledWith(EXPECTED);
     }
   });
@@ -245,7 +245,7 @@ describe('addNumberAction', () => {
     ] as const) {
       addMock.mockClear();
       addMock.mockResolvedValue(META_ID);
-      await addNumberAction(null, form({ phone: typed, verifiedName: 'KALFA' }));
+      await addNumberAction({}, form({ phone: typed, verifiedName: 'KALFA' }));
       expect(addMock, typed).toHaveBeenCalledWith({ cc, phoneNumber: national, verifiedName: 'KALFA' });
       // The reconstruction Meta performs must give back the number that was typed.
       const [call] = addMock.mock.calls[0] as [{ cc: string; phoneNumber: string }];
@@ -259,23 +259,23 @@ describe('addNumberAction', () => {
   });
 
   it('refuses a number that is not a real line, without calling Meta', async () => {
-    const state = await addNumberAction(null, form({ phone: '12345', verifiedName: 'KALFA' }));
-    expect(state.fieldErrors?.phone).toBeDefined();
+    const state = await addNumberAction({}, form({ phone: '12345', verifiedName: 'KALFA' }));
+    expect(state.validationErrors?.fieldErrors.phone).toBeDefined();
     expect(addMock).not.toHaveBeenCalled();
   });
 
   it('refuses a name over Meta\'s 75 characters without calling Meta', async () => {
     const state = await addNumberAction(
-      null,
+      {},
       form({ phone: '+972501234567', verifiedName: 'x'.repeat(76) }),
     );
-    expect(state.fieldErrors?.verifiedName).toBeDefined();
+    expect(state.validationErrors?.fieldErrors.verifiedName).toBeDefined();
     expect(addMock).not.toHaveBeenCalled();
   });
 
   it('does not log a phone number into the audit row', async () => {
     addMock.mockResolvedValue(META_ID);
-    await addNumberAction(null, form({ phone: '+972501234567', verifiedName: 'KALFA' }));
+    await addNumberAction({}, form({ phone: '+972501234567', verifiedName: 'KALFA' }));
     const meta = logMock.mock.calls[0]?.[0]?.meta as Record<string, unknown>;
     expect(meta).toEqual({ phoneNumberId: META_ID });
     expect(JSON.stringify(meta)).not.toContain('972501234567');
@@ -285,56 +285,56 @@ describe('addNumberAction', () => {
 describe('requestCodeAction', () => {
   it('passes the chosen delivery method through', async () => {
     requestCodeMock.mockResolvedValue(undefined);
-    const state = await requestCodeAction(null, form({ phoneNumberId: META_ID, codeMethod: 'VOICE' }));
+    const state = await requestCodeAction({}, form({ phoneNumberId: META_ID, codeMethod: 'VOICE' }));
     expect(requestCodeMock).toHaveBeenCalledWith(META_ID, 'VOICE');
-    expect(state?.notice).toContain('מתקשרת');
+    expect(state.data?.notice).toContain('מתקשרת');
   });
 
   it('refuses a method Meta does not offer, without reaching the DAL', async () => {
-    const state = await requestCodeAction(null, form({ phoneNumberId: META_ID, codeMethod: 'EMAIL' }));
-    expect(state?.fieldErrors?.codeMethod).toBeDefined();
+    const state = await requestCodeAction({}, form({ phoneNumberId: META_ID, codeMethod: 'EMAIL' }));
+    expect(state.validationErrors?.fieldErrors.codeMethod).toBeDefined();
     expect(requestCodeMock).not.toHaveBeenCalled();
   });
 });
 
 describe('verifyCodeAction', () => {
   it('requires exactly six digits', async () => {
-    const state = await verifyCodeAction(null, form({ phoneNumberId: META_ID, code: '123' }));
-    expect(state?.fieldErrors?.code).toBeDefined();
+    const state = await verifyCodeAction({}, form({ phoneNumberId: META_ID, code: '123' }));
+    expect(state.validationErrors?.fieldErrors.code).toBeDefined();
     expect(verifyCodeMock).not.toHaveBeenCalled();
   });
 
   it('does not put the code in the audit row', async () => {
     verifyCodeMock.mockResolvedValue(undefined);
-    await verifyCodeAction(null, form({ phoneNumberId: META_ID, code: '654321' }));
+    await verifyCodeAction({}, form({ phoneNumberId: META_ID, code: '654321' }));
     expect(JSON.stringify(logMock.mock.calls[0]?.[0])).not.toContain('654321');
   });
 });
 
 describe('registerNumberAction', () => {
   it('refuses without the typed confirmation, and never reaches Meta', async () => {
-    const state = await registerNumberAction(null, form({ phoneNumberId: META_ID, pin: PIN }));
-    expect(state?.fieldErrors?.confirm).toBeDefined();
+    const state = await registerNumberAction({}, form({ phoneNumberId: META_ID, pin: PIN }));
+    expect(state.validationErrors?.fieldErrors.confirm).toBeDefined();
     expect(registerMock).not.toHaveBeenCalled();
   });
 
   it('refuses a confirmation that is merely close', async () => {
     const state = await registerNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, pin: PIN, confirm: 'register' }),
     );
-    expect(state?.fieldErrors?.confirm).toBeDefined();
+    expect(state.validationErrors?.fieldErrors.confirm).toBeDefined();
     expect(registerMock).not.toHaveBeenCalled();
   });
 
   it('registers once everything is in order', async () => {
     registerMock.mockResolvedValue(undefined);
     const state = await registerNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, pin: PIN, confirm: 'REGISTER' }),
     );
     expect(registerMock).toHaveBeenCalledWith(META_ID, PIN);
-    expect(state?.notice).toBeDefined();
+    expect(state.data?.notice).toBeDefined();
   });
 
   it('NEVER returns the PIN to the browser, on success or on failure', async () => {
@@ -343,26 +343,26 @@ describe('registerNumberAction', () => {
     // into the page, so anything here is on screen and in the RSC payload.
     registerMock.mockResolvedValue(undefined);
     const ok = await registerNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, pin: PIN, confirm: 'REGISTER' }),
     );
     expect(JSON.stringify(ok)).not.toContain(PIN);
 
     registerMock.mockRejectedValue(new Error(`Meta rejected pin ${PIN}`));
     const failed = await registerNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, pin: PIN, confirm: 'REGISTER' }),
     );
     // The DAL's message is passed through, so this asserts the DAL's contract too:
     // if it ever put the PIN in an error, this is where it surfaces.
     expect(JSON.stringify(failed)).toContain('Meta rejected pin');
-    expect(failed?.error).toContain(PIN);
+    expect(failed.serverError).toContain(PIN);
   });
 
   it('NEVER writes the PIN to the activity log', async () => {
     registerMock.mockResolvedValue(undefined);
     await registerNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, pin: PIN, confirm: 'REGISTER' }),
     );
     expect(JSON.stringify(logMock.mock.calls)).not.toContain(PIN);
@@ -370,11 +370,19 @@ describe('registerNumberAction', () => {
 
   it('rejects a malformed PIN before it can be spent against the 72-hour budget', async () => {
     const state = await registerNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, pin: '12', confirm: 'REGISTER' }),
     );
-    expect(state?.fieldErrors?.pin).toBeDefined();
+    expect(state.validationErrors?.fieldErrors.pin).toBeDefined();
     expect(JSON.stringify(state)).not.toContain('12345');
+    expect(registerMock).not.toHaveBeenCalled();
+  });
+
+  it('while the confirmation is wrong, it is the only thing the form says — not the PIN too', async () => {
+    const state = await registerNumberAction({}, form({ phoneNumberId: META_ID, pin: '12', confirm: 'register' }));
+    expect(state).toEqual({
+      validationErrors: { formErrors: [], fieldErrors: { confirm: ['יש להקליד REGISTER לאישור'] } },
+    });
     expect(registerMock).not.toHaveBeenCalled();
   });
 
@@ -383,16 +391,16 @@ describe('registerNumberAction', () => {
       new Error('Meta חסמה את המספר לאחר 10 פעולות רישום ב-72 שעות. יש להמתין 72 שעות'),
     );
     const state = await registerNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, pin: PIN, confirm: 'REGISTER' }),
     );
-    expect(state?.error).toContain('72 שעות');
+    expect(state.serverError).toContain('72 שעות');
   });
 
   it('does not log when the registration failed', async () => {
     registerMock.mockRejectedValue(new Error('boom'));
     await registerNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, pin: PIN, confirm: 'REGISTER' }),
     );
     expect(logMock).not.toHaveBeenCalled();
@@ -401,19 +409,33 @@ describe('registerNumberAction', () => {
 
 describe('deregisterNumberAction', () => {
   it('refuses without the typed confirmation', async () => {
-    const state = await deregisterNumberAction(null, form({ phoneNumberId: META_ID }));
-    expect(state?.fieldErrors?.confirm).toBeDefined();
+    const state = await deregisterNumberAction({}, form({ phoneNumberId: META_ID }));
+    expect(state.validationErrors?.fieldErrors.confirm).toBeDefined();
     expect(deregisterMock).not.toHaveBeenCalled();
+  });
+
+  it('says a missing number once, above the button, and never reaches Meta', async () => {
+    // The select's empty "— בחרו מספר —" option: a bug in what was submitted, not a field to fix.
+    const state = await deregisterNumberAction({}, form({ phoneNumberId: '', confirm: 'REGISTER' }));
+    expect(state).toEqual({ validationErrors: { formErrors: ['מזהה מספר לא תקין'], fieldErrors: {} } });
+    expect(deregisterMock).not.toHaveBeenCalled();
+  });
+
+  it('while the confirmation is wrong, it is the only thing the form says', async () => {
+    const state = await deregisterNumberAction({}, form({ phoneNumberId: '', confirm: 'nope' }));
+    expect(state).toEqual({
+      validationErrors: { formErrors: [], fieldErrors: { confirm: ['יש להקליד REGISTER לאישור'] } },
+    });
   });
 
   it('says plainly that sending stopped', async () => {
     deregisterMock.mockResolvedValue(undefined);
     const state = await deregisterNumberAction(
-      null,
+      {},
       form({ phoneNumberId: META_ID, confirm: 'REGISTER' }),
     );
     expect(deregisterMock).toHaveBeenCalledWith(META_ID);
-    expect(state?.notice).toContain('נפסקה');
+    expect(state.data?.notice).toContain('נפסקה');
   });
 });
 
@@ -424,35 +446,35 @@ describe('a failed add is diagnosable, and does not eat the form', () => {
     addMock.mockRejectedValue(
       new Error('Meta דחתה את הבקשה כלא תקינה — בדרך כלל מספר שכבר רשום (קוד Meta 100)'),
     );
-    const state = await addNumberAction(null, form({ phone: '+972501234567', verifiedName: 'KALFA' }));
-    expect(state.error).toContain('קוד Meta 100');
-    expect(state.error).not.toBe('הוספת המספר נכשלה');
+    const state = await addNumberAction({}, form({ phone: '+972501234567', verifiedName: 'KALFA' }));
+    expect(state.validationErrors?.formErrors[0]).toContain('קוד Meta 100');
+    expect(state.validationErrors?.formErrors[0]).not.toBe('הוספת המספר נכשלה');
   });
 
   it('still refuses to show an error that was not written for a person', async () => {
     // The typed client's normalisers throw English field rules, and Meta's own body
     // must never surface. Anything without Hebrew stays generic.
     addMock.mockRejectedValue(new Error('Phone number must be in E.164 format without the plus prefix'));
-    const state = await addNumberAction(null, form({ phone: '+972501234567', verifiedName: 'KALFA' }));
-    expect(state.error).toBe('הוספת המספר נכשלה');
+    const state = await addNumberAction({}, form({ phone: '+972501234567', verifiedName: 'KALFA' }));
+    expect(state.validationErrors?.formErrors[0]).toBe('הוספת המספר נכשלה');
   });
 
   it('gives the typed business name back after a failure', async () => {
     addMock.mockRejectedValue(new Error('Meta דחתה את הבקשה. (קוד Meta 100)'));
-    const state = await addNumberAction(null, form({ phone: '+972501234567', verifiedName: 'אולם הדקל' }));
-    expect(state.verifiedName).toBe('אולם הדקל');
+    const state = await addNumberAction({}, form({ phone: '+972501234567', verifiedName: 'אולם הדקל' }));
+    expect(state.validationErrors?.verifiedName).toBe('אולם הדקל');
   });
 
   it('gives it back after a VALIDATION failure too', async () => {
-    const state = await addNumberAction(null, form({ phone: '12345', verifiedName: 'אולם הדקל' }));
-    expect(state.fieldErrors?.phone).toBeDefined();
-    expect(state.verifiedName).toBe('אולם הדקל');
+    const state = await addNumberAction({}, form({ phone: '12345', verifiedName: 'אולם הדקל' }));
+    expect(state.validationErrors?.fieldErrors.phone).toBeDefined();
+    expect(state.validationErrors?.verifiedName).toBe('אולם הדקל');
   });
 
   it('never echoes the phone number back through the form state', async () => {
     // Personal data has no reason to make a round trip it does not need.
     addMock.mockRejectedValue(new Error('Meta דחתה את הבקשה. (קוד Meta 100)'));
-    const state = await addNumberAction(null, form({ phone: '+972501234567', verifiedName: 'KALFA' }));
+    const state = await addNumberAction({}, form({ phone: '+972501234567', verifiedName: 'KALFA' }));
     expect(JSON.stringify(state)).not.toContain('972501234567');
   });
 });

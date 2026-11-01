@@ -95,9 +95,14 @@ function WebhookTokenControl({ data, handleChange, path, enabled, readonly }: Co
     startRegister(async () => {
       setRegisterResult(null);
       try {
-        setRegisterResult(
-          await registerSumitTriggerAction({ workflowId: params.id, nodeId: selection?.node?.id ?? '', url }),
-        );
+        const { data: registered } = await registerSumitTriggerAction({
+          workflowId: params.id,
+          nodeId: selection?.node?.id ?? '',
+          url,
+        });
+        // A server failure arrives as the result's error now; it gets the same answer as a thrown one.
+        if (!registered) throw new Error('register');
+        setRegisterResult(registered);
       } catch {
         setRegisterResult({ ok: false, message: 'הרישום ב-SUMIT נכשל' });
       }

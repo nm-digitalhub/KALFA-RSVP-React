@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { Badge } from '@/components/ui/badge';
+import { actionFormError } from '@/lib/action-result';
 import type { OwnerAgentNumber } from '@/lib/data/admin/owner-agent';
 import { ROLE_LABELS, type NumberRole } from '@/lib/validation/provider-numbers';
 
@@ -67,7 +68,7 @@ export function NumberPicker({
   numbers: OwnerAgentNumber[];
   selected: string | null;
 }) {
-  const [state, action] = useActionState(setOwnerAgentNumberAction, null);
+  const [state, action] = useActionState(setOwnerAgentNumberAction, {});
   const [choice, setChoice] = useState<string>(selected ?? '');
   const chosen = numbers.find((n) => n.providerRef === choice) ?? null;
   // A saved id that no longer matches any row (the number was removed from the
@@ -158,9 +159,9 @@ export function NumberPicker({
         <ChoiceNote chosen={chosen} />
       </div>
 
-      <FieldError errors={state?.fieldErrors?.phoneNumberId} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.phoneNumberId} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <SubmitButton className="w-auto">שמירת הבחירה</SubmitButton>
     </form>
   );

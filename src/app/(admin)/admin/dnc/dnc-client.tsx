@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { Pagination } from '@/components/pagination';
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import type { CallDncEntry, RegistryConnectionStatus } from '@/lib/data/admin/call-dnc';
 import { formatIsraelDateTime } from '@/lib/date';
 import type { RegistryResult } from '@/lib/dnc/registry-check';
@@ -73,7 +74,8 @@ export function DncClient({
 }
 
 function CheckNumberPanel() {
-  const [state, action] = useActionState(checkNumberAction, null);
+  const [state, action] = useActionState(checkNumberAction, {});
+  const checked = state.data;
 
   return (
     <section className={sectionClass}>
@@ -103,16 +105,16 @@ function CheckNumberPanel() {
         <SubmitButton className="w-auto">בדיקה</SubmitButton>
       </form>
 
-      {state && 'error' in state ? <FormError message={state.error} /> : null}
-      {state && 'result' in state ? (
+      <FormError message={actionErrorMessage(state)} />
+      {checked ? (
         <div role="status" className="space-y-1 rounded-md border border-border bg-muted/40 p-4">
-          <p className="font-medium">{RESULT_TEXT[state.result]}</p>
+          <p className="font-medium">{RESULT_TEXT[checked.result]}</p>
           <p className="text-sm text-muted-foreground">
-            מקור: {SOURCE_TEXT[state.source] ?? state.source} · מועד: {formatIsraelDateTime(state.checkedAt)}
+            מקור: {SOURCE_TEXT[checked.source] ?? checked.source} · מועד: {formatIsraelDateTime(checked.checkedAt)}
           </p>
-          {state.transactionId ? (
+          {checked.transactionId ? (
             <p className="text-xs text-muted-foreground">
-              מזהה בקשה ברשות: <span dir="ltr" className="font-mono">{state.transactionId}</span>
+              מזהה בקשה ברשות: <span dir="ltr" className="font-mono">{checked.transactionId}</span>
             </p>
           ) : null}
         </div>
@@ -134,8 +136,8 @@ function LocalListPanel({
   pageSize: number;
   query: string;
 }) {
-  const [state, action] = useActionState(addToCallDncAction, null);
-  const fieldErrors = state?.fieldErrors;
+  const [state, action] = useActionState(addToCallDncAction, {});
+  const fieldErrors = state.validationErrors?.fieldErrors;
 
   return (
     <section className={sectionClass}>
@@ -149,8 +151,8 @@ function LocalListPanel({
       </div>
 
       <form action={action} className="space-y-4">
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="phone" className={labelClass}>
@@ -258,7 +260,7 @@ const FAILURE_TEXT: Record<string, string> = {
 };
 
 function ConnectionStatusPanel({ status }: { status: RegistryConnectionStatus }) {
-  const [state, action] = useActionState(setRegistryGateAction, null);
+  const [state, action] = useActionState(setRegistryGateAction, {});
 
   return (
     <section className={sectionClass}>
@@ -291,8 +293,8 @@ function ConnectionStatusPanel({ status }: { status: RegistryConnectionStatus })
       </dl>
 
       <form action={action} className="space-y-2 rounded-lg border border-border p-4">
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionErrorMessage(state)} />
+        <FormNotice message={state.data?.notice} />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-1">
             <p className="text-sm font-semibold">בדיקה מול המאגר לפני שיחות מכירה</p>

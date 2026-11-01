@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import {
   createVoicePurposeAction,
   updateVoicePurposeAction,
@@ -26,7 +27,7 @@ const inputClass =
 const labelClass = 'mb-1 flex items-center gap-1 text-sm font-medium';
 
 function PurposeRow({ purpose }: { purpose: VoicePurposeAdminRow }) {
-  const [state, action] = useActionState(updateVoicePurposeAction, null);
+  const [state, action] = useActionState(updateVoicePurposeAction, {});
 
   return (
     <form action={action} className="space-y-3 rounded-lg border border-border p-4">
@@ -76,15 +77,15 @@ function PurposeRow({ purpose }: { purpose: VoicePurposeAdminRow }) {
         </>
       )}
 
-      {state?.error && <FormError message={state.error} />}
-      {state?.notice && <FormNotice message={state.notice} />}
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
       <SubmitButton className="w-auto">שמירה</SubmitButton>
     </form>
   );
 }
 
 export function VoicePurposesPanel({ purposes }: { purposes: readonly VoicePurposeAdminRow[] }) {
-  const [state, action] = useActionState(createVoicePurposeAction, null);
+  const [state, action] = useActionState(createVoicePurposeAction, {});
 
   return (
     <section className="space-y-4">
@@ -130,8 +131,8 @@ export function VoicePurposesPanel({ purposes }: { purposes: readonly VoicePurpo
           help="הכלל שהייעוד הזה יפעיל. בחרו מרשימת הכללים בחשבון — כך רואים גם איזה תרחיש כל כלל באמת מריץ."
         />
 
-        {state?.error && <FormError message={state.error} />}
-        {state?.notice && <FormNotice message={state.notice} />}
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
 
         {/* Created switched OFF, always. A row carries a rule id, and the moment
             it is enabled a workflow step can telephone guests with it — a typo

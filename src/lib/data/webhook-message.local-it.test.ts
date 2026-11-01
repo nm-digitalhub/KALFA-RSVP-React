@@ -206,7 +206,7 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
     const fd = new FormData();
     for (const [k, v] of Object.entries(fields)) fd.set(k, v);
     const res = await scope.track(submitRsvpAction(f.rsvpToken, {} as never, fd));
-    expect(res, JSON.stringify(res)).toMatchObject({ notice: expect.any(String) });
+    expect(res, JSON.stringify(res)).toMatchObject({ data: { notice: expect.any(String) } });
   };
   const WEB_STATE = {
     status: 'attending', confirmed_adults: 2, confirmed_kids: 1, meal_pref: 'veg', rsvp_note: 'allergic to nuts',

@@ -5,7 +5,11 @@ import Link from 'next/link';
 
 import { FormError, SubmitButton } from '@/components/forms';
 import { formatAmount } from '@/lib/format';
-import type { FormState } from '@/lib/validation/result';
+import { actionErrorMessage } from '@/lib/action-result';
+
+import type { acceptBenefitAction } from './campaign/campaign-actions';
+
+type AcceptBenefitResult = Awaited<ReturnType<typeof acceptBenefitAction>>;
 
 // The acceptance flow's banner (task 5.5/7.1, ש5/D21 — mocked in ui/States.dc.html): the owner of
 // an APPROVED, unpaid campaign holds a benefit that prices its package lower. Accepting opens a
@@ -18,12 +22,12 @@ export function BenefitAcceptBanner({
   benefitPrice,
   paymentHref,
 }: {
-  action: (prev: FormState, formData: FormData) => Promise<FormState>;
+  action: (prev: AcceptBenefitResult, formData: FormData) => Promise<AcceptBenefitResult>;
   approvedPrice: number;
   benefitPrice: number;
   paymentHref: string;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
 
   return (
     <div className="space-y-2.5 rounded-lg border border-primary/40 bg-primary/5 p-4">
@@ -35,7 +39,7 @@ export function BenefitAcceptBanner({
         קבלת ההטבה תפתח אישור מחודש של התנאים במחיר המוזל. אם לא תקבלו אותה — התנאים שכבר אישרתם (
         <span dir="ltr">{formatAmount(approvedPrice)}</span>) נשארים בתוקף לתשלום.
       </p>
-      <FormError message={state?.error} />
+      <FormError message={actionErrorMessage(state)} />
       <div className="flex flex-wrap items-center gap-3">
         <form action={formAction}>
           <SubmitButton className="h-9 w-auto px-4 text-sm">קבלת ההטבה ואישור תנאים מעודכנים</SubmitButton>

@@ -1,8 +1,11 @@
 'use server';
 
+import { z } from 'zod';
+import { zfd } from 'zod-form-data';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { parseCsv, decodeCsvBuffer, sniffSpreadsheetBinary } from '@/lib/csv';
 import { ISRAELI_PHONE_RE } from '@/lib/constants';
 import { logActivity } from '@/lib/data/activity';
@@ -27,16 +30,6 @@ export interface ImportRowError {
   message: string;
 }
 
-// Result of an import attempt. `null` is the untouched initial state.
-export type ImportState =
-  | {
-      error?: string;
-      imported?: number;
-      failed?: ImportRowError[];
-      done?: boolean;
-    }
-  | null;
-
 
 // A validated row awaiting group resolution: the guest payload plus the raw
 // group name (kept alongside, NOT in module state, so concurrent imports never
@@ -45,6 +38,10 @@ interface PendingGuest {
   guest: BulkGuestInput;
   groupName: string;
 }
+
+// A FormData value as posted (a string, or a File). What the upload and the default count must be is checked in the
+// body, as before.
+const formValue = z.union([z.string(), z.instanceof(File)]).optional();
 
 /**
  * Import guests from an uploaded CSV file under an owned event.
@@ -56,291 +53,296 @@ interface PendingGuest {
  * the event's groups (plus at most one create per genuinely-new name) — no
  * per-row query.
  */
-export async function importGuestsAction(
-  eventId: string,
-  _prevState: ImportState,
-  formData: FormData,
-): Promise<ImportState> {
-  // Own authorization gate, first. Without it the only thing standing
-  // between a browser-supplied eventId and the service-role `guests` read
-  // below would be listGroups() throwing a few lines later — an order-dependent
-  // guard a refactor could silently remove. 'create': an import WRITES guests,
-  // so it carries the same key the import page itself gates on.
-  await requireEventAccess(eventId, 'guests', 'create');
+export const importGuestsAction = actionClient
+  // Own authorization gate, first: a middleware that runs before the input is
+  // validated, given the bound event id as the client sent it. Without it the
+  // only thing standing between a browser-supplied eventId and the service-role
+  // `guests` read below would be listGroups() throwing a few lines later — an
+  // order-dependent guard a refactor could silently remove. 'create': an import
+  // WRITES guests, so it carries the same key the import page itself gates on.
+  .use(async ({ bindArgsClientInputs: [eventId], next }) => {
+    await requireEventAccess(String(eventId), 'guests', 'create');
+    return next();
+  })
+  .inputSchema(zfd.formData({ file: formValue, default_expected_count: formValue }))
+  .bindArgsSchemas([z.uuid()])
+  .stateAction(async ({ parsedInput: { file, default_expected_count }, bindArgsParsedInputs: [eventId] }) => {
+    if (!(file instanceof File) || file.size === 0) {
+      returnUserError('נא לבחור קובץ CSV.');
+    }
 
-  const file = formData.get('file');
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: 'נא לבחור קובץ CSV.' };
-  }
+    // Cheapest guard first: reject oversized uploads before reading the bytes.
+    if (file.size > CSV_MAX_BYTES) {
+      returnUserError(`הקובץ גדול מדי (מעל ${Math.floor(CSV_MAX_BYTES / 1000)}KB).`);
+    }
 
-  // Cheapest guard first: reject oversized uploads before reading the bytes.
-  if (file.size > CSV_MAX_BYTES) {
-    return {
-      error: `הקובץ גדול מדי (מעל ${Math.floor(CSV_MAX_BYTES / 1000)}KB).`,
-    };
-  }
-
-  let text: string;
-  try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    // Reading and decoding are the steps that can fail ('קריאת הקובץ נכשלה.'); the
+    // checks between them answer with their own message, so they stay outside the
+    // try (a returnUserError inside it would be caught and replaced).
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await file.arrayBuffer());
+    } catch {
+      returnUserError('קריאת הקובץ נכשלה.');
+    }
     // Belt-and-braces: re-check the decoded byte length.
     if (bytes.byteLength > CSV_MAX_BYTES) {
-      return { error: 'הקובץ גדול מדי.' };
+      returnUserError('הקובץ גדול מדי.');
     }
     // A real Excel workbook can never parse as CSV — name the fix precisely
     // instead of failing later with a confusing "missing name column".
     const binary = sniffSpreadsheetBinary(bytes);
     if (binary) {
-      return {
-        error:
-          'הקובץ שהועלה הוא קובץ Excel‏ (' +
+      returnUserError(
+        'הקובץ שהועלה הוא קובץ Excel‏ (' +
           binary +
           ') ולא CSV. פתחו אותו באקסל ושמרו בשם בפורמט "CSV UTF-8", או השתמשו בתבנית המוכנה להורדה.',
+      );
+    }
+    let text: string;
+    try {
+      // UTF-8 first; Hebrew-Excel ANSI (Windows-1255) files fall back and load
+      // correctly instead of importing garbled names.
+      text = decodeCsvBuffer(bytes);
+    } catch {
+      returnUserError('קריאת הקובץ נכשלה.');
+    }
+
+    let grid: string[][];
+    try {
+      grid = parseCsv(text);
+    } catch {
+      returnUserError("פורמט CSV אינו תקין. שמרו מחדש כ-CSV UTF-8 ונסו שוב.");
+    }
+    if (grid.length < 2) {
+      returnUserError('הקובץ ריק או חסר שורות נתונים.');
+    }
+
+    // Optional fallback for rows whose count is missing. Validated through the
+    // SAME schema field the rows use, so the form cannot introduce a value a row
+    // would have been rejected for. Absent or blank → unchanged behaviour: the
+    // count stays NULL rather than becoming 0, which would import every family as
+    // "0 מוזמנים".
+    const rawDefault = (default_expected_count ?? '').toString().trim();
+    if (rawDefault !== '') {
+      const check = importRowSchema.shape.expected_count.safeParse(rawDefault);
+      if (!check.success) {
+        returnUserError('כמות המוזמנים שהוזנה כברירת מחדל אינה תקינה.');
+      }
+    }
+    const defaultCount = rawDefault;
+
+    // First row is the header. Map columns by name.
+    const header = grid[0];
+    const colIndex: Record<
+      'full_name' | 'phone' | 'group' | 'expected_count',
+      number
+    > = {
+      full_name: -1,
+      phone: -1,
+      group: -1,
+      expected_count: -1,
+    };
+    header.forEach((cell, i) => {
+      const key = headerKey(cell);
+      if (key && colIndex[key] === -1) colIndex[key] = i;
+    });
+
+    if (colIndex.full_name === -1) {
+      returnUserError('לא נמצאה עמודת שם (name / שם) בכותרת הקובץ.');
+    }
+
+    const dataRows = grid.slice(1);
+    if (dataRows.length > CSV_MAX_ROWS) {
+      returnUserError(`יותר מדי שורות (מעל ${CSV_MAX_ROWS}). פצלו את הקובץ.`);
+    }
+
+    // Single fetch of existing groups -> name(lowercased) -> id map.
+    let groupByName: Map<string, string>;
+    try {
+      const groups = await listGroups(eventId);
+      groupByName = new Map(
+        groups.map((g) => [normalizeGroupName(g.name).toLowerCase(), g.id]),
+      );
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('טעינת הקבוצות נכשלה.');
+    }
+
+    const pending: PendingGuest[] = [];
+    const failed: ImportRowError[] = [];
+    const newGroupNames = new Set<string>();
+
+    // One guest per phone (unique index guests_event_phone_key): duplicates —
+    // inside the file or against existing guests — become per-row errors here,
+    // so the single-statement bulk insert below can never trip the index.
+    const { data: existingRows } = await createAdminClient()
+      .from('guests')
+      .select('full_name, phone')
+      .eq('event_id', eventId)
+      .not('phone', 'is', null);
+    const existingByPhone = new Map<string, string>();
+    for (const g of existingRows ?? []) {
+      const np = normalizePhone(g.phone);
+      if (np && !existingByPhone.has(np)) existingByPhone.set(np, g.full_name);
+    }
+    const seenInFile = new Map<string, number>();
+
+    dataRows.forEach((cells, idx) => {
+      const rowNum = idx + 1; // 1-based, header excluded.
+
+      // Skip a completely blank line.
+      if (cells.every((c) => c.trim() === '')) return;
+
+      // Excel repair: a numeric phone cell loses its leading 0 (0501… → 501…).
+      // When the raw value fails the local-format check but still parses as a
+      // valid Israeli number, substitute the canonical 0-form; anything truly
+      // invalid keeps failing the schema below with the per-row Hebrew error.
+      const rawPhone = (
+        colIndex.phone === -1 ? '' : cells[colIndex.phone] ?? ''
+      ).trim();
+      const phone =
+        rawPhone !== '' && !ISRAELI_PHONE_RE.test(rawPhone)
+          ? repairIsraeliLocalPhone(rawPhone) ?? rawPhone
+          : rawPhone;
+
+      // The file's own value when it has one; otherwise the default the owner
+      // typed on the import form. A list exported from a venue or a WhatsApp
+      // group routinely has no count column at all, and without this every row
+      // lands with expected_count NULL — which the public RSVP form reads as "no
+      // invited size" and falls back to a cap of 50, so a couple invited as two
+      // can confirm fifty. `over_invited` also cannot be computed, and the
+      // headcount counts them as 1 until they answer.
+      const rawFromFile = (
+        colIndex.expected_count === -1
+          ? ''
+          : cells[colIndex.expected_count] ?? ''
+      ).trim();
+      const rawCount = rawFromFile === '' ? defaultCount : rawFromFile;
+
+      const candidate = {
+        full_name: cells[colIndex.full_name] ?? '',
+        phone,
+        group: colIndex.group === -1 ? '' : cells[colIndex.group] ?? '',
+        // An empty count cell must be ABSENT, not '' — z.coerce would turn ''
+        // into 0 and every phone-less family row would import as "0 מוזמנים".
+        ...(rawCount === '' ? {} : { expected_count: rawCount }),
       };
-    }
-    // UTF-8 first; Hebrew-Excel ANSI (Windows-1255) files fall back and load
-    // correctly instead of importing garbled names.
-    text = decodeCsvBuffer(bytes);
-  } catch {
-    return { error: 'קריאת הקובץ נכשלה.' };
-  }
 
-  let grid: string[][];
-  try {
-    grid = parseCsv(text);
-  } catch {
-    return { error: "פורמט CSV אינו תקין. שמרו מחדש כ-CSV UTF-8 ונסו שוב." };
-  }
-  if (grid.length < 2) {
-    return { error: 'הקובץ ריק או חסר שורות נתונים.' };
-  }
-
-  // Optional fallback for rows whose count is missing. Validated through the
-  // SAME schema field the rows use, so the form cannot introduce a value a row
-  // would have been rejected for. Absent or blank → unchanged behaviour: the
-  // count stays NULL rather than becoming 0, which would import every family as
-  // "0 מוזמנים".
-  const rawDefault = (formData.get('default_expected_count') ?? '').toString().trim();
-  if (rawDefault !== '') {
-    const check = importRowSchema.shape.expected_count.safeParse(rawDefault);
-    if (!check.success) {
-      return { error: 'כמות המוזמנים שהוזנה כברירת מחדל אינה תקינה.' };
-    }
-  }
-  const defaultCount = rawDefault;
-
-  // First row is the header. Map columns by name.
-  const header = grid[0];
-  const colIndex: Record<
-    'full_name' | 'phone' | 'group' | 'expected_count',
-    number
-  > = {
-    full_name: -1,
-    phone: -1,
-    group: -1,
-    expected_count: -1,
-  };
-  header.forEach((cell, i) => {
-    const key = headerKey(cell);
-    if (key && colIndex[key] === -1) colIndex[key] = i;
-  });
-
-  if (colIndex.full_name === -1) {
-    return { error: 'לא נמצאה עמודת שם (name / שם) בכותרת הקובץ.' };
-  }
-
-  const dataRows = grid.slice(1);
-  if (dataRows.length > CSV_MAX_ROWS) {
-    return {
-      error: `יותר מדי שורות (מעל ${CSV_MAX_ROWS}). פצלו את הקובץ.`,
-    };
-  }
-
-  // Single fetch of existing groups -> name(lowercased) -> id map.
-  let groupByName: Map<string, string>;
-  try {
-    const groups = await listGroups(eventId);
-    groupByName = new Map(
-      groups.map((g) => [normalizeGroupName(g.name).toLowerCase(), g.id]),
-    );
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'טעינת הקבוצות נכשלה.' };
-  }
-
-  const pending: PendingGuest[] = [];
-  const failed: ImportRowError[] = [];
-  const newGroupNames = new Set<string>();
-
-  // One guest per phone (unique index guests_event_phone_key): duplicates —
-  // inside the file or against existing guests — become per-row errors here,
-  // so the single-statement bulk insert below can never trip the index.
-  const { data: existingRows } = await createAdminClient()
-    .from('guests')
-    .select('full_name, phone')
-    .eq('event_id', eventId)
-    .not('phone', 'is', null);
-  const existingByPhone = new Map<string, string>();
-  for (const g of existingRows ?? []) {
-    const np = normalizePhone(g.phone);
-    if (np && !existingByPhone.has(np)) existingByPhone.set(np, g.full_name);
-  }
-  const seenInFile = new Map<string, number>();
-
-  dataRows.forEach((cells, idx) => {
-    const rowNum = idx + 1; // 1-based, header excluded.
-
-    // Skip a completely blank line.
-    if (cells.every((c) => c.trim() === '')) return;
-
-    // Excel repair: a numeric phone cell loses its leading 0 (0501… → 501…).
-    // When the raw value fails the local-format check but still parses as a
-    // valid Israeli number, substitute the canonical 0-form; anything truly
-    // invalid keeps failing the schema below with the per-row Hebrew error.
-    const rawPhone = (
-      colIndex.phone === -1 ? '' : cells[colIndex.phone] ?? ''
-    ).trim();
-    const phone =
-      rawPhone !== '' && !ISRAELI_PHONE_RE.test(rawPhone)
-        ? repairIsraeliLocalPhone(rawPhone) ?? rawPhone
-        : rawPhone;
-
-    // The file's own value when it has one; otherwise the default the owner
-    // typed on the import form. A list exported from a venue or a WhatsApp
-    // group routinely has no count column at all, and without this every row
-    // lands with expected_count NULL — which the public RSVP form reads as "no
-    // invited size" and falls back to a cap of 50, so a couple invited as two
-    // can confirm fifty. `over_invited` also cannot be computed, and the
-    // headcount counts them as 1 until they answer.
-    const rawFromFile = (
-      colIndex.expected_count === -1
-        ? ''
-        : cells[colIndex.expected_count] ?? ''
-    ).trim();
-    const rawCount = rawFromFile === '' ? defaultCount : rawFromFile;
-
-    const candidate = {
-      full_name: cells[colIndex.full_name] ?? '',
-      phone,
-      group: colIndex.group === -1 ? '' : cells[colIndex.group] ?? '',
-      // An empty count cell must be ABSENT, not '' — z.coerce would turn ''
-      // into 0 and every phone-less family row would import as "0 מוזמנים".
-      ...(rawCount === '' ? {} : { expected_count: rawCount }),
-    };
-
-    const parsed = importRowSchema.safeParse(candidate);
-    if (!parsed.success) {
-      const first = parsed.error.issues[0];
-      failed.push({ row: rowNum, message: first?.message ?? 'שורה לא תקינה' });
-      return;
-    }
-
-    const np = parsed.data.phone ? normalizePhone(parsed.data.phone) : null;
-    if (np) {
-      const existingName = existingByPhone.get(np);
-      if (existingName) {
-        failed.push({
-          row: rowNum,
-          message: `מספר הטלפון כבר קיים אצל "${existingName}"`,
-        });
+      const parsed = importRowSchema.safeParse(candidate);
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        failed.push({ row: rowNum, message: first?.message ?? 'שורה לא תקינה' });
         return;
       }
-      const firstRow = seenInFile.get(np);
-      if (firstRow) {
-        failed.push({
-          row: rowNum,
-          message: `מספר הטלפון כפול בקובץ (מופיע כבר בשורה ${firstRow})`,
-        });
-        return;
+
+      const np = parsed.data.phone ? normalizePhone(parsed.data.phone) : null;
+      if (np) {
+        const existingName = existingByPhone.get(np);
+        if (existingName) {
+          failed.push({
+            row: rowNum,
+            message: `מספר הטלפון כבר קיים אצל "${existingName}"`,
+          });
+          return;
+        }
+        const firstRow = seenInFile.get(np);
+        if (firstRow) {
+          failed.push({
+            row: rowNum,
+            message: `מספר הטלפון כפול בקובץ (מופיע כבר בשורה ${firstRow})`,
+          });
+          return;
+        }
+        seenInFile.set(np, rowNum);
       }
-      seenInFile.set(np, rowNum);
+
+      const groupName = parsed.data.group?.trim() ?? '';
+      if (groupName !== '' && !groupByName.has(normalizeGroupName(groupName).toLowerCase())) {
+        newGroupNames.add(groupName);
+      }
+
+      pending.push({
+        groupName,
+        guest: {
+          full_name: parsed.data.full_name,
+          phone: parsed.data.phone ? parsed.data.phone : null,
+          expected_count: parsed.data.expected_count ?? null,
+          group_id: null, // resolved below
+        },
+      });
+    });
+
+    // Create any genuinely-new groups (one insert each), bounded by the number of
+    // distinct new names, not rows.
+    try {
+      for (const name of newGroupNames) {
+        const created = await createGroup(eventId, { name });
+        groupByName.set(normalizeGroupName(name).toLowerCase(), created.id);
+      }
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('יצירת קבוצות מהקובץ נכשלה.');
     }
 
-    const groupName = parsed.data.group?.trim() ?? '';
-    if (groupName !== '' && !groupByName.has(normalizeGroupName(groupName).toLowerCase())) {
-      newGroupNames.add(groupName);
+    // Resolve group_id for each pending row from the (now-complete) map, then
+    // collapse to the insert payload.
+    const valid: BulkGuestInput[] = pending.map(({ guest, groupName }) => ({
+      ...guest,
+      group_id:
+        groupName === '' ? null : groupByName.get(normalizeGroupName(groupName).toLowerCase()) ?? null,
+    }));
+
+    if (valid.length === 0) {
+      return { done: true, imported: 0, failed };
     }
 
-    pending.push({
-      groupName,
-      guest: {
-        full_name: parsed.data.full_name,
-        phone: parsed.data.phone ? parsed.data.phone : null,
-        expected_count: parsed.data.expected_count ?? null,
-        group_id: null, // resolved below
+    let imported: number;
+    try {
+      imported = await bulkInsertGuests(eventId, valid);
+    } catch (err) {
+      unstable_rethrow(err);
+      // The per-row failures went with this message before, but the form only lists them on a finished import.
+      returnUserError('ייבוא המוזמנים נכשל.');
+    }
+
+    // Materialize the contacts table (billing source-of-truth) from the imported
+    // guests — the bulk path, so a one-time whole-event rebuild is appropriate.
+    // Best-effort: the guests are already committed; a failure must not report
+    // the import as failed.
+    try {
+      const { contactIds } = await buildContactsForEvent(eventId);
+      // Admit each imported contact into an already-operational campaign's
+      // authorized set — otherwise a bulk-imported contact would be silently
+      // excluded forever. reconcileCampaignSetForContact is
+      // itself best-effort/never-throws (a cheap no-op when there is no
+      // operational campaign or the contact is already a member), so this loop
+      // cannot fail the import; it only ever helps an eligible contact get
+      // admitted (a campaign with a package quota admits only until it is full).
+      for (const contactId of contactIds) {
+        await reconcileCampaignSetForContact(eventId, 'add', contactId);
+      }
+    } catch (err) {
+      unstable_rethrow(err);
+      // Derived secondary effect — never blocks a completed import, but log (no
+      // PII) so a failed contacts rebuild is auditable and reconcilable.
+      console.error(
+        `[contacts] post-import contacts rebuild failed (event=${eventId}): ${
+          err instanceof Error ? err.message : 'unknown error'
+        }`,
+      );
+    }
+
+    await logActivity({
+      eventId,
+      action: 'guests.imported',
+      meta: {
+        importedCount: imported,
+        failedCount: failed.length,
+        newGroupCount: newGroupNames.size,
       },
     });
+
+    revalidatePath(`/app/events/${eventId}/guests`);
+    return { done: true, imported, failed };
   });
-
-  // Create any genuinely-new groups (one insert each), bounded by the number of
-  // distinct new names, not rows.
-  try {
-    for (const name of newGroupNames) {
-      const created = await createGroup(eventId, { name });
-      groupByName.set(normalizeGroupName(name).toLowerCase(), created.id);
-    }
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'יצירת קבוצות מהקובץ נכשלה.' };
-  }
-
-  // Resolve group_id for each pending row from the (now-complete) map, then
-  // collapse to the insert payload.
-  const valid: BulkGuestInput[] = pending.map(({ guest, groupName }) => ({
-    ...guest,
-    group_id:
-      groupName === '' ? null : groupByName.get(normalizeGroupName(groupName).toLowerCase()) ?? null,
-  }));
-
-  if (valid.length === 0) {
-    return { done: true, imported: 0, failed };
-  }
-
-  let imported: number;
-  try {
-    imported = await bulkInsertGuests(eventId, valid);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'ייבוא המוזמנים נכשל.', failed };
-  }
-
-  // Materialize the contacts table (billing source-of-truth) from the imported
-  // guests — the bulk path, so a one-time whole-event rebuild is appropriate.
-  // Best-effort: the guests are already committed; a failure must not report
-  // the import as failed.
-  try {
-    const { contactIds } = await buildContactsForEvent(eventId);
-    // Admit each imported contact into an already-operational campaign's
-    // authorized set — otherwise a bulk-imported contact would be silently
-    // excluded forever. reconcileCampaignSetForContact is
-    // itself best-effort/never-throws (a cheap no-op when there is no
-    // operational campaign or the contact is already a member), so this loop
-    // cannot fail the import; it only ever helps an eligible contact get
-    // admitted (a campaign with a package quota admits only until it is full).
-    for (const contactId of contactIds) {
-      await reconcileCampaignSetForContact(eventId, 'add', contactId);
-    }
-  } catch (err) {
-    unstable_rethrow(err);
-    // Derived secondary effect — never blocks a completed import, but log (no
-    // PII) so a failed contacts rebuild is auditable and reconcilable.
-    console.error(
-      `[contacts] post-import contacts rebuild failed (event=${eventId}): ${
-        err instanceof Error ? err.message : 'unknown error'
-      }`,
-    );
-  }
-
-  await logActivity({
-    eventId,
-    action: 'guests.imported',
-    meta: {
-      importedCount: imported,
-      failedCount: failed.length,
-      newGroupCount: newGroupNames.size,
-    },
-  });
-
-  revalidatePath(`/app/events/${eventId}/guests`);
-  return { done: true, imported, failed };
-}

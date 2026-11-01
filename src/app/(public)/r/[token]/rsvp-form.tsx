@@ -17,6 +17,7 @@ import {
 } from '@/lib/data/event-display';
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 import type { RsvpAttendee, RsvpView } from '@/lib/data/rsvp';
+import { actionFormError, type ActionFormResult } from '@/lib/action-result';
 
 import { submitRsvpAction } from './actions';
 
@@ -129,7 +130,7 @@ export function RsvpForm({
 
   const [state, formAction] = useActionState(
     submitRsvpAction.bind(null, token),
-    null,
+    {},
   );
 
   const initialStatus = (RSVP_STATUSES as readonly string[]).includes(guest.status)
@@ -147,10 +148,14 @@ export function RsvpForm({
   // sanity cap when uninvited-count). Per-field caps leave the remainder.
   const hardCap = guest.expected_count ?? COUNT_FALLBACK_CAP;
 
-  const statusErrors = state?.fieldErrors?.status;
-  const adultsErrors = state?.fieldErrors?.adults;
-  const mealErrors = state?.fieldErrors?.meal_pref;
-  const noteErrors = state?.fieldErrors?.note;
+  // The action's input is the raw FormData (its answer_<q_key> names are
+  // dynamic), so its field errors are read by name through the shared shape.
+  const fieldErrors: NonNullable<ActionFormResult['validationErrors']>['fieldErrors'] | undefined =
+    state.validationErrors?.fieldErrors;
+  const statusErrors = fieldErrors?.status;
+  const adultsErrors = fieldErrors?.adults;
+  const mealErrors = fieldErrors?.meal_pref;
+  const noteErrors = fieldErrors?.note;
 
   return (
     <div className="space-y-6">
@@ -379,19 +384,19 @@ export function RsvpForm({
             <FieldError id="note-err" errors={noteErrors} />
           </div>
 
-          <FormError message={state?.error} />
+          <FormError message={actionFormError(state)} />
           {/* A live region is only announced when its CONTENT changes, so the
               role="status" wrapper stays mounted and only its child swaps.
               Empty, it is a zero-height block whose margins collapse — no
               visible gap. */}
           <div role="status">
-            {state?.notice ? (
+            {state.data?.notice ? (
               <div
                 className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-center motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 duration-500 ease-k-out"
               >
                 <p className="flex items-center justify-center gap-2 font-semibold">
                   <PartyPopper aria-hidden className="size-5 text-primary motion-safe:animate-k-pop k-delay-150" />
-                  {state.notice}
+                  {state.data.notice}
                 </p>
                 {attending ? (
                   <p className="mt-1 text-sm text-muted-foreground">

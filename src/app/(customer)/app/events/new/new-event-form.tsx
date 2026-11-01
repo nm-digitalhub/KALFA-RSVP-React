@@ -12,6 +12,7 @@ import { PlacesAutocomplete } from '@/components/places-autocomplete';
 import { TimeSelect24 } from '@/components/time-select-24';
 import { DateSelectIL } from '@/components/date-select-il';
 import { cn } from '@/lib/utils';
+import { actionFormError } from '@/lib/action-result';
 
 type EventType = (typeof EVENT_TYPES)[number];
 
@@ -34,7 +35,7 @@ function RequiredMark() {
 // prefilled values. Both forms validate against the one eventFormSchema and
 // share CelebrantFields, so they cannot drift apart.
 export function NewEventForm() {
-  const [state, action] = useActionState(createEventAction, null);
+  const [state, action] = useActionState(createEventAction, {});
 
   // Controlled so the celebrant field group below follows the selected type.
   const [eventType, setEventType] = useState<EventType>('wedding');
@@ -49,7 +50,7 @@ export function NewEventForm() {
 
   return (
     <form action={action} className="space-y-4">
-      <FormError message={state?.error} />
+      <FormError message={actionFormError(state)} />
 
       <p className="text-xs text-muted-foreground">
         שדות המסומנים ב-<span className="text-red-500">*</span> הם חובה
@@ -61,7 +62,7 @@ export function NewEventForm() {
           <RequiredMark />
         </label>
         <input id="name" name="name" type="text" required className={inputClass} />
-        <FieldError errors={state?.fieldErrors?.name} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.name} />
       </div>
 
       <div>
@@ -85,11 +86,11 @@ export function NewEventForm() {
             </option>
           ))}
         </select>
-        <FieldError errors={state?.fieldErrors?.event_type} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.event_type} />
       </div>
 
       {/* key={eventType}: remount the uncontrolled group on type change. */}
-      <CelebrantFields key={eventType} eventType={eventType} errors={state?.fieldErrors} />
+      <CelebrantFields key={eventType} eventType={eventType} errors={state.validationErrors?.fieldErrors} />
 
       <div>
         <label htmlFor="event_date" className="mb-1 block text-sm font-medium">
@@ -98,7 +99,7 @@ export function NewEventForm() {
         </label>
         <DateSelectIL id="event_date" name="event_date" required labelPrefix="תאריך האירוע" />
         <p className="mt-1 text-xs text-muted-foreground">יום / חודש / שנה</p>
-        <FieldError errors={state?.fieldErrors?.event_date} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.event_date} />
       </div>
 
       <div>
@@ -109,7 +110,7 @@ export function NewEventForm() {
         <p className="mt-1 text-xs text-muted-foreground">
           רשות — תופיע בהזמנות ובתזכורות (שעון ישראל)
         </p>
-        <FieldError errors={state?.fieldErrors?.event_time} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.event_time} />
       </div>
 
       <div>
@@ -124,7 +125,7 @@ export function NewEventForm() {
         <p className="mt-1 text-xs text-muted-foreground">
           רשות — עד יום האירוע, כולל
         </p>
-        <FieldError errors={state?.fieldErrors?.rsvp_deadline} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.rsvp_deadline} />
       </div>
 
       <div>
@@ -142,7 +143,7 @@ export function NewEventForm() {
         <p className="mt-1 text-xs text-muted-foreground">
           מופיע בהזמנות ובתזכורות — יש למלא לפני הפעלת אישורי הגעה
         </p>
-        <FieldError errors={state?.fieldErrors?.venue_name} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.venue_name} />
       </div>
 
       <div>
@@ -157,7 +158,7 @@ export function NewEventForm() {
           onChange={(e) => setVenueAddress(e.target.value)}
           className={inputClass}
         />
-        <FieldError errors={state?.fieldErrors?.venue_address} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.venue_address} />
       </div>
 
       <div>
@@ -175,7 +176,7 @@ export function NewEventForm() {
         <p className="mt-1 text-xs text-muted-foreground">
           יופיע בתזכורת המתנה בוואטסאפ — האורחים יועברו אליו בלחיצה.
         </p>
-        <FieldError errors={state?.fieldErrors?.gift_payment_url} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.gift_payment_url} />
       </div>
 
       <div>
@@ -216,7 +217,7 @@ export function NewEventForm() {
             }
           }}
         />
-        <FieldError errors={imageError ? [imageError] : undefined} />
+        <FieldError errors={imageError ? [imageError] : state.validationErrors?.fieldErrors?.invite_image} />
         <p className="mt-1 text-xs text-muted-foreground">
           JPG / PNG / WebP עד 5MB — תופיע בראש הזמנת הוואטסאפ.
         </p>

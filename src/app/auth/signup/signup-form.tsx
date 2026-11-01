@@ -4,7 +4,8 @@ import { useActionState, useMemo } from 'react';
 import Link from 'next/link';
 
 import { signup } from '../actions';
-import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { FieldError, FormError, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { PasswordField } from './password-field';
 
 export function SignupForm({
@@ -31,12 +32,12 @@ export function SignupForm({
   //
   // Memoized so the action identity stays stable across re-renders.
   const boundSignup = useMemo(() => signup.bind(null, salesRef), [salesRef]);
-  const [state, action] = useActionState(boundSignup, null);
+  const [state, action] = useActionState(boundSignup, {});
+  const fieldErrors = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
 
       <div>
         <label htmlFor="full_name" className="mb-1 block text-sm font-medium">
@@ -50,7 +51,7 @@ export function SignupForm({
           required
           className="w-full rounded-md border border-border bg-transparent px-3 py-3"
         />
-        <FieldError errors={state?.fieldErrors?.full_name} />
+        <FieldError errors={fieldErrors?.full_name} />
       </div>
 
       <div>
@@ -66,7 +67,7 @@ export function SignupForm({
           dir="ltr"
           className="w-full rounded-md border border-border bg-transparent px-3 py-3"
         />
-        <FieldError errors={state?.fieldErrors?.email} />
+        <FieldError errors={fieldErrors?.email} />
       </div>
 
       <div>
@@ -81,10 +82,10 @@ export function SignupForm({
           dir="ltr"
           className="w-full rounded-md border border-border bg-transparent px-3 py-3"
         />
-        <FieldError errors={state?.fieldErrors?.phone} />
+        <FieldError errors={fieldErrors?.phone} />
       </div>
 
-      <PasswordField fieldErrors={state?.fieldErrors?.password} />
+      <PasswordField fieldErrors={fieldErrors?.password} />
 
       <div>
         <label className="flex items-start gap-2 text-sm">
@@ -105,7 +106,7 @@ export function SignupForm({
             </Link>
           </span>
         </label>
-        <FieldError errors={state?.fieldErrors?.terms_accepted} />
+        <FieldError errors={fieldErrors?.terms_accepted} />
       </div>
 
       {/* Optional and unchecked by default — consent to marketing email is never a condition of signing up. */}

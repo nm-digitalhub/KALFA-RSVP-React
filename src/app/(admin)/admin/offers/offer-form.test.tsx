@@ -28,7 +28,7 @@ const INITIAL: OfferFormInitial = {
   packages: [{ package_id: GOLD.id, value_override: null }],
 };
 
-const action = vi.fn(async () => null);
+const action = vi.fn(async () => ({}));
 
 function renderForm(packageChoices: OfferPackageChoice[]) {
   return render(

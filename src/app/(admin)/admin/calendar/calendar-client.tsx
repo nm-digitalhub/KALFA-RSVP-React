@@ -28,6 +28,7 @@ import type {
   EventCalendarSlotInfo,
   EventCalendarUpdateResult,
 } from '@/components/reui/event-calendar/event-calendar-types';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { CalendarEventDTO } from '@/lib/data/exchange-connections';
 import { formatIsraelDateTime } from '@/lib/date';
 
@@ -171,10 +172,10 @@ export function AdminExchangeCalendar({
         if (tracker.requestRefresh()) runRefreshRef.current();
         return;
       }
-      if (res.ok) {
-        setEvents(res.events.map(dtoToEvent));
+      if (res.data) {
+        setEvents(res.data.events.map(dtoToEvent));
       } else {
-        appendError(res.message);
+        appendError(actionErrorMessage(res) ?? 'טעינת היומן נכשלה. נסו לרענן.');
       }
     } catch {
       if (tracker.shouldApplyRefresh(token)) {
@@ -203,7 +204,7 @@ export function AdminExchangeCalendar({
       if (cancelled) return;
       // A failure here must never block editing: an empty list makes the picker
       // fall back to free text, which still writes a valid category.
-      setCategories(res.ok ? res.categories : []);
+      setCategories(res.data?.categories ?? []);
     })();
     return () => {
       cancelled = true;
@@ -272,7 +273,7 @@ export function AdminExchangeCalendar({
         startIso: update.start.toISOString(),
         endIso: update.end.toISOString(),
       })
-        .then((res) => settleWrite(event.id, opId, res.ok ? undefined : res.message))
+        .then((res) => settleWrite(event.id, opId, actionErrorMessage(res)))
         .catch(() => settleWrite(event.id, opId, 'עדכון האירוע נכשל. נסו שוב.'));
       return true;
     },
@@ -370,11 +371,12 @@ export function AdminExchangeCalendar({
             }
           : {}),
       });
-      if (res.ok) {
+      const failure = actionErrorMessage(res);
+      if (failure === undefined) {
         setCreateDraft(null);
         requestAuthoritativeRefresh();
       } else {
-        setCreateError(res.message);
+        setCreateError(failure);
       }
     } catch {
       setCreateError('יצירת האירוע נכשלה. נסו שוב.');

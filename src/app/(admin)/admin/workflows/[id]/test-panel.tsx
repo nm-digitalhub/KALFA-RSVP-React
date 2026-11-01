@@ -10,6 +10,7 @@ import {
   type DryRunGuestCase,
   type DryRunResult,
 } from '@/lib/workflow/engine/dry-run';
+import { actionErrorMessage } from '@/lib/action-result';
 
 import { testWorkflowAction } from '../actions';
 
@@ -51,11 +52,17 @@ export function TestPanel({ workflowId }: { workflowId: string }) {
     resetExecution();
     startTransition(async () => {
       try {
-        const next = await testWorkflowAction(workflowId, {
+        const res = await testWorkflowAction(workflowId, {
           messageText,
           buttonPayload,
           guestCase,
         });
+        const next = res.data;
+        if (!next) {
+          // The server's failure, which used to arrive as a thrown error.
+          setError(actionErrorMessage(res) ?? 'הרצת הבדיקה נכשלה');
+          return;
+        }
         setResult(next);
         // Feed the canvas. The trace goes into the same store the live stream
         // writes to, so highlighting, node markers and the log cannot tell a

@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 
 import { setOwnerAgentDailyCapAction, setOwnerAgentEnabledAction } from './actions';
 
@@ -20,7 +21,7 @@ export function OwnerAgentSwitch({
   numberSelected: boolean;
   activeEntries: number;
 }) {
-  const [state, action] = useActionState(setOwnerAgentEnabledAction, null);
+  const [state, action] = useActionState(setOwnerAgentEnabledAction, {});
   // What "on" will actually do right now. The switch alone diverts nothing: the
   // webhook needs a selected number, and the agent needs someone allowed to reach it.
   const inert = !numberSelected || activeEntries === 0;
@@ -42,8 +43,8 @@ export function OwnerAgentSwitch({
             אחת ברשימת ההיתר.
           </p>
         ) : null}
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionErrorMessage(state)} />
+        <FormNotice message={state.data?.notice} />
       </div>
       <div className="flex shrink-0 items-center justify-end gap-3">
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
@@ -62,7 +63,7 @@ export function OwnerAgentSwitch({
 }
 
 export function OwnerAgentDailyCapForm({ dailyCap }: { dailyCap: number }) {
-  const [state, action] = useActionState(setOwnerAgentDailyCapAction, null);
+  const [state, action] = useActionState(setOwnerAgentDailyCapAction, {});
 
   return (
     <form action={action} className="space-y-2 rounded-lg border border-border bg-card p-4">
@@ -82,7 +83,7 @@ export function OwnerAgentDailyCapForm({ dailyCap }: { dailyCap: number }) {
             required
             defaultValue={dailyCap}
             aria-describedby="owner-agent-daily-cap-hint"
-            aria-invalid={state?.fieldErrors?.dailyCap ? true : undefined}
+            aria-invalid={state.validationErrors?.fieldErrors?.dailyCap ? true : undefined}
             className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
         </div>
@@ -92,9 +93,10 @@ export function OwnerAgentDailyCapForm({ dailyCap }: { dailyCap: number }) {
         מספר ההודעות שהסוכן מעבד לכל איש צוות ביום, לפי שורות אמיתיות ולא לפי מונה בזיכרון.
         0 עד 10000; 0 פירושו שאף הודעה לא מעובדת.
       </p>
-      <FieldError errors={state?.fieldErrors?.dailyCap} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.dailyCap} />
+      {/* A refused value is FieldError's; FormError shows the server's or a form-level message. */}
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }

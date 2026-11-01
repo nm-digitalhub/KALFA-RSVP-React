@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
@@ -31,10 +32,10 @@ beforeEach(() => {
 });
 
 describe('saveAgreementAction — Next.js control-flow signals (requirePlatformPermission)', () => {
-  it('propagates a NEXT_REDIRECT from updateAgreement instead of returning { error }', async () => {
+  it('propagates a NEXT_REDIRECT from updateAgreement instead of returning { serverError }', async () => {
     vi.mocked(updateAgreement).mockRejectedValue(NEXT_REDIRECT);
 
-    await expect(saveAgreementAction(null, fd(FIELDS))).rejects.toThrow(
+    await expect(saveAgreementAction({}, fd(FIELDS))).rejects.toThrow(
       'NEXT_REDIRECT',
     );
   });
@@ -42,30 +43,30 @@ describe('saveAgreementAction — Next.js control-flow signals (requirePlatformP
   it('surfaces a genuine domain error message, not a thrown error', async () => {
     vi.mocked(updateAgreement).mockRejectedValue(new Error('גרסה כפולה'));
 
-    const result = await saveAgreementAction(null, fd(FIELDS));
+    const result = await saveAgreementAction({}, fd(FIELDS));
 
-    expect(result).toEqual({ error: 'גרסה כפולה' });
+    expect(result).toEqual({ serverError: 'גרסה כפולה' });
   });
 
   it('falls back to the generic message for a non-Error rejection', async () => {
     vi.mocked(updateAgreement).mockRejectedValue('boom');
 
-    const result = await saveAgreementAction(null, fd(FIELDS));
+    const result = await saveAgreementAction({}, fd(FIELDS));
 
-    expect(result).toEqual({ error: 'שמירת החוזה נכשלה' });
+    expect(result).toEqual({ serverError: 'שמירת החוזה נכשלה' });
   });
 });
 
 describe('saveAgreementAction — what it saves', () => {
   it('passes the version and the body to the data layer', async () => {
     vi.mocked(updateAgreement).mockResolvedValue(undefined);
-    await saveAgreementAction(null, fd(FIELDS));
+    await saveAgreementAction({}, fd(FIELDS));
     expect(updateAgreement).toHaveBeenCalledWith({ version: '2026-01-01', bodyHtml: '<p>text</p>' });
   });
 
   it('refuses a missing version before anything is saved', async () => {
-    const result = await saveAgreementAction(null, fd({ ...FIELDS, version: '' }));
-    expect(result?.fieldErrors?.version).toEqual(['נא להזין גרסה']);
+    const result = await saveAgreementAction({}, fd({ ...FIELDS, version: '' }));
+    expect(result?.validationErrors?.fieldErrors?.version).toEqual(['נא להזין גרסה']);
     expect(updateAgreement).not.toHaveBeenCalled();
   });
 });
@@ -73,14 +74,14 @@ describe('saveAgreementAction — what it saves', () => {
 describe('approveAgreementAction', () => {
   it('approves the named version', async () => {
     vi.mocked(approveAgreement).mockResolvedValue(undefined);
-    const result = await approveAgreementAction(null, fd({ version: '2026-10-v6' }));
+    const result = await approveAgreementAction({}, fd({ version: '2026-10-v6' }));
     expect(approveAgreement).toHaveBeenCalledWith('2026-10-v6');
-    expect(result).toEqual({ notice: 'החוזה אושר — תג הטיוטה הוסר' });
+    expect(result).toEqual({ data: { notice: 'החוזה אושר — תג הטיוטה הוסר' } });
   });
 
   it('shows the data layer’s reason when approval is refused (an unknown token, a missing price token)', async () => {
     vi.mocked(approveAgreement).mockRejectedValue(new Error('בנוסח יש תחליפים שאינם מוכרים: {{pakagePrice}}'));
-    const result = await approveAgreementAction(null, fd({ version: '2026-10-v6' }));
-    expect(result).toEqual({ error: 'בנוסח יש תחליפים שאינם מוכרים: {{pakagePrice}}' });
+    const result = await approveAgreementAction({}, fd({ version: '2026-10-v6' }));
+    expect(result).toEqual({ serverError: 'בנוסח יש תחליפים שאינם מוכרים: {{pakagePrice}}' });
   });
 });

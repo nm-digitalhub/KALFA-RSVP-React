@@ -27,10 +27,10 @@ vi.mock('@/lib/data/events', () => ({
   // reference the actual module): the action compares err.message against these.
   DATES_LOCKED_ERROR: 'לא ניתן לשנות תאריך ושעה לאחר שנשלחה ההודעה הראשונה לאורחים',
   CELEBRANTS_LOCKED_ERROR:
-    'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד קיים קמפיין אישורי הגעה בתהליך — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.',
-  EVENT_TYPE_LOCKED_ERROR: 'לא ניתן לשנות את סוג האירוע כל עוד קיים קמפיין אישורי הגעה בתהליך.',
+    'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד שירות אישורי ההגעה בתהליך — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.',
+  EVENT_TYPE_LOCKED_ERROR: 'לא ניתן לשנות את סוג האירוע כל עוד שירות אישורי ההגעה בתהליך.',
   VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR:
-    'לא ניתן להשאיר את המיקום ריק כל עוד קיים קמפיין אישורי הגעה בתהליך — המיקום מופיע בהזמנות ובתזכורות.',
+    'לא ניתן להשאיר את המיקום ריק כל עוד שירות אישורי ההגעה בתהליך — המיקום מופיע בהזמנות ובתזכורות.',
 }));
 vi.mock('@/lib/data/event-exchange-sync', () => ({ rescheduleEventExchangeAppointment: vi.fn() }));
 vi.mock('@/lib/data/event-cancellation', () => ({
@@ -48,6 +48,9 @@ import {
 import { createCancellationRequest } from '@/lib/data/event-cancellation';
 import { rescheduleEventExchangeAppointment } from '@/lib/data/event-exchange-sync';
 import { updateEventAction, createCancellationRequestAction, setupSaveEventAction } from './actions';
+
+// The bound event id is validated (bindArgsSchemas: z.uuid()).
+const EVENT = '22222222-2222-4222-8222-222222222222';
 
 const NEXT_REDIRECT = Object.assign(new Error('NEXT_REDIRECT'), {
   digest: 'NEXT_REDIRECT;replace;/auth/login;307;',
@@ -80,14 +83,14 @@ beforeEach(() => {
 
 describe('updateEventAction — FormData.has() presence mapping', () => {
   it('omits the event_date key entirely when the field is absent from FormData (disabled, non-draft input)', async () => {
-    await updateEventAction('e-1', null, fd({ ...BASE })); // no event_date entry at all
+    await updateEventAction(EVENT, {}, fd({ ...BASE })); // no event_date entry at all
 
     const input = vi.mocked(updateEvent).mock.calls[0][1];
     expect('event_date' in input).toBe(false);
   });
 
   it('includes the event_date key (as null) when FormData has it as an empty string (draft owner clearing it)', async () => {
-    await updateEventAction('e-1', null, fd({ ...BASE, event_date: '' }));
+    await updateEventAction(EVENT, {}, fd({ ...BASE, event_date: '' }));
 
     const input = vi.mocked(updateEvent).mock.calls[0][1];
     expect('event_date' in input).toBe(true);
@@ -95,7 +98,7 @@ describe('updateEventAction — FormData.has() presence mapping', () => {
   });
 
   it('omits the rsvp_deadline key entirely when the field is absent from FormData', async () => {
-    await updateEventAction('e-1', null, fd({ ...BASE }));
+    await updateEventAction(EVENT, {}, fd({ ...BASE }));
 
     const input = vi.mocked(updateEvent).mock.calls[0][1];
     expect('rsvp_deadline' in input).toBe(false);
@@ -103,8 +106,8 @@ describe('updateEventAction — FormData.has() presence mapping', () => {
 
   it('includes a present, non-empty date value trimmed', async () => {
     await updateEventAction(
-      'e-1',
-      null,
+      EVENT,
+      {},
       fd({ ...BASE, event_date: '2026-12-01 ' }),
     );
 
@@ -113,7 +116,7 @@ describe('updateEventAction — FormData.has() presence mapping', () => {
   });
 
   it('never forwards a status key, even if a stale client posts one', async () => {
-    await updateEventAction('e-1', null, fd({ ...BASE, status: 'active' }));
+    await updateEventAction(EVENT, {}, fd({ ...BASE, status: 'active' }));
 
     const input = vi.mocked(updateEvent).mock.calls[0][1];
     expect(Object.hasOwn(input, 'status')).toBe(false);
@@ -122,18 +125,18 @@ describe('updateEventAction — FormData.has() presence mapping', () => {
 
 describe('updateEventAction — the calendar entry follows a date change', () => {
   it('moves the Exchange appointment after a save that carried a date', async () => {
-    await updateEventAction('e1', null, fd({ ...BASE, event_date: '2999-01-01' }));
-    expect(rescheduleEventExchangeAppointment).toHaveBeenCalledWith('e1');
+    await updateEventAction(EVENT, {}, fd({ ...BASE, event_date: '2999-01-01' }));
+    expect(rescheduleEventExchangeAppointment).toHaveBeenCalledWith(EVENT);
   });
 
   it('leaves the calendar alone when the save carried no date key (the common save)', async () => {
-    await updateEventAction('e1', null, fd(BASE));
+    await updateEventAction(EVENT, {}, fd(BASE));
     expect(rescheduleEventExchangeAppointment).not.toHaveBeenCalled();
   });
 
   it('does not touch the calendar when the save was refused', async () => {
     vi.mocked(updateEvent).mockRejectedValue(new Error(DATES_LOCKED_ERROR));
-    await updateEventAction('e1', null, fd({ ...BASE, event_date: '2999-01-01' }));
+    await updateEventAction(EVENT, {}, fd({ ...BASE, event_date: '2999-01-01' }));
     expect(rescheduleEventExchangeAppointment).not.toHaveBeenCalled();
   });
 });
@@ -141,8 +144,8 @@ describe('updateEventAction — the calendar entry follows a date change', () =>
 describe('updateEventAction — celebrants (בעלי שמחה)', () => {
   it('passes the parsed celebrants of the submitted event type to updateEvent', async () => {
     await updateEventAction(
-      'e-1',
-      null,
+      EVENT,
+      {},
       fd({ ...BASE, 'celebrants.groom': 'יוסי', 'celebrants.bride': 'דנה' }),
     );
 
@@ -152,8 +155,8 @@ describe('updateEventAction — celebrants (בעלי שמחה)', () => {
 
   it('maps an all-empty celebrant group to celebrants: null (clears the column)', async () => {
     await updateEventAction(
-      'e-1',
-      null,
+      EVENT,
+      {},
       fd({ ...BASE, 'celebrants.groom': '', 'celebrants.bride': '' }),
     );
 
@@ -163,12 +166,12 @@ describe('updateEventAction — celebrants (בעלי שמחה)', () => {
 
   it('returns a DOTTED fieldErrors key for an invalid celebrant name and does not update', async () => {
     const result = await updateEventAction(
-      'e-1',
-      null,
+      EVENT,
+      {},
       fd({ ...BASE, 'celebrants.bride': 'א'.repeat(121) }),
     );
 
-    expect(result?.fieldErrors?.['celebrants.bride']).toEqual(['השם ארוך מדי']);
+    expect(result.validationErrors?.fieldErrors).toEqual({ 'celebrants.bride': ['השם ארוך מדי'] });
     expect(updateEvent).not.toHaveBeenCalled();
   });
 
@@ -176,8 +179,8 @@ describe('updateEventAction — celebrants (בעלי שמחה)', () => {
     // The event was a wedding (stale groom input still posted); the owner
     // switched the type to birthday and filled the new kind's field.
     await updateEventAction(
-      'e-1',
-      null,
+      EVENT,
+      {},
       fd({
         ...BASE,
         event_type: 'birthday',
@@ -196,7 +199,7 @@ describe('updateEventAction — Next.js control-flow signals from the ownership 
     vi.mocked(updateEvent).mockRejectedValue(NEXT_REDIRECT);
 
     await expect(
-      updateEventAction('e-1', null, fd({ ...BASE })),
+      updateEventAction(EVENT, {}, fd({ ...BASE })),
     ).rejects.toThrow('NEXT_REDIRECT');
   });
 
@@ -204,40 +207,40 @@ describe('updateEventAction — Next.js control-flow signals from the ownership 
     vi.mocked(updateEvent).mockRejectedValue(NEXT_NOT_FOUND);
 
     await expect(
-      updateEventAction('e-1', null, fd({ ...BASE })),
+      updateEventAction(EVENT, {}, fd({ ...BASE })),
     ).rejects.toThrow('NEXT_NOT_FOUND');
   });
 
   it('converts a genuine (non-framework) error into the existing friendly message, not a thrown error', async () => {
     vi.mocked(updateEvent).mockRejectedValue(new Error('db down'));
 
-    const result = await updateEventAction('e-1', null, fd({ ...BASE }));
+    const result = await updateEventAction(EVENT, {}, fd({ ...BASE }));
 
-    expect(result).toEqual({ error: 'עדכון האירוע נכשל. נסו שוב.' });
+    expect(result).toEqual({ serverError: 'עדכון האירוע נכשל. נסו שוב.' });
   });
 
   it('surfaces the celebrants-lock guard message verbatim (a guard reachable via enabled UI)', async () => {
     vi.mocked(updateEvent).mockRejectedValue(new Error(CELEBRANTS_LOCKED_ERROR));
 
-    const result = await updateEventAction('e-1', null, fd({ ...BASE }));
+    const result = await updateEventAction(EVENT, {}, fd({ ...BASE }));
 
-    expect(result).toEqual({ error: CELEBRANTS_LOCKED_ERROR });
+    expect(result).toEqual({ serverError: CELEBRANTS_LOCKED_ERROR });
   });
 
   it('surfaces the dates-locked message verbatim (the first send has gone out)', async () => {
     vi.mocked(updateEvent).mockRejectedValue(new Error(DATES_LOCKED_ERROR));
 
-    const result = await updateEventAction('e1', null, fd({ ...BASE, event_date: '2999-01-01' }));
+    const result = await updateEventAction(EVENT, {}, fd({ ...BASE, event_date: '2999-01-01' }));
 
-    expect(result).toEqual({ error: DATES_LOCKED_ERROR });
+    expect(result).toEqual({ serverError: DATES_LOCKED_ERROR });
   });
 
   it('surfaces the event_type-lock guard message verbatim', async () => {
     vi.mocked(updateEvent).mockRejectedValue(new Error(EVENT_TYPE_LOCKED_ERROR));
 
-    const result = await updateEventAction('e-1', null, fd({ ...BASE }));
+    const result = await updateEventAction(EVENT, {}, fd({ ...BASE }));
 
-    expect(result).toEqual({ error: EVENT_TYPE_LOCKED_ERROR });
+    expect(result).toEqual({ serverError: EVENT_TYPE_LOCKED_ERROR });
   });
 
   it('surfaces the venue-required-while-campaign guard message verbatim', async () => {
@@ -245,9 +248,9 @@ describe('updateEventAction — Next.js control-flow signals from the ownership 
       new Error(VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR),
     );
 
-    const result = await updateEventAction('e-1', null, fd({ ...BASE }));
+    const result = await updateEventAction(EVENT, {}, fd({ ...BASE }));
 
-    expect(result).toEqual({ error: VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR });
+    expect(result).toEqual({ serverError: VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR });
   });
 });
 
@@ -257,34 +260,34 @@ describe('createCancellationRequestAction', () => {
   it('returns a notice with the request number on success', async () => {
     vi.mocked(createCancellationRequest).mockResolvedValue({ id: 'r1', requestCode: '7K4Q-92XM' });
     const result = await createCancellationRequestAction(
-      'e1',
-      null,
+      EVENT,
+      {},
       fd({ reason: 'שינוי תוכניות משפחתיות', smsConsent: 'on' }),
     );
-    expect(result?.notice).toContain('CX-7K4Q-92XM');
+    expect(result.data?.notice).toContain('CX-7K4Q-92XM');
   });
 
   it('surfaces a validation error for a too-short reason', async () => {
-    const result = await createCancellationRequestAction('e1', null, fd({ reason: 'קצר' }));
-    expect(result?.fieldErrors?.reason).toBeDefined();
+    const result = await createCancellationRequestAction(EVENT, {}, fd({ reason: 'קצר' }));
+    expect(result.validationErrors?.fieldErrors?.reason).toBeDefined();
     expect(createCancellationRequest).not.toHaveBeenCalled();
   });
 
   it('re-throws a Next.js control-flow signal instead of swallowing it', async () => {
     vi.mocked(createCancellationRequest).mockRejectedValue(NEXT_REDIRECT);
     await expect(
-      createCancellationRequestAction('e1', null, fd({ reason: 'שינוי תוכניות משפחתיות' })),
+      createCancellationRequestAction(EVENT, {}, fd({ reason: 'שינוי תוכניות משפחתיות' })),
     ).rejects.toThrow('NEXT_REDIRECT');
   });
 
   it('surfaces the data-layer error message on failure', async () => {
     vi.mocked(createCancellationRequest).mockRejectedValue(new Error('פתיחת בקשת הביטול נכשלה'));
     const result = await createCancellationRequestAction(
-      'e1',
-      null,
+      EVENT,
+      {},
       fd({ reason: 'שינוי תוכניות משפחתיות' }),
     );
-    expect(result?.error).toBe('פתיחת בקשת הביטול נכשלה');
+    expect(result.serverError).toBe('פתיחת בקשת הביטול נכשלה');
   });
 });
 
@@ -301,8 +304,8 @@ describe('setupSaveEventAction — "שמירה והמשך" (the details step of 
   it('saves, and when nothing is missing moves on to the setup flow', async () => {
     vi.mocked(getEvent).mockResolvedValue(complete as never);
 
-    await expect(setupSaveEventAction('e1', null, fd(BASE))).rejects.toMatchObject({
-      digest: expect.stringContaining('/app/events/e1/setup'),
+    await expect(setupSaveEventAction(EVENT, {}, fd(BASE))).rejects.toMatchObject({
+      digest: expect.stringContaining(`/app/events/${EVENT}/setup`),
     });
     expect(updateEvent).toHaveBeenCalled();
   });
@@ -310,27 +313,27 @@ describe('setupSaveEventAction — "שמירה והמשך" (the details step of 
   it('saves but stays put, naming what is still missing', async () => {
     vi.mocked(getEvent).mockResolvedValue({ ...complete, venue_address: null } as never);
 
-    const result = await setupSaveEventAction('e1', null, fd(BASE));
+    const result = await setupSaveEventAction(EVENT, {}, fd(BASE));
 
     expect(updateEvent).toHaveBeenCalled();
-    expect(result?.error).toBe('נשמר. כדי להמשיך יש להשלים: כתובת המקום');
+    expect(result.validationErrors?.formErrors[0]).toBe('נשמר. כדי להמשיך יש להשלים: כתובת המקום');
     // …and the field itself is marked, so the owner does not have to hunt for it.
-    expect(result?.fieldErrors).toEqual({ venue_address: ['שדה חובה כדי להמשיך'] });
+    expect(result.validationErrors?.fieldErrors).toEqual({ venue_address: ['שדה חובה כדי להמשיך'] });
   });
 
   it('does not move on when the save itself failed, and does not even look at the prerequisites', async () => {
     vi.mocked(updateEvent).mockRejectedValue(new Error('boom'));
 
-    const result = await setupSaveEventAction('e1', null, fd(BASE));
+    const result = await setupSaveEventAction(EVENT, {}, fd(BASE));
 
-    expect(result?.error).toBe('עדכון האירוע נכשל. נסו שוב.');
+    expect(result.serverError).toBe('עדכון האירוע נכשל. נסו שוב.');
     expect(getEvent).not.toHaveBeenCalled();
   });
 
   it('does not move on when the form is invalid', async () => {
-    const result = await setupSaveEventAction('e1', null, fd({ ...BASE, name: '' }));
+    const result = await setupSaveEventAction(EVENT, {}, fd({ ...BASE, name: '' }));
 
-    expect(result?.fieldErrors).toBeDefined();
+    expect(result.validationErrors?.fieldErrors).toBeDefined();
     expect(updateEvent).not.toHaveBeenCalled();
     expect(getEvent).not.toHaveBeenCalled();
   });

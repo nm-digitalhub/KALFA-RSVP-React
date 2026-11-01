@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 
 import { FormError } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { AdminUserDetail } from '@/lib/data/admin/users';
 
 import { viewUserDetailAction } from '../actions';
@@ -38,8 +39,8 @@ export function UserDetailGate({
     setError(undefined);
     start(async () => {
       const result = await viewUserDetailAction({ user_id: id, reason });
-      if (!result.ok) {
-        setError(result.error);
+      if (!result.data) {
+        setError(actionErrorMessage(result));
         return;
       }
       setDetail(result.data);

@@ -5,6 +5,7 @@ import { TriangleAlert } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import { updateWhatsAppConsentRequiredAction } from '@/app/(admin)/admin/integrations/actions';
 
 // The §30א consent gate for WhatsApp. It is a legal exposure surface, so it is
@@ -21,13 +22,13 @@ import { updateWhatsAppConsentRequiredAction } from '@/app/(admin)/admin/integra
 export function WhatsAppConsentToggle({ consentRequired }: { consentRequired: boolean }) {
   const [waConsentState, waConsentAction] = useActionState(
     updateWhatsAppConsentRequiredAction,
-    null,
+    {},
   );
 
   return (
       <form action={waConsentAction} className="mt-4 space-y-2 rounded-lg border border-border bg-card p-4">
-            <FormError message={waConsentState?.error} />
-            <FormNotice message={waConsentState?.notice} />
+            <FormError message={actionErrorMessage(waConsentState)} />
+            <FormNotice message={waConsentState.data?.notice} />
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 space-y-1">
                 <p className="text-sm font-semibold">דרישת הסכמה לוואטסאפ</p>

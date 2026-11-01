@@ -85,8 +85,8 @@ export function ConsolePushAlertToggle() {
           applicationServerKey: urlBase64ToUint8Array(publicKey),
         });
         const result = await subscribeConsolePushAction(JSON.parse(JSON.stringify(next)));
-        if (!result.success) {
-          setError(result.error ?? 'שמירת ההתראה נכשלה.');
+        if (!result.data?.success) {
+          setError(result.serverError ?? 'שמירת ההתראה נכשלה.');
           await next.unsubscribe();
           return;
         }
@@ -109,8 +109,8 @@ export function ConsolePushAlertToggle() {
         // unsubscribe itself failed (e.g. already gone).
       }
       const result = await unsubscribeConsolePushAction(endpoint);
-      if (!result.success) {
-        setError(result.error ?? 'ביטול ההתראה נכשל.');
+      if (!result.data?.success) {
+        setError(result.serverError ?? 'ביטול ההתראה נכשל.');
         return;
       }
       setSubscription(null);

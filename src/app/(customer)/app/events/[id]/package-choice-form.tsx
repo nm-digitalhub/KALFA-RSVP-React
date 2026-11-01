@@ -5,7 +5,9 @@ import Link from 'next/link';
 
 import { FormError, SubmitButton } from '@/components/forms';
 import { formatAmount } from '@/lib/format';
-import type { FormState } from '@/lib/validation/result';
+import { actionErrorMessage } from '@/lib/action-result';
+
+import type { choosePackageAction } from './campaign/campaign-actions';
 
 // What the owner needs to choose a fixed-price package. These are for READING: the form submits only `package_id`, and
 // the server (createCampaign / changeCampaignPackage) reads the package's own price and quota. The benefit block is
@@ -39,18 +41,20 @@ export type PackageChoiceBenefit =
 // pre-selected and submitting a different one MOVES the campaign — and its benefit — to it (task 5.3). useActionState
 // surfaces the server's safe Hebrew error inline. Customer-facing wording that touches the price is reviewed for
 // compliance before it goes live.
+type ChoosePackageResult = Awaited<ReturnType<typeof choosePackageAction>>;
+
 export function PackageChoiceForm({
   action,
   offers,
   benefit = { kind: 'none' },
   selectedPackageId = null,
 }: {
-  action: (prev: FormState, formData: FormData) => Promise<FormState>;
+  action: (prev: ChoosePackageResult, formData: FormData) => Promise<ChoosePackageResult>;
   offers: PackageChoiceOffer[];
   benefit?: PackageChoiceBenefit;
   selectedPackageId?: string | null;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
 
   if (offers.length === 0) {
     return <p className="text-sm text-muted-foreground">אין כרגע חבילות זמינות. נסו שוב מאוחר יותר.</p>;
@@ -150,7 +154,7 @@ export function PackageChoiceForm({
       <p className="text-xs text-muted-foreground">
         אחרי הבחירה תקראו את ההסכם ותחתמו עליו. התשלום נעשה פעם אחת, בשלב הבא.
       </p>
-      <FormError message={state?.error} />
+      <FormError message={actionErrorMessage(state)} />
       <SubmitButton>{selectedPackageId ? 'עדכון הבחירה והמשך' : 'בחירה והמשך להסכם'}</SubmitButton>
     </form>
   );

@@ -4,12 +4,12 @@ import { useClipboard } from '@mantine/hooks';
 import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionErrorMessage } from '@/lib/action-result';
 
-type BoundAction = (
-  prevState: FormState,
-  formData: FormData,
-) => Promise<FormState>;
+import type { regenerateRsvpTokenAction, revokeRsvpTokenAction } from '../guests-actions';
+
+type RevokeResult = Awaited<ReturnType<typeof revokeRsvpTokenAction>>;
+type RegenerateResult = Awaited<ReturnType<typeof regenerateRsvpTokenAction>>;
 
 // Owner-facing RSVP link controls on the guest detail page. The absolute link
 // is built server-side (see getAppUrl) and passed in; this component only
@@ -23,12 +23,12 @@ export function RsvpLink({
 }: {
   url: string;
   revokedAt: string | null;
-  revokeAction: BoundAction;
-  regenerateAction: BoundAction;
+  revokeAction: (prevState: RevokeResult, formData: FormData) => Promise<RevokeResult>;
+  regenerateAction: (prevState: RegenerateResult, formData: FormData) => Promise<RegenerateResult>;
 }) {
   const clipboard = useClipboard({ timeout: 2000 });
-  const [revokeState, revoke] = useActionState(revokeAction, null);
-  const [regenState, regenerate] = useActionState(regenerateAction, null);
+  const [revokeState, revoke] = useActionState(revokeAction, {});
+  const [regenState, regenerate] = useActionState(regenerateAction, {});
   const revoked = revokedAt != null;
 
   return (
@@ -91,8 +91,8 @@ export function RsvpLink({
         </form>
       </div>
 
-      <FormError message={revokeState?.error ?? regenState?.error} />
-      <FormNotice message={revokeState?.notice ?? regenState?.notice} />
+      <FormError message={actionErrorMessage(revokeState) ?? actionErrorMessage(regenState)} />
+      <FormNotice message={revokeState.data?.notice ?? regenState.data?.notice} />
     </section>
   );
 }

@@ -3,7 +3,7 @@
 // Admin client form for the agreement-config values that the package terms read
 // live (activation window, offer validity, liability cap, retention).
 // Rendered as a section INSIDE the existing /admin/agreement page (not a separate
-// route). Follows the established admin-form pattern (useActionState + FormState +
+// route). Follows the established admin-form pattern (useActionState + the action's result +
 // FieldError/FormError/FormNotice/SubmitButton), mirroring company-form.tsx.
 //
 // Each field carries a help (?) icon that opens a detailed bubble explaining the
@@ -21,6 +21,7 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { saveAgreementConfigAction } from './config-actions';
 import { HelpTip } from '@/components/help-tip';
 
@@ -84,13 +85,13 @@ export function AgreementConfigForm({
 }: {
   values: AgreementConfigValues;
 }) {
-  const [state, action] = useActionState(saveAgreementConfigAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(saveAgreementConfigAction, {});
+  const e = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-4">
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
 
         <Field
           name="serviceActivationWindow"

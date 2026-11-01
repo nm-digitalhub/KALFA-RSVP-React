@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import { testWhatsAppConnectionAction } from '@/app/(admin)/admin/integrations/actions';
 
 // One live GET against Graph, on demand. Distinct from the SCHEDULED health check
@@ -11,12 +12,12 @@ import { testWhatsAppConnectionAction } from '@/app/(admin)/admin/integrations/a
 // from "is the channel healthy right now".
 
 export function WhatsAppConnectionTest() {
-  const [testState, testAction] = useActionState(testWhatsAppConnectionAction, null);
+  const [testState, testAction] = useActionState(testWhatsAppConnectionAction, {});
 
   return (
       <form action={testAction} className="mt-4 space-y-2">
-            <FormError message={testState?.error} />
-            <FormNotice message={testState?.notice} />
+            <FormError message={actionErrorMessage(testState)} />
+            <FormNotice message={testState.data?.notice} />
             <button
               type="submit"
               className="rounded-md border border-border px-4 py-2 text-sm font-medium transition hover:bg-accent/40"

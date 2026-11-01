@@ -19,6 +19,7 @@ import {
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { LocalDateTime } from '@/components/local-date-time';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { actionFormError } from '@/lib/action-result';
 import type { FleetGoalEntry } from '@/lib/data/admin/fleet';
 import { GOAL_STATUS_LABEL, GOAL_STATUS_VARIANT } from '@/lib/fleet/labels';
 import type { Reachability } from '@/lib/fleet/reachability';
@@ -123,7 +124,7 @@ export function NewGoalSheet({
 }) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
-  const [state, action] = useActionState(createFleetGoalAction, null);
+  const [state, action] = useActionState(createFleetGoalAction, {});
   const uid = useId();
 
   return (
@@ -158,7 +159,7 @@ export function NewGoalSheet({
               maxLength={200}
               placeholder="במשפט אחד — מה המטרה"
             />
-            <FieldError errors={state?.fieldErrors?.title} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.title} />
           </div>
           <div className="space-y-1">
             <label htmlFor={`${uid}-body`} className="block text-sm font-medium">
@@ -173,15 +174,15 @@ export function NewGoalSheet({
               maxLength={8000}
               placeholder='ההקשר המלא, הגבולות, ומה נחשב "הושלם"…'
             />
-            <FieldError errors={state?.fieldErrors?.body} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.body} />
           </div>
           {/* computed for the goal_due trigger, not owner_direct_request */}
           <p className={cn('text-xs', reach.tone === 'ok' ? 'text-muted-foreground' : reach.tone === 'warn' ? 'text-warning' : 'text-destructive')}>
             {reach.text}
           </p>
           <SubmitButton>צור מטרה</SubmitButton>
-          <FormError message={state?.error} />
-          <FormNotice message={state?.notice} />
+          <FormError message={actionFormError(state)} />
+          <FormNotice message={state.data?.notice} />
         </form>
       </SheetContent>
     </Sheet>
@@ -217,19 +218,19 @@ function GoalActionButton({
 // does not surface it — the last failure is already visible via last_error
 // on the card itself.
 function PauseGoalForm({ goalId }: { goalId: string }) {
-  const [state, action] = useActionState(pauseFleetGoalAction, null);
+  const [state, action] = useActionState(pauseFleetGoalAction, {});
   return (
     <form action={action} className="space-y-2">
       <input type="hidden" name="id" value={goalId} />
       <GoalActionButton>השהה</GoalActionButton>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }
 
 function ResumeGoalForm({ goalId }: { goalId: string }) {
-  const [state, action] = useActionState(resumeFleetGoalAction, null);
+  const [state, action] = useActionState(resumeFleetGoalAction, {});
   // Empty on purpose. An empty field -> undefined -> the RPC's own default
   // (an hour from now).
   const [wakeLocal, setWakeLocal] = useState('');
@@ -261,9 +262,9 @@ function ResumeGoalForm({ goalId }: { goalId: string }) {
         value={wakeLocal ? new Date(wakeLocal).toISOString() : ''}
       />
       <GoalActionButton>שחרר</GoalActionButton>
-      <FieldError errors={state?.fieldErrors?.nextWakeAt} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.nextWakeAt} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }
@@ -272,7 +273,7 @@ function ResumeGoalForm({ goalId }: { goalId: string }) {
 // reason leaves a row nobody can explain a month from now. Available for any
 // non-terminal status (active AND paused).
 function AbandonGoalForm({ goalId }: { goalId: string }) {
-  const [state, action] = useActionState(abandonFleetGoalAction, null);
+  const [state, action] = useActionState(abandonFleetGoalAction, {});
   const uid = useId();
   return (
     <form action={action} className="space-y-2">
@@ -292,11 +293,11 @@ function AbandonGoalForm({ goalId }: { goalId: string }) {
           maxLength={500}
           placeholder="למה המטרה כבר לא רלוונטית…"
         />
-        <FieldError errors={state?.fieldErrors?.note} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.note} />
       </div>
       <GoalActionButton variant="destructive">סגור</GoalActionButton>
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }

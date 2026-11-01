@@ -68,41 +68,41 @@ describe('login', () => {
     signInWithPassword.mockResolvedValue({
       error: { code: 'email_not_confirmed', message: 'Email not confirmed' },
     });
-    const res = await login(null, fd(CREDS));
-    expect(res?.error).toContain('לא אומת');
-    expect(res?.unconfirmedEmail).toBe(CREDS.email);
+    const res = await login({}, fd(CREDS));
+    expect(res?.data?.error).toContain('לא אומת');
+    expect(res?.data?.unconfirmedEmail).toBe(CREDS.email);
   });
 
   it('invalid_credentials → generic message; never reveals whether the account exists', async () => {
     signInWithPassword.mockResolvedValue({
       error: { code: 'invalid_credentials', message: 'Invalid login credentials' },
     });
-    const res = await login(null, fd(CREDS));
-    expect(res?.error).toBe('אימייל או סיסמה שגויים');
-    expect(res?.unconfirmedEmail).toBeUndefined();
+    const res = await login({}, fd(CREDS));
+    expect(res?.serverError).toBe('אימייל או סיסמה שגויים');
+    expect(res?.data?.unconfirmedEmail).toBeUndefined();
   });
 
   it('an error carrying no code → generic message (never leaks the provider text)', async () => {
     signInWithPassword.mockResolvedValue({ error: { message: 'boom' } });
-    const res = await login(null, fd(CREDS));
-    expect(res?.error).toBe('אימייל או סיסמה שגויים');
+    const res = await login({}, fd(CREDS));
+    expect(res?.serverError).toBe('אימייל או סיסמה שגויים');
   });
 
   it('success → redirect to /app', async () => {
-    await expect(login(null, fd(CREDS))).rejects.toMatchObject({
+    await expect(login({}, fd(CREDS))).rejects.toMatchObject({
       digest: expect.stringContaining('NEXT_REDIRECT;replace;/app;'),
     });
   });
 
   it('success with `next` → resumes that same-origin path, query intact (OAuth consent)', async () => {
     const next = '/oauth/consent?authorization_id=abc-123';
-    await expect(login(null, fd({ ...CREDS, next }))).rejects.toMatchObject({
+    await expect(login({}, fd({ ...CREDS, next }))).rejects.toMatchObject({
       digest: expect.stringContaining(`NEXT_REDIRECT;replace;${next};`),
     });
   });
 
   it('success with the proxy’s `redirectTo` → resumes the protected page', async () => {
-    await expect(login(null, fd({ ...CREDS, redirectTo: '/app/events' }))).rejects.toMatchObject({
+    await expect(login({}, fd({ ...CREDS, redirectTo: '/app/events' }))).rejects.toMatchObject({
       digest: expect.stringContaining('NEXT_REDIRECT;replace;/app/events;'),
     });
   });
@@ -113,79 +113,90 @@ describe('login', () => {
     ['a backslash authority trick', '/\\evil.example'],
     ['a same-origin absolute URL (not a path)', 'https://beta.kalfa.me/app'],
   ])('success with %s as `next` → /app, never an open redirect', async (_label, next) => {
-    await expect(login(null, fd({ ...CREDS, next }))).rejects.toMatchObject({
+    await expect(login({}, fd({ ...CREDS, next }))).rejects.toMatchObject({
       digest: expect.stringContaining('NEXT_REDIRECT;replace;/app;'),
     });
   });
 
   it('invalid input → fieldErrors; signInWithPassword NOT called', async () => {
-    const res = await login(null, fd({ email: 'not-an-email', password: 'x' }));
+    const res = await login({}, fd({ email: 'not-an-email', password: 'x' }));
     expect(signInWithPassword).not.toHaveBeenCalled();
-    expect(res?.fieldErrors).toBeTruthy();
+    expect(res?.validationErrors?.fieldErrors).toBeTruthy();
+  });
+
+  it('empty fields → the schema’s own Hebrew messages, not Zod’s English one for a missing value', async () => {
+    const res = await login({}, fd({ email: '', password: '' }));
+    expect(signInWithPassword).not.toHaveBeenCalled();
+    expect(res).toEqual({
+      validationErrors: {
+        formErrors: [],
+        fieldErrors: { email: ['כתובת אימייל לא תקינה'], password: ['נא להזין סיסמה'] },
+      },
+    });
   });
 });
 
 describe('resendConfirmationEmail', () => {
   it('sends with the /auth/confirm redirect so the email link keeps our host', async () => {
-    const res = await resendConfirmationEmail(null, fd({ email: CREDS.email }));
+    const res = await resendConfirmationEmail({}, fd({ email: CREDS.email }));
     expect(resend).toHaveBeenCalledWith({
       type: 'signup',
       email: CREDS.email,
       options: { emailRedirectTo: 'https://beta.kalfa.me/auth/confirm' },
     });
-    expect(res?.notice).toBeTruthy();
-    expect(res?.error).toBeUndefined();
+    expect(res?.data?.notice).toBeTruthy();
+    expect(res?.serverError).toBeUndefined();
   });
 
   it('a provider failure returns the SAME notice — resend is not enumeration-safe on its own', async () => {
-    const ok = await resendConfirmationEmail(null, fd({ email: CREDS.email }));
+    const ok = await resendConfirmationEmail({}, fd({ email: CREDS.email }));
     resend.mockResolvedValue({ error: { code: 'validation_failed', message: 'User already confirmed' } });
-    const failed = await resendConfirmationEmail(null, fd({ email: CREDS.email }));
-    expect(failed?.notice).toBe(ok?.notice);
-    expect(failed?.error).toBeUndefined();
+    const failed = await resendConfirmationEmail({}, fd({ email: CREDS.email }));
+    expect(failed?.data?.notice).toBe(ok?.data?.notice);
+    expect(failed?.serverError).toBeUndefined();
   });
 
   it('invalid email → fieldErrors; resend NOT called', async () => {
-    const res = await resendConfirmationEmail(null, fd({ email: 'nope' }));
+    const res = await resendConfirmationEmail({}, fd({ email: 'nope' }));
     expect(resend).not.toHaveBeenCalled();
-    expect(res?.fieldErrors?.email?.length).toBeTruthy();
+    expect(res?.validationErrors?.fieldErrors?.email?.length).toBeTruthy();
   });
 });
 
 describe('updatePassword', () => {
   it('validation fails (short password) → fieldErrors; getUser + updateUser NOT called', async () => {
-    const res = await updatePassword(null, fd({ password: 'short', confirm: 'short' }));
+    const res = await updatePassword({}, fd({ password: 'short', confirm: 'short' }));
     expect(getUser).not.toHaveBeenCalled();
     expect(updateUser).not.toHaveBeenCalled();
-    expect(res?.fieldErrors?.password?.length).toBeTruthy();
+    expect(res?.validationErrors?.fieldErrors?.password?.length).toBeTruthy();
   });
 
   it('validation fails (confirm mismatch) → fieldErrors.confirm; updateUser NOT called', async () => {
     const res = await updatePassword(
-      null,
+      {},
       fd({ password: 'aVeryGoodPass1!', confirm: 'different12345' }),
     );
     expect(updateUser).not.toHaveBeenCalled();
-    expect(res?.fieldErrors?.confirm?.[0]).toBe('הסיסמאות אינן תואמות');
+    expect(res?.validationErrors?.fieldErrors?.confirm?.[0]).toBe('הסיסמאות אינן תואמות');
   });
 
   it('no authenticated session → error; updateUser NOT called', async () => {
     getUser.mockResolvedValue({ data: { user: null } });
-    const res = await updatePassword(null, fd(VALID));
+    const res = await updatePassword({}, fd(VALID));
     expect(getUser).toHaveBeenCalled();
     expect(updateUser).not.toHaveBeenCalled();
-    expect(res).toEqual({ error: 'קישור האיפוס אינו תקף או שפג תוקפו. בקשו קישור חדש.' });
+    expect(res).toEqual({ serverError: 'קישור האיפוס אינו תקף או שפג תוקפו. בקשו קישור חדש.' });
   });
 
   it('updateUser returns error → error state (called with the new password only)', async () => {
     updateUser.mockResolvedValue({ error: { message: 'weak' } });
-    const res = await updatePassword(null, fd(VALID));
+    const res = await updatePassword({}, fd(VALID));
     expect(updateUser).toHaveBeenCalledWith({ password: VALID.password });
-    expect(res).toEqual({ error: 'עדכון הסיסמה נכשל. נסו שוב.' });
+    expect(res).toEqual({ serverError: 'עדכון הסיסמה נכשל. נסו שוב.' });
   });
 
   it('success → updateUser then redirect(/app)', async () => {
-    await expect(updatePassword(null, fd(VALID))).rejects.toMatchObject({
+    await expect(updatePassword({}, fd(VALID))).rejects.toMatchObject({
       digest: expect.stringContaining('NEXT_REDIRECT;replace;/app;'),
     });
     expect(updateUser).toHaveBeenCalledWith({ password: VALID.password });
@@ -215,7 +226,7 @@ describe('signup — marketing consent', () => {
     });
   });
 
-  const run = (fields: Record<string, string>) => expect(signup(undefined, null, fd(fields))).rejects.toThrow('NEXT_REDIRECT');
+  const run = (fields: Record<string, string>) => expect(signup(undefined, {}, fd(fields))).rejects.toThrow('NEXT_REDIRECT');
 
   it('ticked → one grant for the new user, socket IP, user agent', async () => {
     await run({ ...FORM, marketing_opt_in: 'on' });
@@ -243,8 +254,8 @@ describe('signup — marketing consent', () => {
 
   it('an address that already has an account → nothing recorded', async () => {
     signUp.mockResolvedValue({ data: { user: { ...NEW_USER, identities: [] }, session: null }, error: null });
-    const res = await signup(undefined, null, fd({ ...FORM, marketing_opt_in: 'on' }));
-    expect(res?.error).toContain('כבר רשומה');
+    const res = await signup(undefined, {}, fd({ ...FORM, marketing_opt_in: 'on' }));
+    expect(res?.serverError).toContain('כבר רשומה');
     expect(recordConsent).not.toHaveBeenCalled();
   });
 
@@ -259,5 +270,40 @@ describe('signup — marketing consent', () => {
     recordConsent.mockRejectedValue(new Error('marketing_consent_write_failed'));
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await run({ ...FORM, marketing_opt_in: 'on' });
+  });
+});
+
+// The sales ref is a BOUND argument, validated by the schema's own `ref` rule. A posted `ref` field is not part of
+// the form schema, so it can never stand in for the bound one.
+describe('signup — the bound sales ref', () => {
+  const FORM = {
+    email: 'dana@example.com',
+    password: 'aVeryGoodPass1!',
+    full_name: 'דנה כהן',
+    phone: '',
+    terms_accepted: 'on',
+  };
+
+  beforeEach(() => {
+    consentEnabled.mockResolvedValue(false);
+    signUp.mockResolvedValue({
+      data: { user: { id: 'new-user', email: FORM.email, identities: [{ id: 'i1' }] }, session: null },
+      error: null,
+    });
+  });
+
+  it('a posted `ref` field is ignored — no attribution travels to signUp', async () => {
+    await expect(
+      signup(undefined, {}, fd({ ...FORM, ref: '11111111-1111-4111-8111-111111111111' })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+    const options = signUp.mock.calls[0][0].options as { data: Record<string, unknown> };
+    expect(options.data).not.toHaveProperty('sales_referral_attempt_id');
+  });
+
+  it('a malformed bound ref never fails the signup: it reads as no attribution and the signup goes ahead', async () => {
+    await expect(signup('not-a-uuid', {}, fd(FORM))).rejects.toThrow('NEXT_REDIRECT');
+    expect(signUp).toHaveBeenCalledTimes(1);
+    const options = signUp.mock.calls[0][0].options as { data: Record<string, unknown> };
+    expect(options.data).not.toHaveProperty('sales_referral_attempt_id');
   });
 });

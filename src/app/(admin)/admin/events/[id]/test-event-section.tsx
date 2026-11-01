@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { FormError, FormNotice } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import { formatIsraelDate } from '@/lib/date';
 import { markTestEventAction, purgeTestEventAction, unmarkTestEventAction } from './actions';
 
@@ -29,9 +30,9 @@ export function TestEventSection({
   canMark: boolean;
   canPurge: boolean;
 }) {
-  const [markState, markAction, markPending] = useActionState(markTestEventAction, null);
-  const [unmarkState, unmarkAction, unmarkPending] = useActionState(unmarkTestEventAction, null);
-  const [purgeState, purgeAction, purgePending] = useActionState(purgeTestEventAction, null);
+  const [markState, markAction, markPending] = useActionState(markTestEventAction, {});
+  const [unmarkState, unmarkAction, unmarkPending] = useActionState(unmarkTestEventAction, {});
+  const [purgeState, purgeAction, purgePending] = useActionState(purgeTestEventAction, {});
   const [confirming, setConfirming] = useState(false);
   const [typedName, setTypedName] = useState('');
 
@@ -53,8 +54,8 @@ export function TestEventSection({
           </Button>
         </form>
       )}
-      <FormError message={markState?.error ?? unmarkState?.error} />
-      <FormNotice message={markState?.notice ?? unmarkState?.notice} />
+      <FormError message={actionErrorMessage(markState) ?? actionErrorMessage(unmarkState)} />
+      <FormNotice message={markState.data?.notice ?? unmarkState.data?.notice} />
 
       {canPurge && marked && (
         <div className="space-y-2 border-t border-border pt-3">
@@ -104,7 +105,7 @@ export function TestEventSection({
               </div>
             </form>
           )}
-          <FormError message={purgeState?.error} />
+          <FormError message={actionErrorMessage(purgeState)} />
         </div>
       )}
     </div>

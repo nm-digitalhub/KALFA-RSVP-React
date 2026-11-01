@@ -286,7 +286,7 @@ describe.skipIf(!RUN)('headcount flow — finding 2 (races) and E3 (partial fail
       provider.onConfig = null;
       const fd = new FormData();
       for (const [k, v] of Object.entries({ status: 'attending', adults: '2', kids: '1' })) fd.set(k, v);
-      expect(await submitRsvpAction(f.rsvpToken, {} as never, fd)).toMatchObject({ notice: expect.any(String) });
+      expect(await submitRsvpAction(f.rsvpToken, {} as never, fd)).toMatchObject({ data: { notice: expect.any(String) } });
       release.resolve();
       await bot;
       expect(await guest(f)).toMatchObject({ confirmed_adults: 2, confirmed_kids: 1, confirmed_headcount: 3 });

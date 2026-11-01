@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
+import { zfd } from 'zod-form-data';
 
 import {
   acknowledgeTemplateCategory,
@@ -16,54 +17,37 @@ import {
   setTemplateRoute,
   setWhatsAppStepActive,
 } from '@/lib/data/admin/whatsapp-templates';
-import type { FormState } from '@/lib/validation/result';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { EVENT_TYPES } from '@/lib/validation/schemas';
 
-const schema = z.object({
+// The edit form: a missing text field counts as blank (''), and `active` is the checkbox (absent when unchecked).
+const updateTemplateSchema = zfd.formData({
   id: z.uuid(),
-  name: z.string().trim().max(200).default(''),
-  language: z.string().trim().max(16).default('he'),
-  body: z.string().trim().max(4000).default(''),
+  name: z.string().trim().max(200).prefault(''),
+  language: z.string().trim().max(16).prefault(''),
+  body: z.string().trim().max(4000).prefault(''),
+  active: z.preprocess((v) => v === 'on', z.boolean()),
 });
 
-export async function updateTemplateAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = schema.safeParse({
-    id: formData.get('id'),
-    name: formData.get('name') ?? '',
-    language: formData.get('language') ?? '',
-    body: formData.get('body') ?? '',
+export const updateTemplateAction = actionClient
+  .inputSchema(updateTemplateSchema)
+  .stateAction(async ({ parsedInput: { id, name, language, body, active } }) => {
+    // Fail-closed: a template can only be activated once it has content (the
+    // Meta-approved WhatsApp template name, or a call script).
+    if (active && !name && !body) {
+      returnUserError('לא ניתן להפעיל תבנית ללא שם תבנית מאושר / תוכן. מלאו תחילה ושמרו.');
+    }
+
+    try {
+      await updateMessageTemplate(id, { name, language, body, active });
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('עדכון התבנית נכשל. נסו שוב.');
+    }
+
+    revalidatePath('/admin/templates');
+    return { notice: active ? 'נשמר — התבנית פעילה' : 'התבנית נשמרה' };
   });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-
-  const active = formData.get('active') === 'on';
-  // Fail-closed: a template can only be activated once it has content (the
-  // Meta-approved WhatsApp template name, or a call script).
-  if (active && !parsed.data.name && !parsed.data.body) {
-    return {
-      error: 'לא ניתן להפעיל תבנית ללא שם תבנית מאושר / תוכן. מלאו תחילה ושמרו.',
-    };
-  }
-
-  try {
-    await updateMessageTemplate(parsed.data.id, {
-      name: parsed.data.name,
-      language: parsed.data.language,
-      body: parsed.data.body,
-      active,
-    });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'עדכון התבנית נכשל. נסו שוב.' };
-  }
-
-  revalidatePath('/admin/templates');
-  return { notice: active ? 'נשמר — התבנית פעילה' : 'התבנית נשמרה' };
-}
 
 // Accept Meta's category for a template that drifted. Not a fix — Meta
 // classifies by message body and the template goes on being billed under Meta's category;
@@ -73,42 +57,41 @@ export async function updateTemplateAction(
 // The category the admin was LOOKING AT is posted alongside the id and the DAL
 // pins the write to it, so a sync landing between page load and click cannot get a
 // different value accepted silently.
-const acknowledgeSchema = z.object({
+const acknowledgeSchema = zfd.formData({
   id: z.uuid(),
-  observed_category: z.string().trim().min(1).max(32),
+  observed_category: z.string().trim().min(1).max(32).prefault(''),
 });
 
-export async function acknowledgeTemplateCategoryAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = acknowledgeSchema.safeParse({
-    id: formData.get('id'),
-    observed_category: formData.get('observed_category') ?? '',
-  });
-  if (!parsed.success) return { error: 'בקשה לא תקינה' };
+// Any request that fails its schema gets this one line, never the schema's own messages.
+const invalidRequest = {
+  handleValidationErrorsShape: async () => ({ formErrors: ['בקשה לא תקינה'], fieldErrors: {} }),
+};
 
-  try {
-    const result = await acknowledgeTemplateCategory(
-      parsed.data.id,
-      parsed.data.observed_category,
-    );
-    if (!result.ok) return { error: result.reason };
-    revalidatePath('/admin/templates');
+export const acknowledgeTemplateCategoryAction = actionClient
+  .inputSchema(acknowledgeSchema, invalidRequest)
+  .stateAction(async ({ parsedInput: { id, observed_category } }) => {
+    let result: Awaited<ReturnType<typeof acknowledgeTemplateCategory>>;
+    try {
+      result = await acknowledgeTemplateCategory(id, observed_category);
+      if (result.ok) revalidatePath('/admin/templates');
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('אישור הקטגוריה נכשל. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.reason);
     return {
       notice: `הקטגוריה ${result.to} אושרה — ההתראה על הפער תיפסק. החיוב והמגבלות של הקטגוריה הזו נשארים בתוקף.`,
     };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'אישור הקטגוריה נכשל. נסו שוב.' };
-  }
-}
+  });
 
 // --- WhatsApp routes and variables ---
 //
 // Called with plain objects, not FormData (the variables form's data comes from
 // JSON Forms). Every input is re-validated here and again in the data layer
-// against the live template; nothing the browser sends is trusted.
+// against the live template; nothing the browser sends is trusted. What the
+// data layer answers ({ ok, warning } / { ok: false, problems }) comes back as
+// the result's `data`; a bad request or a thrown failure as one line
+// (validationErrors.formErrors / serverError).
 
 export type TemplateAdminActionResult =
   | { ok: true; warning?: string }
@@ -121,8 +104,8 @@ function revalidateTemplates(): void {
   revalidatePath('/admin/templates/[templateId]', 'page');
 }
 
-const INVALID: TemplateAdminActionResult = { ok: false, problems: ['בקשה לא תקינה'] };
-const FAILED: TemplateAdminActionResult = { ok: false, problems: ['השמירה נכשלה. נסו שוב.'] };
+// A failure the data layer did not report (it threw) gets one generic line; a bad request gets invalidRequest's.
+const SAVE_FAILED = 'השמירה נכשלה. נסו שוב.';
 
 const messageKey = z.string().trim().min(1).max(64);
 const routeTarget = z.object({
@@ -131,31 +114,31 @@ const routeTarget = z.object({
   withMedia: z.boolean(),
 });
 
-export async function setTemplateRouteAction(input: unknown): Promise<TemplateAdminActionResult> {
-  const parsed = routeTarget.extend({ templateId: z.string().regex(/^\d{1,32}$/) }).safeParse(input);
-  if (!parsed.success) return INVALID;
-  try {
-    const result = await setTemplateRoute(parsed.data);
-    if (result.ok) revalidateTemplates();
-    return result;
-  } catch (err) {
-    unstable_rethrow(err);
-    return FAILED;
-  }
-}
+export const setTemplateRouteAction = actionClient
+  .inputSchema(routeTarget.extend({ templateId: z.string().regex(/^\d{1,32}$/) }), invalidRequest)
+  .action(async ({ parsedInput }) => {
+    try {
+      const result = await setTemplateRoute(parsedInput);
+      if (result.ok) revalidateTemplates();
+      return result;
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(SAVE_FAILED);
+    }
+  });
 
-export async function removeTemplateRouteAction(input: unknown): Promise<TemplateAdminActionResult> {
-  const parsed = routeTarget.safeParse(input);
-  if (!parsed.success) return INVALID;
-  try {
-    const result = await removeTemplateRoute(parsed.data);
-    if (result.ok) revalidateTemplates();
-    return result;
-  } catch (err) {
-    unstable_rethrow(err);
-    return FAILED;
-  }
-}
+export const removeTemplateRouteAction = actionClient
+  .inputSchema(routeTarget, invalidRequest)
+  .action(async ({ parsedInput }) => {
+    try {
+      const result = await removeTemplateRoute(parsedInput);
+      if (result.ok) revalidateTemplates();
+      return result;
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(SAVE_FAILED);
+    }
+  });
 
 const parametersSchema = z.object({
   templateId: z.string().regex(/^\d{1,32}$/),
@@ -172,53 +155,54 @@ const parametersSchema = z.object({
     .max(100),
 });
 
-export async function saveTemplateParametersAction(input: unknown): Promise<TemplateAdminActionResult> {
-  const parsed = parametersSchema.safeParse(input);
-  if (!parsed.success) return INVALID;
-  try {
-    const result = await saveTemplateParameters(parsed.data);
-    if (result.ok) revalidateTemplates();
-    return result;
-  } catch (err) {
-    unstable_rethrow(err);
-    return FAILED;
-  }
-}
+export const saveTemplateParametersAction = actionClient
+  .inputSchema(parametersSchema, invalidRequest)
+  .action(async ({ parsedInput }) => {
+    try {
+      const result = await saveTemplateParameters(parsedInput);
+      if (result.ok) revalidateTemplates();
+      return result;
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(SAVE_FAILED);
+    }
+  });
 
-export async function requestTemplateSyncAction(): Promise<TemplateAdminActionResult> {
+export const requestTemplateSyncAction = actionClient.action(async (): Promise<TemplateAdminActionResult> => {
   try {
     await requestTemplateSync();
     return { ok: true };
   } catch (err) {
     unstable_rethrow(err);
-    return { ok: false, problems: ['לא הצלחנו לבקש סנכרון. נסו שוב.'] };
+    returnUserError('לא הצלחנו לבקש סנכרון. נסו שוב.');
   }
-}
+});
 
-export async function setStepActiveAction(input: unknown): Promise<TemplateAdminActionResult> {
-  const parsed = z.object({ messageKey, active: z.boolean() }).safeParse(input);
-  if (!parsed.success) return INVALID;
-  try {
-    const result = await setWhatsAppStepActive(parsed.data);
-    if (result.ok) revalidateTemplates();
-    return result;
-  } catch (err) {
-    unstable_rethrow(err);
-    return FAILED;
-  }
-}
+export const setStepActiveAction = actionClient
+  .inputSchema(z.object({ messageKey, active: z.boolean() }), invalidRequest)
+  .action(async ({ parsedInput }) => {
+    try {
+      const result = await setWhatsAppStepActive(parsedInput);
+      if (result.ok) revalidateTemplates();
+      return result;
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(SAVE_FAILED);
+    }
+  });
 
-export async function acknowledgeWhatsAppCategoryAction(input: unknown): Promise<TemplateAdminActionResult> {
-  const parsed = z
-    .object({ templateId: z.string().regex(/^\d{1,32}$/), observedCategory: z.string().trim().min(1).max(32) })
-    .safeParse(input);
-  if (!parsed.success) return INVALID;
-  try {
-    const result = await acknowledgeWhatsAppTemplateCategory(parsed.data);
-    if (result.ok) revalidateTemplates();
-    return result;
-  } catch (err) {
-    unstable_rethrow(err);
-    return FAILED;
-  }
-}
+export const acknowledgeWhatsAppCategoryAction = actionClient
+  .inputSchema(
+    z.object({ templateId: z.string().regex(/^\d{1,32}$/), observedCategory: z.string().trim().min(1).max(32) }),
+    invalidRequest,
+  )
+  .action(async ({ parsedInput }) => {
+    try {
+      const result = await acknowledgeWhatsAppTemplateCategory(parsedInput);
+      if (result.ok) revalidateTemplates();
+      return result;
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError(SAVE_FAILED);
+    }
+  });

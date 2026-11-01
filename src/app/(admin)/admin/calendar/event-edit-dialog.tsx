@@ -32,6 +32,7 @@ import {
   callAnalysisSuccessfulLabel,
   salesDispatchStatusLabel,
 } from '@/lib/data/admin/labels';
+import { actionErrorMessage } from '@/lib/action-result';
 import { formatPhoneForDisplay } from '@/lib/callbacks/calendar-item';
 import { categoryColorHex } from '@/lib/exchange-ews/category-colors';
 import type { ExchangeCategory } from '@/lib/exchange-ews/types';
@@ -441,23 +442,24 @@ export function EventEditDialog({
       void fetchCalendarEventAction({ connectionId, appointmentId })
         .then((res) => {
           if (cancelled) return;
-          if (!res.ok) {
-            setError(res.message);
+          const loaded = res.data?.event;
+          if (!loaded) {
+            setError(actionErrorMessage(res) ?? 'טעינת פרטי האירוע נכשלה.');
             return;
           }
-          setDetail(res.event);
+          setDetail(loaded);
           setForm({
-            subject: res.event.title,
-            startLocal: toLocalInput(res.event.startIso),
-            endLocal: toLocalInput(res.event.endIso),
-            allDay: res.event.allDay,
-            location: res.event.location,
-            body: res.event.body,
-            reminderMinutes: res.event.reminderMinutes ?? 0,
-            showAs: res.event.showAs,
-            isPrivate: res.event.sensitivity === 'private',
-            category: res.event.category,
-            attendees: res.event.attendees,
+            subject: loaded.title,
+            startLocal: toLocalInput(loaded.startIso),
+            endLocal: toLocalInput(loaded.endIso),
+            allDay: loaded.allDay,
+            location: loaded.location,
+            body: loaded.body,
+            reminderMinutes: loaded.reminderMinutes ?? 0,
+            showAs: loaded.showAs,
+            isPrivate: loaded.sensitivity === 'private',
+            category: loaded.category,
+            attendees: loaded.attendees,
             // Recurrence is not edited here — series items are read-only.
             recurrence: null,
           });
@@ -507,11 +509,12 @@ export function EventEditDialog({
         category: form.category,
         attendees: form.attendees,
       });
-      if (res.ok) {
+      const failure = actionErrorMessage(res);
+      if (failure === undefined) {
         onSaved();
         onClose();
       } else {
-        setError(res.message);
+        setError(failure);
       }
     } catch {
       setError('שמירת האירוע נכשלה. נסו שוב.');
@@ -526,11 +529,12 @@ export function EventEditDialog({
     setError(null);
     try {
       const res = await deleteCalendarEventAction({ connectionId, appointmentId });
-      if (res.ok) {
+      const failure = actionErrorMessage(res);
+      if (failure === undefined) {
         onSaved();
         onClose();
       } else {
-        setError(res.message);
+        setError(failure);
       }
     } catch {
       setError('מחיקת האירוע נכשלה. נסו שוב.');

@@ -24,11 +24,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { actionFormError } from '@/lib/action-result';
 
-import {
-  submitIntakeAction,
-  type IntakeFormState,
-} from './actions';
+import { submitIntakeAction } from './actions';
 
 export function IntakeForm({
   token,
@@ -39,13 +37,9 @@ export function IntakeForm({
 }) {
   const action = submitIntakeAction.bind(null, token);
 
-  const [state, formAction] =
-    useActionState<IntakeFormState, FormData>(
-      action,
-      null,
-    );
+  const [state, formAction] = useActionState(action, {});
 
-  if (state?.notice) {
+  if (state.data?.notice) {
     return (
       <div
         role="status"
@@ -59,7 +53,7 @@ export function IntakeForm({
         </div>
 
         <p className="mt-5 max-w-[320px] text-[17px] font-semibold leading-7 text-[#181818]">
-          {state.notice}
+          {state.data.notice}
         </p>
 
         <div className="mt-7 text-sm text-[#777]">
@@ -118,7 +112,7 @@ export function IntakeForm({
         </div>
 
         <FieldError
-          errors={state?.fieldErrors?.full_name}
+          errors={state.validationErrors?.fieldErrors?.full_name}
         />
       </div>
 
@@ -231,11 +225,11 @@ export function IntakeForm({
         </div>
 
         <FieldError
-          errors={state?.fieldErrors?.note}
+          errors={state.validationErrors?.fieldErrors?.note}
         />
       </div>
 
-      <FormError message={state?.error} />
+      <FormError message={actionFormError(state)} />
 
       <SubmitButton
         size="lg"

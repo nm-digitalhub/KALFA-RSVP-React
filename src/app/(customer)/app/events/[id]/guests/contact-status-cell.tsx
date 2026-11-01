@@ -37,7 +37,9 @@ export function ContactStatusCell({
     setFailed(false);
     startTransition(async () => {
       try {
-        await setContactStatusAction(eventId, guestId, next);
+        // A failure comes back as the result, not a throw.
+        const result = await setContactStatusAction({ eventId, guestId, value: next });
+        if (result.serverError || result.validationErrors) setFailed(true);
       } catch (err) {
         // A stale-deployment action id reloads the tab (shared recovery);
         // anything else keeps the inline "נכשל" indicator.

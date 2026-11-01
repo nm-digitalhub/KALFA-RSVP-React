@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The actions are built from src/lib/safe-action.ts, which is `server-only`.
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
@@ -45,7 +47,7 @@ describe('updateCookieConsentEnabledAction', () => {
     vi.mocked(updateCookieConsentEnabled).mockResolvedValue({ changed: true, revisionBump: 6 });
     const result = await updateCookieConsentEnabledAction({}, fd({ cookie_consent_enabled: 'on' }));
     expect(updateCookieConsentEnabled).toHaveBeenCalledWith(true);
-    expect(result?.notice).toContain('הופעל');
+    expect(result?.data?.notice).toContain('הופעל');
     expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
     expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({ level: 'info', category: 'security' }),
@@ -56,14 +58,14 @@ describe('updateCookieConsentEnabledAction', () => {
     vi.mocked(updateCookieConsentEnabled).mockResolvedValue({ changed: true, revisionBump: 1 });
     const result = await updateCookieConsentEnabledAction({}, fd({}));
     expect(updateCookieConsentEnabled).toHaveBeenCalledWith(false);
-    expect(result?.notice).toContain('כובה');
+    expect(result?.data?.notice).toContain('כובה');
     expect(sendSlackAlert).toHaveBeenCalledWith(expect.objectContaining({ level: 'warn' }));
   });
 
   it('no-op (owner live-test finding, 27.7): submitting the value it already has skips the audit/alert and shows a distinct notice', async () => {
     vi.mocked(updateCookieConsentEnabled).mockResolvedValue({ changed: false, revisionBump: 5 });
     const result = await updateCookieConsentEnabledAction({}, fd({ cookie_consent_enabled: 'on' }));
-    expect(result?.notice).toContain('לא בוצע שינוי');
+    expect(result?.data?.notice).toContain('לא בוצע שינוי');
     expect(sendSlackAlert).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
   });
@@ -79,7 +81,7 @@ describe('updateCookieConsentEnabledAction', () => {
   it('returns a safe Hebrew error and does not audit/invalidate on a real failure', async () => {
     vi.mocked(updateCookieConsentEnabled).mockRejectedValue(new Error('db down'));
     const result = await updateCookieConsentEnabledAction({}, fd({ cookie_consent_enabled: 'on' }));
-    expect(result?.error).toBeTruthy();
+    expect(result?.serverError).toBe('עדכון מתג ההסכמה נכשל. נסו שוב.');
     expect(revalidatePath).not.toHaveBeenCalled();
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
@@ -118,7 +120,7 @@ describe('updateCookieConsentAnalyticsEnabledAction / updateCookieConsentMarketi
       {},
       fd({ cookie_consent_analytics_enabled: 'on' }),
     );
-    expect(result?.notice).toContain('לא בוצע שינוי');
+    expect(result?.data?.notice).toContain('לא בוצע שינוי');
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 
@@ -128,7 +130,7 @@ describe('updateCookieConsentAnalyticsEnabledAction / updateCookieConsentMarketi
       revisionBump: 2,
     });
     const result = await updateCookieConsentMarketingEnabledAction({}, fd({}));
-    expect(result?.notice).toContain('לא בוצע שינוי');
+    expect(result?.data?.notice).toContain('לא בוצע שינוי');
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });
@@ -137,14 +139,14 @@ describe('bumpCookieConsentRevisionAction', () => {
   it('bumps, invalidates everywhere, and reports the new revision number', async () => {
     vi.mocked(bumpCookieConsentRevision).mockResolvedValue(9);
     const result = await bumpCookieConsentRevisionAction({}, fd({}));
-    expect(result?.notice).toContain('9');
+    expect(result?.data?.notice).toContain('9');
     expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
   });
 
   it('returns a safe error on failure without invalidating', async () => {
     vi.mocked(bumpCookieConsentRevision).mockRejectedValue(new Error('db down'));
     const result = await bumpCookieConsentRevisionAction({}, fd({}));
-    expect(result?.error).toBeTruthy();
+    expect(result?.serverError).toBe('עדכון מספר הגרסה נכשל. נסו שוב.');
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

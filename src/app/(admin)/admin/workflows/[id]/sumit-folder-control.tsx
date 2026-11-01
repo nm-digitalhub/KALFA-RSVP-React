@@ -13,6 +13,7 @@ import {
   type JsonFormsRendererExtension,
 } from '@workflowbuilder/sdk';
 
+import { actionErrorMessage } from '@/lib/action-result';
 import { SUMIT_FOLDER_FORMAT } from '@/lib/workflow/catalogue/ui-formats';
 
 import { loadSumitFoldersAction, loadSumitViewsAction } from '../actions';
@@ -91,7 +92,9 @@ function SumitFolderControl({ data, handleChange, path, enabled, readonly, uisch
   const previousFolder = useRef<string | null>(null);
   useEffect(() => {
     startTransition(async () => {
-      const res = await loadSumitFoldersAction();
+      const { data: res, ...failure } = await loadSumitFoldersAction();
+      // A failure (not SUMIT's own refusal) arrives as the result's error; it still ends in the error boundary.
+      if (!res) throw new Error(actionErrorMessage(failure));
       if (res.ok) setFolders(res.items);
       else setError(res.message);
     });
@@ -102,7 +105,8 @@ function SumitFolderControl({ data, handleChange, path, enabled, readonly, uisch
     if (changed) handleChange(viewPath, '');
     if (!folderId) return;
     startTransition(async () => {
-      const res = await loadSumitViewsAction(folderId);
+      const { data: res, ...failure } = await loadSumitViewsAction(folderId);
+      if (!res) throw new Error(actionErrorMessage(failure));
       if (res.ok) setViewsFor({ folderId, items: res.items });
       else setError(res.message);
     });

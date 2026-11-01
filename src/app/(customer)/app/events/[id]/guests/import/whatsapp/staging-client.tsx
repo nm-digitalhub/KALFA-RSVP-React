@@ -15,14 +15,17 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import { actionErrorMessage } from '@/lib/action-result';
 import type {
   ImportMatch,
   MergeFieldDiff,
   MergeFieldKey,
 } from '@/lib/data/guests';
-import type { FormState } from '@/lib/validation/result';
 
-type BoundAction = (prev: FormState, formData: FormData) => Promise<FormState>;
+import type { confirmWhatsappImportAction, discardWhatsappImportAction } from './actions';
+
+type ConfirmResult = Awaited<ReturnType<typeof confirmWhatsappImportAction>>;
+type DiscardResult = Awaited<ReturnType<typeof discardWhatsappImportAction>>;
 
 const FIELD_LABELS: Record<MergeFieldKey, string> = {
   full_name: 'שם',
@@ -194,21 +197,26 @@ export function StagingActions({
   matches = [],
   listLabel,
 }: {
-  confirm: BoundAction;
-  discard: BoundAction;
+  confirm: (prev: ConfirmResult, formData: FormData) => Promise<ConfirmResult>;
+  discard: (prev: DiscardResult, formData: FormData) => Promise<DiscardResult>;
   matches?: ImportMatch[];
   // The staged list's visible heading (file name / shared contacts). Several
   // lists can be pending at once, so it goes into the buttons' accessible names.
   listLabel?: string;
 }) {
-  const [confirmState, confirmAction] = useActionState(confirm, null);
-  const [discardState, discardAction] = useActionState(discard, null);
-  const state = confirmState ?? discardState;
+  const [confirmState, confirmAction] = useActionState(confirm, {});
+  const [discardState, discardAction] = useActionState(discard, {});
+  // Both start empty ({}). As before, once the confirm form has answered, its answer is the one shown.
+  const confirmAnswered =
+    confirmState.data !== undefined ||
+    confirmState.serverError !== undefined ||
+    confirmState.validationErrors !== undefined;
+  const state = confirmAnswered ? confirmState : discardState;
 
   return (
     <div className="space-y-2">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
       <div className="flex flex-wrap items-start gap-2">
         <form action={confirmAction} className="flex-1 space-y-3">
           {matches.length > 0 ? (

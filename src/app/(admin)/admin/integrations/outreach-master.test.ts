@@ -68,12 +68,12 @@ describe('updateOutreachMasterSwitchAction — fail-closed enable guard', () => 
     );
 
     const result = await updateOutreachMasterSwitchAction(
-      null,
+      {},
       fd({ outreach_enabled: 'on' }),
     );
 
     expect(result).toEqual({
-      error:
+      serverError:
         'לא ניתן להפעיל פנייה ללא ערוץ מוגדר אחד לפחות. הגדירו ושמרו ערוץ תחילה.',
     });
     expect(setOutreachEnabled).not.toHaveBeenCalled();
@@ -86,21 +86,21 @@ describe('updateOutreachMasterSwitchAction — fail-closed enable guard', () => 
     vi.mocked(setOutreachEnabled).mockResolvedValue();
 
     const result = await updateOutreachMasterSwitchAction(
-      null,
+      {},
       fd({ outreach_enabled: 'on' }),
     );
 
     expect(setOutreachEnabled).toHaveBeenCalledWith(true);
-    expect(result).toEqual({ notice: 'פנייה לאורחים מופעלת' });
+    expect(result).toEqual({ data: { notice: 'פנייה לאורחים מופעלת' } });
   });
 
   it('always allows disabling — no readiness check', async () => {
     vi.mocked(setOutreachEnabled).mockResolvedValue();
 
-    const result = await updateOutreachMasterSwitchAction(null, fd({}));
+    const result = await updateOutreachMasterSwitchAction({}, fd({}));
 
     expect(getOutreachMasterState).not.toHaveBeenCalled();
     expect(setOutreachEnabled).toHaveBeenCalledWith(false);
-    expect(result).toEqual({ notice: 'פנייה לאורחים כבויה' });
+    expect(result).toEqual({ data: { notice: 'פנייה לאורחים כבויה' } });
   });
 });

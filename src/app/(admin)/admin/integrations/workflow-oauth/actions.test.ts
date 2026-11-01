@@ -15,7 +15,7 @@ describe('saveMicrosoftWorkflowOAuthProviderAction', () => {
     submitted.set('clientSecret', 'secret-1');
     submitted.set('enabled', 'on');
 
-    await saveMicrosoftWorkflowOAuthProviderAction(null, submitted);
+    await saveMicrosoftWorkflowOAuthProviderAction({}, submitted);
 
     const forwarded = saveMock.mock.calls[0][1] as FormData;
     expect(Object.fromEntries(forwarded.entries())).toEqual({

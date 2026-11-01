@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import {
   connectViaEmbeddedSignup,
   type EsConnectResult,
@@ -18,16 +19,20 @@ const schema = z.object({
 // Action is reachable without rendering the page that submits to it. Called
 // with a plain object rather than a form, because the launcher fires it from
 // the FB.login callback within the code's 30-second life.
-export async function connectEmbeddedSignupAction(input: unknown): Promise<EsConnectResult> {
-  const parsed = schema.safeParse(input);
-  if (!parsed.success) return { ok: false, message: 'נתוני החיבור אינם תקינים' };
-
-  try {
-    const result = await connectViaEmbeddedSignup(parsed.data);
-    revalidatePath('/admin/integrations/meta-whatsapp/connect');
+export const connectEmbeddedSignupAction = actionClient
+  .inputSchema(schema, {
+    // Whatever is wrong with the input, the admin gets one sentence.
+    handleValidationErrorsShape: async () => ({ formErrors: ['נתוני החיבור אינם תקינים'], fieldErrors: {} }),
+  })
+  .action(async ({ parsedInput }) => {
+    let result: EsConnectResult;
+    try {
+      result = await connectViaEmbeddedSignup(parsedInput);
+      revalidatePath('/admin/integrations/meta-whatsapp/connect');
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('החיבור נכשל. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.message);
     return result;
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, message: 'החיבור נכשל. נסו שוב.' };
-  }
-}
+  });

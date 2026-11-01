@@ -1,17 +1,14 @@
 'use server';
 
-import { unstable_rethrow } from 'next/navigation';
-
 import {
   findEventsForSupport,
   getEventForSupportView,
   listGuestsForSupportView,
-  type SupportEventLookupResult,
   type SupportEventView,
   type SupportGuestView,
 } from '@/lib/data/admin/support';
+import { actionClient } from '@/lib/safe-action';
 import { supportFindSchema, supportViewSchema } from '@/lib/validation/admin';
-import type { ActionResult } from '@/lib/validation/result';
 
 // Server actions backing the /admin/support READ-ONLY customer-support surface.
 // Both actions re-gate via the data layer (requirePlatformPermission —
@@ -19,56 +16,31 @@ import type { ActionResult } from '@/lib/validation/result';
 // calls .update()/.insert()/.delete() on a customer table —
 // findSupportEventsAction resolves candidates and viewSupportEventAction returns
 // the event dossier; both are reason-required and audited in the data layer.
+// A failure is the action client's: the data layer's Hebrew message reaches the
+// screen, anything else becomes the generic one.
 
-function safeMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
-}
-
-export async function findSupportEventsAction(input: {
-  event_id?: string;
-  owner_phone?: string;
-  owner_email?: string;
-  reason?: string;
-}): Promise<ActionResult<SupportEventLookupResult[]>> {
-  const parsed = supportFindSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'קלט לא תקין' };
-  }
-  try {
-    const results = await findEventsForSupport(
+export const findSupportEventsAction = actionClient
+  .inputSchema(supportFindSchema)
+  .action(async ({ parsedInput }) =>
+    findEventsForSupport(
       {
-        eventId: parsed.data.event_id || undefined,
-        ownerPhone: parsed.data.owner_phone || undefined,
-        ownerEmail: parsed.data.owner_email || undefined,
+        eventId: parsedInput.event_id || undefined,
+        ownerPhone: parsedInput.owner_phone || undefined,
+        ownerEmail: parsedInput.owner_email || undefined,
       },
-      parsed.data.reason,
-    );
-    return { ok: true, data: results };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, error: safeMessage(err, 'החיפוש נכשל') };
-  }
-}
+      parsedInput.reason,
+    ),
+  );
 
 export interface SupportEventDossier {
   event: SupportEventView;
   guests: SupportGuestView[];
 }
 
-export async function viewSupportEventAction(input: {
-  event_id: string;
-  reason: string;
-}): Promise<ActionResult<SupportEventDossier>> {
-  const parsed = supportViewSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'קלט לא תקין' };
-  }
-  try {
-    const event = await getEventForSupportView(parsed.data.event_id, parsed.data.reason);
-    const guests = await listGuestsForSupportView(parsed.data.event_id, parsed.data.reason);
-    return { ok: true, data: { event, guests } };
-  } catch (err) {
-    unstable_rethrow(err);
-    return { ok: false, error: safeMessage(err, 'הצפייה נכשלה') };
-  }
-}
+export const viewSupportEventAction = actionClient
+  .inputSchema(supportViewSchema)
+  .action(async ({ parsedInput: { event_id, reason } }): Promise<SupportEventDossier> => {
+    const event = await getEventForSupportView(event_id, reason);
+    const guests = await listGuestsForSupportView(event_id, reason);
+    return { event, guests };
+  });

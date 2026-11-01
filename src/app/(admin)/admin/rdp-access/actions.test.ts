@@ -27,6 +27,7 @@ const notifyOwnersOfRdpRequest = vi.fn();
 vi.mock('@/lib/rdp-access/notify-request', () => ({ notifyOwnersOfRdpRequest: (...a: unknown[]) => notifyOwnersOfRdpRequest(...a) }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: () => ({ admin: true }) }));
 
+import { actionErrorMessage } from '@/lib/action-result';
 import { __resetRateLimitStateForTests } from '@/lib/security/rate-limit';
 
 import { cancelRdpRequestAction, endRdpGrantAction, requestRdpAccessAction } from './actions';
@@ -52,10 +53,13 @@ beforeEach(() => {
 
 describe('every action gates on the permission first', () => {
   it('runs nothing else when the gate throws', async () => {
-    requirePlatformPermission.mockRejectedValue(new Error('NEXT_REDIRECT'));
-    await expect(requestRdpAccessAction(null, form(VALID))).rejects.toThrow('NEXT_REDIRECT');
-    await expect(cancelRdpRequestAction(null, form({ requestId: REQUEST }))).rejects.toThrow('NEXT_REDIRECT');
-    await expect(endRdpGrantAction(null, form({}))).rejects.toThrow('NEXT_REDIRECT');
+    // What redirect('/access-denied') throws: Next's digest is what marks it as a redirect to let through.
+    requirePlatformPermission.mockRejectedValue(
+      Object.assign(new Error('NEXT_REDIRECT'), { digest: 'NEXT_REDIRECT;replace;/access-denied;307;' }),
+    );
+    await expect(requestRdpAccessAction({}, form(VALID))).rejects.toThrow('NEXT_REDIRECT');
+    await expect(cancelRdpRequestAction({}, form({ requestId: REQUEST }))).rejects.toThrow('NEXT_REDIRECT');
+    await expect(endRdpGrantAction({}, form({}))).rejects.toThrow('NEXT_REDIRECT');
     expect(requirePlatformPermission).toHaveBeenCalledWith('rdp.request');
     for (const fn of Object.values(data)) expect(fn).not.toHaveBeenCalled();
   });
@@ -64,8 +68,8 @@ describe('every action gates on the permission first', () => {
 describe('requestRdpAccessAction', () => {
   it('sends the validated request with the real client address, then tells the owners after the response', async () => {
     data.submitRdpAccessRequest.mockResolvedValue({ outcome: 'created', requestId: REQUEST, expiresAt: 'x' });
-    const state = await requestRdpAccessAction(null, form(VALID));
-    expect(state).toEqual({ notice: 'הבקשה נשלחה לאישור' });
+    const state = await requestRdpAccessAction({}, form(VALID));
+    expect(state).toEqual({ data: { notice: 'הבקשה נשלחה לאישור' } });
     expect(data.submitRdpAccessRequest).toHaveBeenCalledWith({ reason: 'החלפת מפתח בשרת', minutes: 60 }, '203.0.113.7');
     expect(revalidatePath).toHaveBeenCalledWith('/admin/rdp-access');
 
@@ -79,24 +83,24 @@ describe('requestRdpAccessAction', () => {
     data.submitRdpAccessRequest.mockResolvedValue({ outcome: 'created', requestId: REQUEST, expiresAt: 'x' });
     notifyOwnersOfRdpRequest.mockRejectedValue(new Error('slack exploded: token=xoxb-secret'));
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    await expect(requestRdpAccessAction(null, form(VALID))).resolves.toEqual({ notice: 'הבקשה נשלחה לאישור' });
+    await expect(requestRdpAccessAction({}, form(VALID))).resolves.toEqual({ data: { notice: 'הבקשה נשלחה לאישור' } });
     await expect(afterCallbacks[0]!()).resolves.toBeUndefined();
     expect(JSON.stringify(error.mock.calls)).not.toContain('xoxb-secret');
   });
 
   it('reports field errors from Zod and never reaches the data layer', async () => {
-    const short = await requestRdpAccessAction(null, form({ reason: 'קצר', minutes: '60' }));
-    expect(short?.fieldErrors?.reason?.[0]).toContain('קצרה מדי');
-    const badMinutes = await requestRdpAccessAction(null, form({ reason: 'החלפת מפתח בשרת', minutes: '45' }));
-    expect(badMinutes?.fieldErrors?.minutes?.[0]).toBe('יש לבחור משך גישה מהרשימה');
-    const missing = await requestRdpAccessAction(null, new FormData());
-    expect(missing?.fieldErrors).toBeDefined();
+    const short = await requestRdpAccessAction({}, form({ reason: 'קצר', minutes: '60' }));
+    expect(short.validationErrors?.fieldErrors?.reason?.[0]).toContain('קצרה מדי');
+    const badMinutes = await requestRdpAccessAction({}, form({ reason: 'החלפת מפתח בשרת', minutes: '45' }));
+    expect(badMinutes.validationErrors?.fieldErrors?.minutes?.[0]).toBe('יש לבחור משך גישה מהרשימה');
+    const missing = await requestRdpAccessAction({}, new FormData());
+    expect(missing.validationErrors?.fieldErrors).toBeDefined();
     expect(data.submitRdpAccessRequest).not.toHaveBeenCalled();
   });
 
   it('never reads an identity from the form: only the reason and the minutes', async () => {
     data.submitRdpAccessRequest.mockResolvedValue({ outcome: 'created', requestId: REQUEST, expiresAt: 'x' });
-    await requestRdpAccessAction(null, form({ ...VALID, userId: 'attacker', requesterId: 'attacker', ip: '1.1.1.1' }));
+    await requestRdpAccessAction({}, form({ ...VALID, userId: 'attacker', requesterId: 'attacker', ip: '1.1.1.1' }));
     expect(data.submitRdpAccessRequest).toHaveBeenCalledWith({ reason: 'החלפת מפתח בשרת', minutes: 60 }, '203.0.113.7');
   });
 
@@ -106,9 +110,9 @@ describe('requestRdpAccessAction', () => {
       __resetRateLimitStateForTests();
       revalidatePath.mockClear();
       data.submitRdpAccessRequest.mockResolvedValueOnce({ outcome, requestId: null, expiresAt: null });
-      const state = await requestRdpAccessAction(null, form(VALID));
-      expect(state?.error, outcome).toMatch(/\S/);
-      expect(state?.notice).toBeUndefined();
+      const state = await requestRdpAccessAction({}, form(VALID));
+      expect(state.serverError, outcome).toMatch(/\S/);
+      expect(state.data?.notice).toBeUndefined();
       expect(revalidatePath).toHaveBeenCalledWith('/admin/rdp-access');
     }
     expect(afterCallbacks).toHaveLength(0);
@@ -116,40 +120,46 @@ describe('requestRdpAccessAction', () => {
 
   it('treats "created" without an id as a failure instead of a success', async () => {
     data.submitRdpAccessRequest.mockResolvedValue({ outcome: 'created', requestId: null, expiresAt: null });
-    expect((await requestRdpAccessAction(null, form(VALID)))?.error).toMatch(/\S/);
+    expect((await requestRdpAccessAction({}, form(VALID))).serverError).toMatch(/\S/);
     expect(afterCallbacks).toHaveLength(0);
   });
 
   it('turns a data-layer failure into a generic line without its message', async () => {
     data.submitRdpAccessRequest.mockRejectedValue(new Error('relation rdp_access_requests: password=hunter2'));
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const state = await requestRdpAccessAction(null, form(VALID));
-    expect(state).toEqual({ error: 'הפעולה לא הושלמה. נסו שוב.' });
+    const state = await requestRdpAccessAction({}, form(VALID));
+    expect(state).toEqual({ serverError: 'הפעולה לא הושלמה. נסו שוב.' });
     expect(JSON.stringify(error.mock.calls)).not.toContain('hunter2');
   });
 
   it('limits one user to five attempts a minute before the data layer is reached', async () => {
     data.submitRdpAccessRequest.mockResolvedValue({ outcome: 'already_pending', requestId: null, expiresAt: null });
-    for (let i = 0; i < 5; i += 1) await requestRdpAccessAction(null, form(VALID));
-    expect((await requestRdpAccessAction(null, form(VALID)))?.error).toBe('ניסיתם הרבה פעמים. נסו שוב בעוד דקה.');
+    for (let i = 0; i < 5; i += 1) await requestRdpAccessAction({}, form(VALID));
+    expect((await requestRdpAccessAction({}, form(VALID))).serverError).toBe('ניסיתם הרבה פעמים. נסו שוב בעוד דקה.');
     expect(data.submitRdpAccessRequest).toHaveBeenCalledTimes(5);
+  });
+
+  it('counts an invalid form against the limit too: the limiter runs before the form is read', async () => {
+    for (let i = 0; i < 5; i += 1) await requestRdpAccessAction({}, form({ reason: 'קצר', minutes: '60' }));
+    expect((await requestRdpAccessAction({}, form(VALID))).serverError).toBe('ניסיתם הרבה פעמים. נסו שוב בעוד דקה.');
+    expect(data.submitRdpAccessRequest).not.toHaveBeenCalled();
   });
 });
 
 describe('cancelRdpRequestAction', () => {
   it('cancels the named request and refreshes', async () => {
     data.cancelMyRdpRequest.mockResolvedValue({ outcome: 'cancelled' });
-    expect(await cancelRdpRequestAction(null, form({ requestId: REQUEST }))).toEqual({ notice: 'הבקשה בוטלה' });
+    expect(await cancelRdpRequestAction({}, form({ requestId: REQUEST }))).toEqual({ data: { notice: 'הבקשה בוטלה' } });
     expect(data.cancelMyRdpRequest).toHaveBeenCalledWith(REQUEST);
     expect(revalidatePath).toHaveBeenCalledWith('/admin/rdp-access');
   });
 
   it('refuses a malformed id without calling the data layer, and reports a request that is no longer pending', async () => {
-    expect((await cancelRdpRequestAction(null, form({ requestId: 'not-a-uuid' })))?.error).toMatch(/\S/);
+    expect(actionErrorMessage(await cancelRdpRequestAction({}, form({ requestId: 'not-a-uuid' })))).toMatch(/\S/);
     expect(data.cancelMyRdpRequest).not.toHaveBeenCalled();
 
     data.cancelMyRdpRequest.mockResolvedValue({ outcome: 'not_found_or_not_pending' });
-    expect(await cancelRdpRequestAction(null, form({ requestId: REQUEST }))).toEqual({ error: 'הבקשה כבר אינה ממתינה. הדף התעדכן.' });
+    expect(await cancelRdpRequestAction({}, form({ requestId: REQUEST }))).toEqual({ serverError: 'הבקשה כבר אינה ממתינה. הדף התעדכן.' });
     expect(revalidatePath).toHaveBeenCalled();
   });
 });
@@ -157,12 +167,12 @@ describe('cancelRdpRequestAction', () => {
 describe('endRdpGrantAction', () => {
   it('ends the caller\'s own grant, taking no identifier from the form', async () => {
     data.endMyRdpGrant.mockResolvedValue({ outcome: 'ended', grantId: 'g' });
-    expect(await endRdpGrantAction(null, form({ grantId: 'someone-elses' }))).toEqual({ notice: 'הגישה הסתיימה' });
+    expect(await endRdpGrantAction({}, form({ grantId: 'someone-elses' }))).toEqual({ data: { notice: 'הגישה הסתיימה' } });
     expect(data.endMyRdpGrant).toHaveBeenCalledWith();
   });
 
   it('reports that there was nothing to end', async () => {
     data.endMyRdpGrant.mockResolvedValue({ outcome: 'no_active_grant', grantId: null });
-    expect(await endRdpGrantAction(null, form({}))).toEqual({ error: 'אין כרגע גישה פעילה. הדף התעדכן.' });
+    expect(await endRdpGrantAction({}, form({}))).toEqual({ serverError: 'אין כרגע גישה פעילה. הדף התעדכן.' });
   });
 });

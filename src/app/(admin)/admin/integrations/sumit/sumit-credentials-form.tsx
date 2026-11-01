@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { EditableField } from '@/app/(admin)/admin/_form-fields';
 
 import { updateSumitCredentialsAction } from './actions';
@@ -14,13 +15,13 @@ export type SumitCredentialsValues = {
 };
 
 export function SumitCredentialsForm({ values }: { values: SumitCredentialsValues }) {
-  const [state, action] = useActionState(updateSumitCredentialsAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(updateSumitCredentialsAction, {});
+  const e = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <EditableField
         name="sumit_company_id"

@@ -9,6 +9,7 @@ import {
   AccordionPanel,
 } from '@/components/ui/accordion';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { updateWhatsAppChannelAction } from '@/app/(admin)/admin/integrations/actions';
 
 import { CopyRow, Field, SecretField, StatusBadge } from '../_components/form-fields';
@@ -33,13 +34,13 @@ export function WhatsAppCredentialsForm({
   callbackUrl: string;
   outreachEnabled: boolean;
 }) {
-  const [state, action] = useActionState(updateWhatsAppChannelAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(updateWhatsAppChannelAction, {});
+  const e = state.validationErrors?.fieldErrors;
 
   return (
       <form action={action} className="space-y-4">
-            <FormError message={state?.error} />
-            <FormNotice message={state?.notice} />
+            <FormError message={actionFormError(state)} />
+            <FormNotice message={state.data?.notice} />
   
             <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
               <StatusBadge

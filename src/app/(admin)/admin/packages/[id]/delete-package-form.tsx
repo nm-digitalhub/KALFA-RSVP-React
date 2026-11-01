@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 import { Can } from '@casl/react';
 
 import { FormError } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { PlatformAbility } from '@/lib/casl';
 import { deletePackageAction } from '../actions';
 
@@ -15,7 +16,7 @@ import { deletePackageAction } from '../actions';
 // (pilot-casl-package-permissions, design D5).
 export function DeletePackageForm({ id, name }: { id: string; name: string }) {
   const action = deletePackageAction.bind(null, id);
-  const [state, formAction, pending] = useActionState(action, null);
+  const [state, formAction, pending] = useActionState(action, {});
 
   return (
     <Can<PlatformAbility> I="delete" a="Package">
@@ -29,7 +30,7 @@ export function DeletePackageForm({ id, name }: { id: string; name: string }) {
           }}
           className="space-y-2"
         >
-          <FormError message={state?.error} />
+          <FormError message={actionErrorMessage(state)} />
           <button
             type="submit"
             disabled={pending}

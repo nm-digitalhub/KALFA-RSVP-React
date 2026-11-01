@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { EditableField } from '@/app/(admin)/admin/_form-fields';
+import { actionFormError } from '@/lib/action-result';
 
 import { updateEmailTransportAction } from './actions';
 
@@ -35,13 +36,13 @@ export function EmailTransportForm({
   values: EmailTransportFormValues;
   activeProvider: 'resend' | 'smtp';
 }) {
-  const [state, action] = useActionState(updateEmailTransportAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(updateEmailTransportAction, {});
+  const e = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <label className="flex items-start gap-3">
         <input

@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 import { CalendarClock, Mail } from 'lucide-react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import type { ExchangeConnectionView } from '@/lib/data/exchange-connections';
 import { formatIsraelDate } from '@/lib/date';
 import {
@@ -39,11 +40,11 @@ function ConnectForm({
   modeNotice: string | null;
   needsPassword: boolean;
 }) {
-  const [state, action] = useActionState(createExchangeConnectionAction, null);
+  const [state, action] = useActionState(createExchangeConnectionAction, {});
   return (
     <form action={action} className="space-y-4">
-      <FormNotice message={state?.notice} />
-      <FormError message={state?.error} />
+      <FormNotice message={state.data?.notice} />
+      <FormError message={actionFormError(state)} />
       {modeNotice ? <p className="text-sm text-muted-foreground">{modeNotice}</p> : null}
 
       <div>
@@ -60,7 +61,7 @@ function ConnectForm({
           placeholder="name@kalfa.me"
           className={`${inputClass} text-start`}
         />
-        <FieldError errors={state?.fieldErrors?.mailboxEmail} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.mailboxEmail} />
       </div>
 
       {/* Shown ONLY for a provider that needs a mailbox password (NTLM — the
@@ -81,7 +82,7 @@ function ConnectForm({
             autoComplete="off"
             className={`${inputClass} text-start`}
           />
-          <FieldError errors={state?.fieldErrors?.password} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.password} />
           <p className="mt-1 text-xs text-muted-foreground">
             הסיסמה מוצפנת בשרת מיד עם השליחה ואינה מוצגת שוב במסך זה.
           </p>
@@ -101,13 +102,13 @@ function ConnectForm({
 }
 
 function TestAppointmentControls({ connectionId }: { connectionId: string }) {
-  const [createState, createAction] = useActionState(createExchangeTestAppointmentAction, null);
-  const [deleteState, deleteAction] = useActionState(deleteExchangeTestAppointmentAction, null);
+  const [createState, createAction] = useActionState(createExchangeTestAppointmentAction, {});
+  const [deleteState, deleteAction] = useActionState(deleteExchangeTestAppointmentAction, {});
 
   // Once a delete SUCCEEDS, the previously-created id is consumed — offer the
   // create button again. A failed delete keeps the id (and the delete button)
   // visible alongside the error, so the owner can just retry.
-  const appointmentId = deleteState?.notice ? null : (createState?.appointmentId ?? null);
+  const appointmentId = deleteState.data?.notice ? null : (createState.data?.appointmentId ?? null);
 
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
@@ -116,8 +117,8 @@ function TestAppointmentControls({ connectionId }: { connectionId: string }) {
         יוצר פגישה קצרה ביומן ומוחק אותה — לאימות שהחיבור עובד גם לכתיבה, לא רק
         לקריאה. בדקו שהיא מופיעה ונעלמת ב-OWA.
       </p>
-      <FormNotice message={createState?.notice ?? deleteState?.notice} />
-      <FormError message={createState?.error ?? deleteState?.error} />
+      <FormNotice message={createState.data?.notice ?? deleteState.data?.notice} />
+      <FormError message={actionErrorMessage(createState) ?? actionErrorMessage(deleteState)} />
 
       {!appointmentId ? (
         <form action={createAction}>
@@ -136,9 +137,9 @@ function TestAppointmentControls({ connectionId }: { connectionId: string }) {
 }
 
 function ConnectionCard({ connection }: { connection: ExchangeConnectionView }) {
-  const [testState, testAction] = useActionState(testExchangeConnectionAction, null);
-  const [calendarsState, calendarsAction] = useActionState(listExchangeCalendarsAction, null);
-  const [revokeState, revokeAction] = useActionState(revokeExchangeConnectionAction, null);
+  const [testState, testAction] = useActionState(testExchangeConnectionAction, {});
+  const [calendarsState, calendarsAction] = useActionState(listExchangeCalendarsAction, {});
+  const [revokeState, revokeAction] = useActionState(revokeExchangeConnectionAction, {});
 
   const revoked = connection.status === 'revoked';
 
@@ -169,8 +170,10 @@ function ConnectionCard({ connection }: { connection: ExchangeConnectionView }) 
         {connection.lastError ? <div>שגיאה אחרונה: {connection.lastError}</div> : null}
       </dl>
 
-      <FormNotice message={testState?.notice ?? calendarsState?.notice ?? revokeState?.notice} />
-      <FormError message={testState?.error ?? calendarsState?.error ?? revokeState?.error} />
+      <FormNotice message={testState.data?.notice ?? calendarsState.data?.notice ?? revokeState.data?.notice} />
+      <FormError
+        message={actionFormError(testState) ?? actionFormError(calendarsState) ?? actionFormError(revokeState)}
+      />
 
       {!revoked ? (
         <div className="flex flex-wrap gap-2">

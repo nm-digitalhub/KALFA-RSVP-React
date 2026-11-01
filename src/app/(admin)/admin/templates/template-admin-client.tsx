@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { VALUE_PATH_FORMAT, valuePathControlEntry } from '@/components/jsonforms/value-path-control';
 import type { MentionEntry } from '@/components/tiptap-ui/mention-dropdown-menu';
+import { actionErrorMessage, type ActionFormResult } from '@/lib/action-result';
 import type { AdminTemplateParameter } from '@/lib/data/admin/whatsapp-templates';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import { valueLabel, type ValueKind } from '@/lib/whatsapp/value-labels';
@@ -34,6 +35,14 @@ import {
 // submit, and every write is re-checked on the server.
 
 type EventType = (typeof EVENT_TYPES)[number];
+
+// What every action here returns, read as the one result these pieces show: the data layer's own answer, or a
+// refused request / failed save as a single problem line.
+function toResult(response: ActionFormResult & { data?: TemplateAdminActionResult }): TemplateAdminActionResult {
+  if (response.data) return response.data;
+  const problem = actionErrorMessage(response);
+  return { ok: false, problems: problem ? [problem] : [] };
+}
 
 // Existing shared messages: FormNotice (success), FormError (problems), Alert
 // (a warning that did not block the save).
@@ -59,7 +68,7 @@ export function SyncButton() {
         type="button"
         variant="outline"
         disabled={pending}
-        onClick={() => startTransition(async () => setResult(await requestTemplateSyncAction()))}
+        onClick={() => startTransition(async () => setResult(toResult(await requestTemplateSyncAction())))}
       >
         <RefreshCw aria-hidden />
         {pending ? 'מבקש…' : 'סנכרון מול Meta'}
@@ -113,7 +122,9 @@ export function StepActiveSwitch({ messageKey, active, label }: { messageKey: st
           disabled={pending}
           aria-label={`${label} — ${active ? 'פעיל' : 'כבוי'}`}
           className="relative after:absolute after:-inset-3"
-          onCheckedChange={(next) => startTransition(async () => setResult(await setStepActiveAction({ messageKey, active: next })))}
+          onCheckedChange={(next) =>
+            startTransition(async () => setResult(toResult(await setStepActiveAction({ messageKey, active: next }))))
+          }
         />
         <span aria-hidden>{active ? 'פעיל' : 'כבוי'}</span>
       </div>
@@ -162,7 +173,7 @@ export function RouteControl({
           next &&
           startTransition(async () => {
             setTried(next);
-            setResult(await setTemplateRouteAction({ ...target, templateId: next }));
+            setResult(toResult(await setTemplateRouteAction({ ...target, templateId: next })));
           })
         }
       >
@@ -192,7 +203,7 @@ export function RouteControl({
           variant="ghost"
           className="self-start"
           disabled={pending}
-          onClick={() => startTransition(async () => setResult(await removeTemplateRouteAction(target)))}
+          onClick={() => startTransition(async () => setResult(toResult(await removeTemplateRouteAction(target))))}
         >
           חזרה לברירת המחדל של השלב
         </Button>
@@ -217,7 +228,9 @@ export function AcknowledgeCategoryButton({ templateId, observedCategory }: { te
         variant="outline"
         disabled={pending}
         onClick={() =>
-          startTransition(async () => setResult(await acknowledgeWhatsAppCategoryAction({ templateId, observedCategory })))
+          startTransition(async () =>
+            setResult(toResult(await acknowledgeWhatsAppCategoryAction({ templateId, observedCategory }))),
+          )
         }
       >
         אישור הקטגוריה {observedCategory}
@@ -317,16 +330,18 @@ export function TemplateVariables({
   const save = () =>
     startTransition(async () =>
       setResult(
-        await saveTemplateParametersAction({
-          templateId,
-          values: parameters.map((p) => ({
-            type: p.type,
-            sub_type: p.sub_type,
-            index: p.index,
-            position: p.position,
-            source_path: data[slotKey(p)] ?? '',
-          })),
-        }),
+        toResult(
+          await saveTemplateParametersAction({
+            templateId,
+            values: parameters.map((p) => ({
+              type: p.type,
+              sub_type: p.sub_type,
+              index: p.index,
+              position: p.position,
+              source_path: data[slotKey(p)] ?? '',
+            })),
+          }),
+        ),
       ),
     );
 

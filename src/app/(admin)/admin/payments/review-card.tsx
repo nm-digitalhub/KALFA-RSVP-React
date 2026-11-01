@@ -7,6 +7,7 @@ import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/fo
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import type { PaymentReviewProbe } from '@/lib/data/admin/payment-review';
 import { TERMINAL_CONFLICT_NOTICE } from '@/lib/payments/terminal-conflict-copy';
 
@@ -149,8 +150,8 @@ function DecisionButton({
 }
 
 export function ReviewCard({ item }: { item: ReviewCardItem }) {
-  const [probeState, probeAction] = useActionState(probePaymentReviewAction, null);
-  const [state, resolveAction] = useActionState(resolvePaymentReviewAction, null);
+  const [probeState, probeAction] = useActionState(probePaymentReviewAction, {});
+  const [state, resolveAction] = useActionState(resolvePaymentReviewAction, {});
   const cardcom = item.cardcom;
   const copy = cardcom ? COPY.cardcom : COPY.sumit;
 
@@ -180,18 +181,18 @@ export function ReviewCard({ item }: { item: ReviewCardItem }) {
       ) : (
         <form action={probeAction} className="space-y-2">
           <input type="hidden" name="operationId" value={item.operationId} />
-          <FormError message={probeState?.error} />
+          <FormError message={actionErrorMessage(probeState)} />
           <SubmitButton className="w-auto" size="sm">
             בדיקה ב-SUMIT
           </SubmitButton>
-          {probeState?.probe ? <ProbeResultView probe={probeState.probe} /> : null}
+          {probeState.data?.probe ? <ProbeResultView probe={probeState.data.probe} /> : null}
         </form>
       )}
 
       <form action={resolveAction} className="space-y-3 border-t border-border pt-4">
         <input type="hidden" name="operationId" value={item.operationId} />
-        <FormNotice message={state?.notice} />
-        <FormError message={state?.error} />
+        <FormNotice message={state.data?.notice} />
+        <FormError message={actionFormError(state)} />
         <p className="text-sm text-amber-700">{cardcom?.reportedConflicts ? COPY.cardcom.verifyBeforeFailing : copy.verify}</p>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -211,7 +212,7 @@ export function ReviewCard({ item }: { item: ReviewCardItem }) {
               className={inputClass}
               aria-describedby={`doc-err-${item.operationId}`}
             />
-            <FieldError id={`doc-err-${item.operationId}`} errors={state?.fieldErrors?.documentNumber} />
+            <FieldError id={`doc-err-${item.operationId}`} errors={state.validationErrors?.fieldErrors?.documentNumber} />
           </div>
           <div>
             <label htmlFor={`amt-${item.operationId}`} className="mb-1 block text-sm font-medium">
@@ -227,7 +228,7 @@ export function ReviewCard({ item }: { item: ReviewCardItem }) {
               placeholder={`${item.amount} — ריק פירושו כמתוכנן`}
               className={inputClass}
             />
-            <FieldError errors={state?.fieldErrors?.amount} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.amount} />
           </div>
         </div>
 
@@ -243,8 +244,8 @@ export function ReviewCard({ item }: { item: ReviewCardItem }) {
             maxLength={500}
             rows={2}
           />
-          <FieldError errors={state?.fieldErrors?.note} />
-          <FieldError errors={state?.fieldErrors?.outcome} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.note} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.outcome} />
         </div>
 
         <div className="flex flex-wrap gap-2">

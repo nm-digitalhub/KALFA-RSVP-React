@@ -44,12 +44,12 @@ export function WiringControls({
     setNotice(null);
     startTransition(async () => {
       const res = await wireAccountCallbackAction();
-      if (res?.error) {
-        setError(res.error);
+      if (res.serverError) {
+        setError(res.serverError);
         return;
       }
-      setNotice(res?.notice ?? null);
-      setRegisteredUrl(res?.callbackUrl ?? null);
+      setNotice(res.data?.notice ?? null);
+      setRegisteredUrl(res.data?.callbackUrl ?? null);
       setOpen(false);
       // No router.refresh(): the action's revalidatePath('/admin/voice/platform')
       // already re-renders this page in the same response, so the state badge
@@ -62,11 +62,11 @@ export function WiringControls({
     setNotice(null);
     startTransition(async () => {
       const res = await rollbackAccountCallbackAction();
-      if (res?.error) {
-        setError(res.error);
+      if (res.serverError) {
+        setError(res.serverError);
         return;
       }
-      setNotice(res?.notice ?? null);
+      setNotice(res.data?.notice ?? null);
       setRegisteredUrl(null);
     });
   };

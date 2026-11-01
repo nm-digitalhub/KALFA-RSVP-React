@@ -52,8 +52,8 @@ function VoidCreditButton({
         user_id: userId,
         reason,
       });
-      if (result?.error || result?.fieldErrors) {
-        setError(result.error ?? 'נא להזין סיבה לביטול');
+      if (result.serverError || result.validationErrors) {
+        setError(result.serverError ?? 'נא להזין סיבה לביטול');
         return;
       }
       setDone(true);

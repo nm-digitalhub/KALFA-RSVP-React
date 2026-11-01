@@ -194,7 +194,7 @@ describe('signupSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects a malformed ref', () => {
+  it('reads a malformed ref as absent: a ref never refuses the signup', () => {
     const result = signupSchema.safeParse({
       email: 'user@example.com',
       password: 'Aa123456!',
@@ -202,7 +202,8 @@ describe('signupSchema', () => {
       ref: 'not-a-uuid',
       terms_accepted: 'on',
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    expect(result.data?.ref).toBeUndefined();
   });
 
   it('rejects a missing terms_accepted (checkbox absent from FormData when unchecked)', () => {
@@ -511,19 +512,40 @@ describe('updateEventSchema — rsvp_deadline vs event_date', () => {
 
 
 describe('updateProfileSchema', () => {
-  it('accepts both fields empty (nothing required)', () => {
-    const result = updateProfileSchema.safeParse({ full_name: '', phone: '' });
+  it('accepts an empty name (nothing required)', () => {
+    const result = updateProfileSchema.safeParse({ full_name: '' });
     expect(result.success).toBe(true);
   });
 
-  it('accepts a name and a valid phone', () => {
+  it('accepts a name', () => {
+    const result = updateProfileSchema.safeParse({ full_name: 'דנה כהן' });
+    expect(result.success).toBe(true);
+  });
+
+  // The phone is proved through Supabase Auth and written to profiles.phone there; the profile save never carries it.
+  it('drops a posted phone, so the profile save can never write one', () => {
+    const result = updateProfileSchema.safeParse({ full_name: 'דנה כהן', phone: '050-123-4567' });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ full_name: 'דנה כהן' });
+  });
+
+  it('rejects a name longer than PROFILE_NAME_MAX', () => {
     const result = updateProfileSchema.safeParse({
-      full_name: 'דנה כהן',
-      phone: '050-123-4567',
+      full_name: 'א'.repeat(PROFILE_NAME_MAX + 1),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a name exactly at PROFILE_NAME_MAX', () => {
+    const result = updateProfileSchema.safeParse({
+      full_name: 'א'.repeat(PROFILE_NAME_MAX),
     });
     expect(result.success).toBe(true);
   });
+});
 
+// The Israeli phone rule (ISRAELI_PHONE_RE), as the signup form's optional phone applies it.
+describe('signupSchema.phone — the Israeli phone rule', () => {
   // Valid Israeli numbers across formats: mobile (05N), VoIP (07N), geographic
   // landlines (02/03/04/08/09), and the +972 / 972 international forms.
   it.each([
@@ -540,7 +562,7 @@ describe('updateProfileSchema', () => {
     '+972-50-123-4567',
     '972501234567',
   ])('accepts valid Israeli phone %s', (phone) => {
-    const result = updateProfileSchema.safeParse({ phone });
+    const result = signupSchema.shape.phone.safeParse(phone);
     expect(result.success).toBe(true);
   });
 
@@ -554,22 +576,8 @@ describe('updateProfileSchema', () => {
     '+1 555 123 4567', // non-Israeli
     'not-a-phone',
   ])('rejects invalid phone %s', (phone) => {
-    const result = updateProfileSchema.safeParse({ phone });
+    const result = signupSchema.shape.phone.safeParse(phone);
     expect(result.success).toBe(false);
-  });
-
-  it('rejects a name longer than PROFILE_NAME_MAX', () => {
-    const result = updateProfileSchema.safeParse({
-      full_name: 'א'.repeat(PROFILE_NAME_MAX + 1),
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts a name exactly at PROFILE_NAME_MAX', () => {
-    const result = updateProfileSchema.safeParse({
-      full_name: 'א'.repeat(PROFILE_NAME_MAX),
-    });
-    expect(result.success).toBe(true);
   });
 });
 

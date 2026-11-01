@@ -11,7 +11,7 @@ import { PackageChoiceForm, type PackageChoiceOffer } from './package-choice-for
 
 afterEach(cleanup);
 
-const noopAction = async () => null;
+const noopAction = async () => ({});
 
 const OFFERS: PackageChoiceOffer[] = [
   { id: 'p-1', name: 'חבילה קטנה', price: 100, contact_quota: 100, description: null, includes: [] },

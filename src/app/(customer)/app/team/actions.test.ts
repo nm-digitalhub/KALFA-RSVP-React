@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // requireActiveOrg() or the orgs.ts ownership/membership gate, and must still
 // convert a genuine domain error into the existing friendly message.
 
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
@@ -55,7 +56,7 @@ describe('inviteMemberAction — Next.js control-flow signals', () => {
     vi.mocked(inviteMember).mockRejectedValue(NEXT_REDIRECT);
 
     await expect(
-      inviteMemberAction(null, fd({ email: 'a@b.com', role_id: '11111111-1111-4111-8111-111111111111' })),
+      inviteMemberAction({}, fd({ email: 'a@b.com', role_id: '11111111-1111-4111-8111-111111111111' })),
     ).rejects.toThrow('NEXT_REDIRECT');
   });
 
@@ -63,7 +64,7 @@ describe('inviteMemberAction — Next.js control-flow signals', () => {
     vi.mocked(inviteMember).mockRejectedValue(NEXT_NOT_FOUND);
 
     await expect(
-      inviteMemberAction(null, fd({ email: 'a@b.com', role_id: '11111111-1111-4111-8111-111111111111' })),
+      inviteMemberAction({}, fd({ email: 'a@b.com', role_id: '11111111-1111-4111-8111-111111111111' })),
     ).rejects.toThrow('NEXT_NOT_FOUND');
   });
 
@@ -71,21 +72,65 @@ describe('inviteMemberAction — Next.js control-flow signals', () => {
     vi.mocked(inviteMember).mockRejectedValue(new Error('המשתמש כבר חבר בארגון'));
 
     const result = await inviteMemberAction(
-      null,
+      {},
       fd({ email: 'a@b.com', role_id: '11111111-1111-4111-8111-111111111111' }),
     );
 
-    expect(result).toEqual({ error: 'המשתמש כבר חבר בארגון' });
+    expect(result).toEqual({ serverError: 'המשתמש כבר חבר בארגון' });
   });
 
   it('falls back to the generic message for a non-Error rejection', async () => {
     vi.mocked(inviteMember).mockRejectedValue('boom');
 
     const result = await inviteMemberAction(
-      null,
+      {},
       fd({ email: 'a@b.com', role_id: '11111111-1111-4111-8111-111111111111' }),
     );
 
-    expect(result).toEqual({ error: 'שליחת ההזמנה נכשלה' });
+    expect(result).toEqual({ serverError: 'שליחת ההזמנה נכשלה' });
+  });
+});
+
+// The input schema (inviteMemberSchema, read from the FormData as posted) answers a bad field with its own Hebrew
+// message, before anything is called.
+describe('inviteMemberAction — a malformed field', () => {
+  it.each([
+    [{ email: '', role_id: '11111111-1111-4111-8111-111111111111' }, { email: ['כתובת אימייל לא תקינה'] }],
+    [{ email: 'not-an-email', role_id: '11111111-1111-4111-8111-111111111111' }, { email: ['כתובת אימייל לא תקינה'] }],
+    [{ email: 'a@b.com', role_id: '' }, { role_id: ['תפקיד לא תקין'] }],
+    [{ email: 'a@b.com', role_id: 'owner' }, { role_id: ['תפקיד לא תקין'] }],
+  ])('refuses %j with the schema message', async (fields, fieldErrors) => {
+    const result = await inviteMemberAction({}, fd(fields));
+
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors } });
+    expect(inviteMember).not.toHaveBeenCalled();
+  });
+});
+
+// requireActiveOrg ran before the form was read, and still does (a pre-validation middleware): a user with no active
+// org is redirected even when the input is malformed.
+describe('inviteMemberAction — the active-org gate runs before the input is read', () => {
+  it('redirects on a malformed input instead of answering with its field errors', async () => {
+    vi.mocked(requireActiveOrg).mockRejectedValue(NEXT_REDIRECT);
+
+    await expect(inviteMemberAction({}, fd({ email: '', role_id: '' }))).rejects.toThrow('NEXT_REDIRECT');
+    expect(inviteMember).not.toHaveBeenCalled();
+  });
+
+  it('hands the gate’s org to the data layer', async () => {
+    vi.mocked(inviteMember).mockResolvedValue({ token: 't-1', email: 'a@b.com' } as never);
+
+    const result = await inviteMemberAction(
+      {},
+      fd({ email: 'a@b.com', role_id: '11111111-1111-4111-8111-111111111111' }),
+    );
+
+    expect(inviteMember).toHaveBeenCalledWith('org-1', {
+      email: 'a@b.com',
+      role_id: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(result).toEqual({
+      data: { notice: 'הזמנה נוצרה עבור a@b.com. קישור הצטרפות: https://app.test/join/t-1' },
+    });
   });
 });

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { z } from 'zod';
 
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { requireEventAccess } from '@/lib/data/events';
 import { getOutreachEnabled } from '@/lib/data/outreach-config';
 import { recordCallConsent } from '@/lib/data/contacts';
@@ -18,36 +19,36 @@ import { logActivity } from '@/lib/data/activity';
 // recordCallConsent. Records a PII-free audit row — closing the gap the WhatsApp
 // consent precedent leaves open. Never clears removal_requested / DNC.
 
-export type GrantCallConsentResult = { ok: true } | { ok: false; error: string };
+const grantSchema = z.object({
+  eventId: z.uuid({ error: 'מזהה לא תקין' }),
+  contactId: z.uuid({ error: 'מזהה לא תקין' }),
+});
 
-const grantSchema = z.object({ eventId: z.uuid(), contactId: z.uuid() });
-
-export async function grantCallConsentAction(
-  eventId: string,
-  contactId: string,
-): Promise<GrantCallConsentResult> {
-  const parsed = grantSchema.safeParse({ eventId, contactId });
-  if (!parsed.success) {
-    return { ok: false, error: 'מזהה לא תקין' };
-  }
-
-  try {
-    // Authorize FIRST (requireUser + can_access_event; notFound() on deny).
-    await requireEventAccess(parsed.data.eventId, 'contacts', 'edit');
-    if (!(await getOutreachEnabled())) {
-      return { ok: false, error: 'פנייה לאורחים אינה מופעלת' };
+export const grantCallConsentAction = actionClient
+  .inputSchema(grantSchema)
+  .action(async ({ parsedInput: { eventId, contactId } }) => {
+    // Any failure on the way is 'שמירת ההסכמה נכשלה'; outreach being off answers
+    // with its own message, after the try (a returnUserError inside it would be
+    // caught and replaced).
+    let outreachEnabled: boolean;
+    try {
+      // Authorize FIRST (requireUser + can_access_event; notFound() on deny).
+      await requireEventAccess(eventId, 'contacts', 'edit');
+      outreachEnabled = await getOutreachEnabled();
+      if (outreachEnabled) {
+        await recordCallConsent(eventId, contactId);
+        await logActivity({
+          eventId,
+          action: 'consent.call.granted',
+          meta: { contactId }, // ids only — no PII
+        });
+      }
+    } catch (err) {
+      unstable_rethrow(err); // let notFound()/redirect propagate
+      returnUserError('שמירת ההסכמה נכשלה');
     }
-    await recordCallConsent(parsed.data.eventId, parsed.data.contactId);
-    await logActivity({
-      eventId: parsed.data.eventId,
-      action: 'consent.call.granted',
-      meta: { contactId: parsed.data.contactId }, // ids only — no PII
-    });
-  } catch (err) {
-    unstable_rethrow(err); // let notFound()/redirect propagate
-    return { ok: false, error: 'שמירת ההסכמה נכשלה' };
-  }
+    if (!outreachEnabled) returnUserError('פנייה לאורחים אינה מופעלת');
 
-  revalidatePath(`/app/events/${parsed.data.eventId}/guests`);
-  return { ok: true };
-}
+    revalidatePath(`/app/events/${eventId}/guests`);
+    return { ok: true };
+  });

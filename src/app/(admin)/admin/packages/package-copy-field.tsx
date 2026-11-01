@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import {
   InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea,
 } from '@/components/ui/input-group';
+import { actionErrorMessage } from '@/lib/action-result';
 import { rewritePackageCopyAction } from './rewrite-action';
 import type { PackageCopyField } from './package-copy-types';
 
@@ -64,11 +65,11 @@ export function PackageCopyField({
           if (!mounted.current) return;
           if (version.current !== requestVersion) {
             setStatus('הטקסט השתנה. אפשר לבקש ניסוח חדש.');
-          } else if (result.ok) {
-            setProposal(result.text);
+          } else if (result.data) {
+            setProposal(result.data.text);
             setStatus('הצעת הניסוח מוכנה.');
           } else {
-            setError(result.error);
+            setError(actionErrorMessage(result) ?? 'לא ניתן לשפר את הניסוח כרגע. נסו שוב.');
             setStatus('');
           }
         });

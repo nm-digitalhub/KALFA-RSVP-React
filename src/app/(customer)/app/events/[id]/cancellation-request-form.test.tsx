@@ -2,7 +2,10 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { createCancellationRequestAction } from './actions';
 import { CancellationRequestForm } from './cancellation-request-form';
+
+type CancellationRequestResult = Awaited<ReturnType<typeof createCancellationRequestAction>>;
 
 // The customer's cancellation request. What is defended here: one request at a time — while a request is on its way the
 // submit button is locked, so a second click cannot send a second request (9.10.2026: two arrived 2.5 seconds apart), and
@@ -14,8 +17,8 @@ const submitButton = () => screen.getByRole('button', { name: /שליחת בקש
 
 describe('CancellationRequestForm', () => {
   it('locks the submit button while the request is on its way', async () => {
-    let finish: (value: null) => void = () => {};
-    const action = vi.fn(() => new Promise<null>((resolve) => { finish = resolve; }));
+    let finish: (value: CancellationRequestResult) => void = () => {};
+    const action = vi.fn(() => new Promise<CancellationRequestResult>((resolve) => { finish = resolve; }));
     render(<CancellationRequestForm existingRequest={null} action={action} />);
     fireEvent.change(screen.getByLabelText('סיבת הביטול'), { target: { value: 'שינוי תוכניות' } });
 
@@ -27,7 +30,7 @@ describe('CancellationRequestForm', () => {
     fireEvent.click(submitButton());
     expect(action).toHaveBeenCalledTimes(1);
 
-    await act(async () => finish(null));
+    await act(async () => finish({}));
     expect(submitButton().disabled).toBe(false);
   });
 

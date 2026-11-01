@@ -36,43 +36,43 @@ describe('rescheduleCallbackAction', () => {
   it('hands the data layer the real instant of the Israel time typed, not the raw string', async () => {
     vi.mocked(rescheduleCallback).mockResolvedValue({ ok: true });
 
-    const result = await rescheduleCallbackAction(null, fd({ id: ID, exactAt: '2026-10-07T06:36' }));
+    const result = await rescheduleCallbackAction({}, fd({ id: ID, exactAt: '2026-10-07T06:36' }));
 
     // Typed 06:36 in Israel = 03:36Z. Stored as the raw string it was read as
     // 06:36Z — three hours late.
     expect(rescheduleCallback).toHaveBeenCalledWith(ID, '2026-10-07T03:36:00.000Z');
-    expect(result?.notice).toBe('השיחה תוזמנה מחדש');
+    expect(result?.data?.notice).toBe('השיחה תוזמנה מחדש');
     expect(revalidatePath).toHaveBeenCalledWith('/admin/callbacks');
     expect(revalidatePath).toHaveBeenCalledWith(`/admin/callbacks/${ID}`);
   });
 
   it('refuses a past time and never reaches the data layer', async () => {
-    const result = await rescheduleCallbackAction(null, fd({ id: ID, exactAt: '2026-10-07T06:30' }));
+    const result = await rescheduleCallbackAction({}, fd({ id: ID, exactAt: '2026-10-07T06:30' }));
 
-    expect(result?.fieldErrors?.exactAt).toEqual(['נא לבחור מועד עתידי תקין']);
+    expect(result?.validationErrors?.fieldErrors?.exactAt).toEqual(['נא לבחור מועד עתידי תקין']);
     expect(rescheduleCallback).not.toHaveBeenCalled();
   });
 
   it('refuses a value that already carries a zone instead of converting it twice', async () => {
-    const result = await rescheduleCallbackAction(null, fd({ id: ID, exactAt: '2026-10-07T06:36Z' }));
+    const result = await rescheduleCallbackAction({}, fd({ id: ID, exactAt: '2026-10-07T06:36Z' }));
 
-    expect(result?.fieldErrors?.exactAt).toBeDefined();
+    expect(result?.validationErrors?.fieldErrors?.exactAt).toBeDefined();
     expect(rescheduleCallback).not.toHaveBeenCalled();
   });
 
   it('refuses a missing time', async () => {
-    const result = await rescheduleCallbackAction(null, fd({ id: ID }));
+    const result = await rescheduleCallbackAction({}, fd({ id: ID }));
 
-    expect(result?.fieldErrors?.exactAt).toBeDefined();
+    expect(result?.validationErrors?.fieldErrors?.exactAt).toBeDefined();
     expect(rescheduleCallback).not.toHaveBeenCalled();
   });
 
   it('tells the admin when the old appointment could not be removed', async () => {
     vi.mocked(rescheduleCallback).mockResolvedValue({ ok: false, reason: 'old_appointment_not_removed' });
 
-    const result = await rescheduleCallbackAction(null, fd({ id: ID, exactAt: '2026-10-07T06:36' }));
+    const result = await rescheduleCallbackAction({}, fd({ id: ID, exactAt: '2026-10-07T06:36' }));
 
-    expect(result?.error).toBe('לא ניתן היה להסיר את הפגישה הקיימת מהיומן. נסו שוב עוד רגע.');
+    expect(result?.serverError).toBe('לא ניתן היה להסיר את הפגישה הקיימת מהיומן. נסו שוב עוד רגע.');
   });
 
   it('re-throws a Next redirect from the admin gate instead of swallowing it', async () => {
@@ -82,7 +82,7 @@ describe('rescheduleCallbackAction', () => {
     vi.mocked(rescheduleCallback).mockRejectedValue(redirect);
 
     await expect(
-      rescheduleCallbackAction(null, fd({ id: ID, exactAt: '2026-10-07T06:36' })),
+      rescheduleCallbackAction({}, fd({ id: ID, exactAt: '2026-10-07T06:36' })),
     ).rejects.toThrow('NEXT_REDIRECT');
   });
 });

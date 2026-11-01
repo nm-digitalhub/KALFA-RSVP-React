@@ -46,6 +46,9 @@ const FILES = {
   'src/lib/supabase/server.ts': `
     import { SupabaseClient } from './client-type';
     export async function createClient() { return new SupabaseClient(); }`,
+  'src/lib/safe-action.ts': `
+    type Chain = { use(_f: unknown): Chain; inputSchema(_s: unknown): Chain; action(_f: unknown): unknown; stateAction(_f: unknown): unknown };
+    export declare const actionClient: Chain;`,
   'src/lib/auth/dal.ts': `
     const cache = <T>(f: T): T => f;
     export const requireUser = cache(async () => ({ id: 'u' }));
@@ -161,6 +164,23 @@ const FILES = {
     import { assignRole, ifElseGate } from '@/lib/data/admin/numbers';
     import { closeLike, settingsOnly } from '@/lib/data/admin/campaign-close';
     import { hasPlatformPermission } from '@/lib/auth/dal';
+    import { actionClient } from '@/lib/safe-action';
+    // The next-safe-action shape (src/lib/safe-action.ts): the gate sits in a use() middleware, which runs before the
+    // body, so it protects the body's write. Without it the write is ungated.
+    export const chainGated = actionClient
+      .use(async ({ next }: { next: () => Promise<unknown> }) => {
+        await requirePlatformPermission('manage_billing');
+        return next();
+      })
+      .inputSchema(null)
+      .stateAction(async () => {
+        await createAdminClient().from('refunds').insert({ id: 'x' });
+      });
+    export const chainUngated = actionClient
+      .inputSchema(null)
+      .action(async () => {
+        await createAdminClient().from('profiles').delete().eq('id', 'x');
+      });
     // The cancellation shape: behind manage_billing, then — on some paths — code that requires campaigns.runstate.
     export async function resolveLike(id: string, isPackage: boolean) {
       await requirePlatformPermission('manage_billing');
@@ -343,6 +363,23 @@ describe('the six cases from the review', () => {
     assert.equal(f.state, 'MISMATCH');
     assert.equal(f.severity, 'critical');
     assert.match(f.location, /actions\.ts:\d+$/);
+  });
+});
+
+describe('next-safe-action actions (src/lib/safe-action.ts)', () => {
+  it('a gate in the use() middleware protects the body: no ungated-write finding', () => {
+    const entry = result.entries.find((e) => e.id === action('chainGated'));
+    assert.ok(entry, 'the const action chain is an entry');
+    assert.deepEqual(find('M1', action('chainGated')), []);
+    assert.ok(entry.exit.has('manage_billing'), 'the middleware key holds on exit');
+    assert.ok(!entry.unresolved.some((u) => u.name === 'next'), 'next() is the body, not an unresolved call');
+  });
+
+  it('the same chain without a use() gate is a critical ungated write', () => {
+    const [f] = find('M1', action('chainUngated'));
+    assert.ok(f);
+    assert.equal(f.state, 'MISMATCH');
+    assert.equal(f.severity, 'critical');
   });
 });
 

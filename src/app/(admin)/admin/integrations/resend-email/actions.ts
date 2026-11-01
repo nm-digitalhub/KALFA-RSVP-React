@@ -1,44 +1,45 @@
 'use server';
 
-import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
+import { zfd } from 'zod-form-data';
 
 import { updateEmailTransportConfig } from '@/lib/data/admin/settings';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { emailTransportSchema } from '@/lib/validation/admin';
-import type { FormState } from '@/lib/validation/result';
 
 const PATH = '/admin/integrations/resend-email';
 const INDEX = '/admin/integrations';
+
+// The form as it arrives: a checkbox is on only as 'on', and an empty or missing text field is '' (the SMTP
+// half may be left blank while Resend is the live transport).
+const field = emailTransportSchema.shape;
+const emailTransportFormSchema = zfd.formData({
+  email_enabled: zfd.checkbox(),
+  smtp_host: field.smtp_host.default(''),
+  smtp_port: field.smtp_port.default(''),
+  smtp_secure: zfd.checkbox(),
+  smtp_user: field.smtp_user.default(''),
+  smtp_password: field.smtp_password.default(''),
+  smtp_from: field.smtp_from.default(''),
+});
 
 // Thin by design: validate, hand off, revalidate. The gate lives in
 // updateEmailTransportConfig (requirePlatformPermission('manage_settings')), which is
 // the house pattern — see the note in admin-data-layer-coverage.test.ts on why a
 // delegating action is correct and a coarsely-gating one is not.
-export async function updateEmailTransportAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = emailTransportSchema.safeParse({
-    email_enabled: formData.get('email_enabled') === 'on',
-    smtp_host: formData.get('smtp_host') ?? '',
-    smtp_port: formData.get('smtp_port') ?? '',
-    smtp_secure: formData.get('smtp_secure') === 'on',
-    smtp_user: formData.get('smtp_user') ?? '',
-    smtp_password: formData.get('smtp_password') ?? '',
-    smtp_from: formData.get('smtp_from') ?? '',
+export const updateEmailTransportAction = actionClient
+  .inputSchema(emailTransportFormSchema)
+  .stateAction(async ({ parsedInput }) => {
+    try {
+      await updateEmailTransportConfig(parsedInput);
+    } catch (err) {
+      unstable_rethrow(err);
+      // A fixed message: a provider's or the database's text never reaches the form or the log.
+      returnUserError('עדכון הגדרות הדואר נכשל. נסו שוב.');
+    }
+    // The index card prints `configured`/`enabled` for the columns just written.
+    revalidatePath(PATH);
+    revalidatePath(INDEX);
+    return { notice: 'הגדרות הדואר נשמרו' };
   });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-  try {
-    await updateEmailTransportConfig(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'עדכון הגדרות הדואר נכשל. נסו שוב.' };
-  }
-  // The index card prints `configured`/`enabled` for the columns just written.
-  revalidatePath(PATH);
-  revalidatePath(INDEX);
-  return { notice: 'הגדרות הדואר נשמרו' };
-}

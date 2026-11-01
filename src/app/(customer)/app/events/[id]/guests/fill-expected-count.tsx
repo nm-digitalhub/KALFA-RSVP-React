@@ -4,12 +4,16 @@ import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionFormError } from '@/lib/action-result';
+
+import type { fillMissingExpectedCountAction } from './guests-actions';
+
+type FillExpectedCountResult = Awaited<ReturnType<typeof fillMissingExpectedCountAction>>;
 
 type BoundAction = (
-  prevState: FormState,
+  prevState: FillExpectedCountResult,
   formData: FormData,
-) => Promise<FormState>;
+) => Promise<FillExpectedCountResult>;
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -43,7 +47,7 @@ export function FillExpectedCount({
   missing: number;
   action: BoundAction;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
 
   return (
     <section
@@ -77,9 +81,9 @@ export function FillExpectedCount({
       </form>
 
       <div className="mt-2 space-y-2">
-        <FieldError errors={state?.fieldErrors?.expected_count} />
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FieldError errors={state.validationErrors?.fieldErrors?.expected_count} />
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
       </div>
     </section>
   );

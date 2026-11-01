@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // (billing source-of-truth) in sync, and a sync failure must NOT fail the
 // already-committed guest mutation (best-effort contract).
 
+// safe-action.ts (the actions' client) imports the server-only guard, which throws outside a server bundle.
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 // redirect() throws a NEXT_REDIRECT control-flow signal in real Next; model it.
 // Keep the real `unstable_rethrow` (via importOriginal) so it still recognizes
@@ -25,6 +27,7 @@ vi.mock('@/lib/data/guests', () => ({
   createGuest: vi.fn(),
   updateGuest: vi.fn(),
   deleteGuest: vi.fn(),
+  fillMissingExpectedCount: vi.fn(),
   updateContactStatus: vi.fn(),
   createGroup: vi.fn(),
   updateGroup: vi.fn(),
@@ -38,9 +41,24 @@ vi.mock('@/lib/data/rsvp-links', () => ({
   regenerateRsvpToken: vi.fn(),
 }));
 
-import { createGuest, deleteGuest, updateGuest, PHONE_TAKEN_ERROR } from '@/lib/data/guests';
+import {
+  createGuest,
+  deleteGuest,
+  updateGuest,
+  fillMissingExpectedCount,
+  updateContactStatus,
+  PHONE_TAKEN_ERROR,
+} from '@/lib/data/guests';
 import { linkGuestContact, reconcileCampaignSetForContact } from '@/lib/data/contacts';
-import { createGuestAction, updateGuestAction, createGroupAction, updateGroupAction } from './guests-actions';
+import {
+  createGuestAction,
+  updateGuestAction,
+  deleteGuestAction,
+  setContactStatusAction,
+  createGroupAction,
+  updateGroupAction,
+  fillMissingExpectedCountAction,
+} from './guests-actions';
 import { createGroup, updateGroup } from '@/lib/data/guests';
 
 function fd(entries: Record<string, string>): FormData {
@@ -48,6 +66,10 @@ function fd(entries: Record<string, string>): FormData {
   for (const [k, v] of Object.entries(entries)) f.set(k, v);
   return f;
 }
+
+// The bound event and guest ids are validated (bindArgsSchemas: z.uuid()).
+const E1 = '11111111-1111-4111-8111-111111111111';
+const G9 = '99999999-9999-4999-8999-999999999999';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -60,13 +82,13 @@ describe('createGuestAction → contact sync', () => {
     } as unknown as Awaited<ReturnType<typeof createGuest>>);
 
     await expect(
-      createGuestAction('e-1', null, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
+      createGuestAction(E1, {}, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
     ).rejects.toThrow('NEXT_REDIRECT');
 
     expect(createGuest).toHaveBeenCalled();
     expect(linkGuestContact).toHaveBeenCalledTimes(1);
     expect(vi.mocked(linkGuestContact).mock.calls[0].slice(0, 2)).toEqual([
-      'e-1',
+      E1,
       'g-1',
     ]);
   });
@@ -79,7 +101,7 @@ describe('createGuestAction → contact sync', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await expect(
-      createGuestAction('e-1', null, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
+      createGuestAction(E1, {}, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
     ).rejects.toThrow('NEXT_REDIRECT');
 
     errSpy.mockRestore();
@@ -95,11 +117,11 @@ describe('createGuestAction → outreach list admission', () => {
     vi.mocked(linkGuestContact).mockResolvedValue({ contactId: 'c-3', prevContactId: null });
 
     await expect(
-      createGuestAction('e-1', null, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
+      createGuestAction(E1, {}, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
     ).rejects.toThrow('NEXT_REDIRECT');
 
     expect(reconcileCampaignSetForContact).toHaveBeenCalledTimes(1);
-    expect(reconcileCampaignSetForContact).toHaveBeenCalledWith('e-1', 'add', 'c-3');
+    expect(reconcileCampaignSetForContact).toHaveBeenCalledWith(E1, 'add', 'c-3');
   });
 
   it('keeps the guest when the package is full: the admission resolves, nothing is undone, the owner lands on the list', async () => {
@@ -109,10 +131,10 @@ describe('createGuestAction → outreach list admission', () => {
     vi.mocked(reconcileCampaignSetForContact).mockResolvedValue(undefined);
 
     await expect(
-      createGuestAction('e-1', null, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
+      createGuestAction(E1, {}, fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' })),
     ).rejects.toThrow('NEXT_REDIRECT');
 
-    expect(reconcileCampaignSetForContact).toHaveBeenCalledWith('e-1', 'add', 'c-4');
+    expect(reconcileCampaignSetForContact).toHaveBeenCalledWith(E1, 'add', 'c-4');
     expect(deleteGuest).not.toHaveBeenCalled();
   });
 
@@ -121,7 +143,7 @@ describe('createGuestAction → outreach list admission', () => {
     vi.mocked(linkGuestContact).mockResolvedValue({ contactId: null, prevContactId: null });
 
     await expect(
-      createGuestAction('e-1', null, fd({ full_name: 'דנה', phone: '', group_id: '', note: '' })),
+      createGuestAction(E1, {}, fd({ full_name: 'דנה', phone: '', group_id: '', note: '' })),
     ).rejects.toThrow('NEXT_REDIRECT');
 
     expect(reconcileCampaignSetForContact).not.toHaveBeenCalled();
@@ -136,17 +158,17 @@ describe('updateGuestAction → contact sync', () => {
 
     await expect(
       updateGuestAction(
-        'e-1',
-        'g-9',
-        null,
+        E1,
+        G9,
+        {},
         fd({ full_name: 'דנה', phone: '0509999999', group_id: '', note: '' }),
       ),
     ).rejects.toThrow('NEXT_REDIRECT');
 
     expect(linkGuestContact).toHaveBeenCalledTimes(1);
     expect(vi.mocked(linkGuestContact).mock.calls[0].slice(0, 2)).toEqual([
-      'e-1',
-      'g-9',
+      E1,
+      G9,
     ]);
   });
 });
@@ -163,8 +185,8 @@ describe('createGuestAction — Next.js control-flow signals from the ownership 
 
     await expect(
       createGuestAction(
-        'e-1',
-        null,
+        E1,
+        {},
         fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' }),
       ),
     ).rejects.toThrow('NEXT_NOT_FOUND');
@@ -176,12 +198,12 @@ describe('createGuestAction — Next.js control-flow signals from the ownership 
     vi.mocked(createGuest).mockRejectedValue(new Error('db down'));
 
     const result = await createGuestAction(
-      'e-1',
-      null,
+      E1,
+      {},
       fd({ full_name: 'דנה', phone: '0501234567', group_id: '', note: '' }),
     );
 
-    expect(result).toEqual({ error: 'הוספת המוזמן נכשלה. נסו שוב.' });
+    expect(result).toEqual({ serverError: 'הוספת המוזמן נכשלה. נסו שוב.' });
     expect(linkGuestContact).not.toHaveBeenCalled();
   });
 });
@@ -204,22 +226,22 @@ describe('updateGroupAction', () => {
       color: null,
       created_at: '2026-07-06T00:00:00Z',
     });
-    const state = await updateGroupAction(EVENT_ID, GROUP_ID, null, fd('משפחה'));
+    const state = await updateGroupAction(EVENT_ID, GROUP_ID, {}, fd('משפחה'));
     expect(updateGroup).toHaveBeenCalledWith(EVENT_ID, GROUP_ID, { name: 'משפחה' });
-    expect(state?.notice).toBeDefined();
+    expect(state.data?.notice).toBeDefined();
   });
 
   it('rejects an empty name with a field error and never hits the data layer', async () => {
     vi.mocked(updateGroup).mockClear();
-    const state = await updateGroupAction(EVENT_ID, GROUP_ID, null, fd('   '));
-    expect(state?.fieldErrors?.name).toBeDefined();
+    const state = await updateGroupAction(EVENT_ID, GROUP_ID, {}, fd('   '));
+    expect(state.validationErrors?.fieldErrors?.name).toBeDefined();
     expect(updateGroup).not.toHaveBeenCalled();
   });
 
   it('maps a data-layer failure to a safe Hebrew error', async () => {
     vi.mocked(updateGroup).mockRejectedValue(new Error('boom'));
-    const state = await updateGroupAction(EVENT_ID, GROUP_ID, null, fd('חברים'));
-    expect(state?.error).toBeDefined();
+    const state = await updateGroupAction(EVENT_ID, GROUP_ID, {}, fd('חברים'));
+    expect(state.serverError).toBeDefined();
   });
 });
 
@@ -238,9 +260,9 @@ describe('createGroupAction', () => {
     });
     const data = new FormData();
     data.set('name', 'משפחה');
-    const state = await createGroupAction(EVENT_ID, null, data);
-    expect(state?.fieldErrors).toBeUndefined();
-    expect(state?.notice).toBeDefined();
+    const state = await createGroupAction(EVENT_ID, {}, data);
+    expect(state.validationErrors?.fieldErrors).toBeUndefined();
+    expect(state.data?.notice).toBeDefined();
     expect(createGroup).toHaveBeenCalledWith(EVENT_ID, { name: 'משפחה', color: null });
   });
 });
@@ -255,9 +277,9 @@ describe('friendly duplicate errors surface as field errors', () => {
     );
     const data = new FormData();
     data.set('name', 'משפחת קלפה');
-    const state = await createGroupAction(EVENT_ID, null, data);
-    expect(state?.fieldErrors?.name?.[0]).toContain('כבר קיימת');
-    expect(state?.error).toBeUndefined();
+    const state = await createGroupAction(EVENT_ID, {}, data);
+    expect(state.validationErrors?.fieldErrors?.name?.[0]).toContain('כבר קיימת');
+    expect(state.serverError).toBeUndefined();
   });
 
   it('updateGroupAction maps a taken name to fieldErrors.name', async () => {
@@ -266,17 +288,68 @@ describe('friendly duplicate errors surface as field errors', () => {
     );
     const data = new FormData();
     data.set('name', 'משפחת קלפה');
-    const state = await updateGroupAction(EVENT_ID, GROUP_ID, null, data);
-    expect(state?.fieldErrors?.name?.[0]).toContain('כבר קיימת');
+    const state = await updateGroupAction(EVENT_ID, GROUP_ID, {}, data);
+    expect(state.validationErrors?.fieldErrors?.name?.[0]).toContain('כבר קיימת');
   });
 
   it('createGuestAction maps a taken phone to fieldErrors.phone', async () => {
     vi.mocked(createGuest).mockRejectedValue(new Error(PHONE_TAKEN_ERROR));
     const state = await createGuestAction(
       EVENT_ID,
-      null,
+      {},
       fd({ full_name: 'סיון קלפה', phone: '0501234567', group_id: '', note: '' }),
     );
-    expect(state).toEqual({ fieldErrors: { phone: [PHONE_TAKEN_ERROR] } });
+    expect(state).toEqual({ validationErrors: { formErrors: [], fieldErrors: { phone: [PHONE_TAKEN_ERROR] } } });
+  });
+});
+
+// The actions are built from the shared next-safe-action client (src/lib/safe-action.ts). What the forms and rows read
+// back must stay what it was: '' on an update still clears, the schemas' Hebrew messages still reach the field, and a
+// row action's failure still reaches the row (now as the result's serverError instead of a throw).
+describe('the next-safe-action results keep the old behavior', () => {
+  it('an update that empties the phone, the group and the note clears them, and the contact leaves the outreach list', async () => {
+    vi.mocked(updateGuest).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof updateGuest>>);
+    vi.mocked(linkGuestContact).mockResolvedValue({ contactId: null, prevContactId: 'c-old' });
+
+    await expect(
+      updateGuestAction(E1, G9, {}, fd({ full_name: 'דנה', phone: '', group_id: '', note: '' })),
+    ).rejects.toThrow('NEXT_REDIRECT');
+
+    expect(updateGuest).toHaveBeenCalledWith(E1, G9, expect.objectContaining({ phone: null, group_id: null, note: null }));
+    expect(linkGuestContact).toHaveBeenCalledWith(E1, G9, null);
+    expect(reconcileCampaignSetForContact).toHaveBeenCalledWith(E1, 'delete', 'c-old');
+  });
+
+  it('an empty name gets the schema’s Hebrew message on its field and creates nothing', async () => {
+    const result = await createGuestAction(E1, {}, fd({ full_name: '', phone: '', group_id: '', note: '' }));
+
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors: { full_name: ['נא להזין שם מוזמן'] } } });
+    expect(createGuest).not.toHaveBeenCalled();
+  });
+
+  it('the count back-fill answers any invalid count with its one Hebrew message, and reports what it filled', async () => {
+    const invalid = await fillMissingExpectedCountAction(E1, {}, fd({ expected_count: 'abc' }));
+    expect(invalid).toEqual({
+      validationErrors: { formErrors: [], fieldErrors: { expected_count: ['נא להזין מספר מוזמנים'] } },
+    });
+    expect(fillMissingExpectedCount).not.toHaveBeenCalled();
+
+    vi.mocked(fillMissingExpectedCount).mockResolvedValue(2);
+    const filled = await fillMissingExpectedCountAction(E1, {}, fd({ expected_count: ' 3 ' }));
+    expect(fillMissingExpectedCount).toHaveBeenCalledWith(E1, 3);
+    expect(filled).toEqual({ data: { notice: 'הושלמה כמות עבור 2 מוזמנים.' } });
+  });
+
+  it('a contact status outside the DB enum is refused with its Hebrew message before the data layer', async () => {
+    const result = await setContactStatusAction({ eventId: E1, guestId: G9, value: 'nope' });
+
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors: { value: ['סטטוס יצירת קשר לא תקין'] } } });
+    expect(updateContactStatus).not.toHaveBeenCalled();
+  });
+
+  it('a failed delete comes back as its Hebrew serverError for the row to show', async () => {
+    vi.mocked(deleteGuest).mockRejectedValue(new Error('db down'));
+
+    expect(await deleteGuestAction({ eventId: E1, guestId: G9 })).toEqual({ serverError: 'מחיקת המוזמן נכשלה' });
   });
 });

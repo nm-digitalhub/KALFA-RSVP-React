@@ -8,6 +8,7 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { updateCompanyAction } from './actions';
 
 type CompanySettings = {
@@ -64,13 +65,13 @@ function Field({
 }
 
 export function CompanyForm({ settings }: { settings: CompanySettings }) {
-  const [state, action] = useActionState(updateCompanyAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(updateCompanyAction, {});
+  const e = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <Field
         name="company_legal_name"

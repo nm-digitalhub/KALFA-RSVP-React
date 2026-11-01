@@ -37,6 +37,8 @@ import type {
   PermissionDefDTO,
   OrgRolePermissionMatrix,
 } from '@/lib/data/orgs';
+import { actionErrorMessage } from '@/lib/action-result';
+
 import { resetOrgRolePermissionsAction, setOrgRolePermissionAction } from './actions';
 
 // Confirm-gated "reset this role to the factory default" button. Owner role
@@ -58,8 +60,9 @@ function ResetRoleButton({ role }: { role: OrgRoleDTO }) {
     setError(null);
     startTransition(async () => {
       const result = await resetOrgRolePermissionsAction({ roleId: role.id });
-      if (result && 'error' in result && result.error) {
-        setError(result.error);
+      const message = actionErrorMessage(result);
+      if (message) {
+        setError(message);
         return;
       }
       setOpen(false);
@@ -185,9 +188,10 @@ function MatrixCell({
         permissionId,
         granted: next,
       });
-      if (result && 'error' in result && result.error) {
+      const message = actionErrorMessage(result);
+      if (message) {
         setChecked(!next); // revert
-        onError(result.error);
+        onError(message);
       }
     });
   };

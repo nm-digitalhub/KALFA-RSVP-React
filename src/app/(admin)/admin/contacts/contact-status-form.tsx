@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import { CONTACT_STATUSES } from '@/lib/validation/admin';
 import { CONTACT_STATUS_LABELS, contactStatusLabel } from '@/lib/data/admin/labels';
 import { FieldError, FormError, FormNotice } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { updateContactStatusAction } from './actions';
 
 // Status control for a contact message — a closed vocabulary and the same
@@ -18,7 +19,7 @@ export function ContactStatusForm({
 }) {
   const [state, formAction, pending] = useActionState(
     updateContactStatusAction,
-    null,
+    {},
   );
 
   const isKnown = (CONTACT_STATUSES as readonly string[]).includes(currentStatus);
@@ -54,9 +55,9 @@ export function ContactStatusForm({
           {pending ? 'שומר…' : 'עדכון'}
         </button>
       </div>
-      <FieldError errors={state?.fieldErrors?.status} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.status} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }

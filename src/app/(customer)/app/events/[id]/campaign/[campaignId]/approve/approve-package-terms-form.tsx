@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { useActionState } from 'react';
 
 import { FieldError, FormError, SubmitButton } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionFormError } from '@/lib/action-result';
+
+import type { approvePackageTermsAction } from '../../campaign-actions';
+
+type ApprovePackageTermsResult = Awaited<ReturnType<typeof approvePackageTermsAction>>;
 
 // Approving the fixed-price package terms: two boxes, one button. No drawn signature and no phone code — the server
 // records who approved, when, from where and which version (recordPackageApproval). `terms_version` is the version of
@@ -15,14 +19,15 @@ export function ApprovePackageTermsForm({
   action,
   termsVersion,
 }: {
-  action: (prev: FormState, formData: FormData) => Promise<FormState>;
+  action: (prev: ApprovePackageTermsResult, formData: FormData) => Promise<ApprovePackageTermsResult>;
   termsVersion: string;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
+  const fieldErrors = state.validationErrors?.fieldErrors;
   return (
     <form action={formAction} className="space-y-4">
       <input type="hidden" name="terms_version" value={termsVersion} />
-      <FieldError errors={state?.fieldErrors?.tos_version} />
+      <FieldError errors={fieldErrors?.tos_version} />
 
       <fieldset className="space-y-2 border-t border-border pt-4">
         <label className="flex items-start gap-2 text-sm">
@@ -35,7 +40,7 @@ export function ApprovePackageTermsForm({
             , לרבות התשלום החד‑פעמי.
           </span>
         </label>
-        <FieldError errors={state?.fieldErrors?.terms_accepted} />
+        <FieldError errors={fieldErrors?.terms_accepted} />
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" name="privacy_accepted" className="mt-1" />
           <span>
@@ -46,10 +51,10 @@ export function ApprovePackageTermsForm({
             .
           </span>
         </label>
-        <FieldError errors={state?.fieldErrors?.privacy_accepted} />
+        <FieldError errors={fieldErrors?.privacy_accepted} />
       </fieldset>
 
-      <FormError message={state?.error} />
+      <FormError message={actionFormError(state)} />
       <SubmitButton>אישור והמשך לתשלום</SubmitButton>
     </form>
   );

@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { Tabs, TabsList, TabsTab, TabsPanel } from '@/components/ui/tabs';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { AppSettings } from '@/lib/data/admin/settings';
 import { updateSettingsAction } from './actions';
 
@@ -63,12 +64,12 @@ export function SettingsForm({
 }: {
   settings: AppSettings;
 }) {
-  const [state, action] = useActionState(updateSettingsAction, null);
+  const [state, action] = useActionState(updateSettingsAction, {});
 
   return (
     <form action={action} className="space-y-5">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <Tabs defaultValue="payments">
         {/* The grid stays 2x2 and must NOT become grid-cols-3: Hebrew labels do

@@ -10,10 +10,12 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
+import { actionFormError } from '@/lib/action-result';
 import type { PlatformAbility } from '@/lib/casl';
 import type { ChannelCatalogEntry } from '@/lib/data/channel-catalog';
 import { firstSelectableKey, type ScheduleStepOption } from '@/lib/data/schedule-picker';
+
+import type { updatePackageAction } from './actions';
 
 // Shared create/edit form for a package. The parent binds the correct Server
 // Action (create, or update with the id pre-bound) and passes initial values
@@ -74,7 +76,9 @@ const EMPTY: PackageFormInitial = {
   outreach_schedule: [],
 };
 
-type FormAction = (state: FormState, formData: FormData) => Promise<FormState>;
+// Create and update answer alike (the same input, field errors and output), so one type serves both.
+type PackageFormResult = Awaited<ReturnType<typeof updatePackageAction>>;
+type FormAction = (state: PackageFormResult, formData: FormData) => Promise<PackageFormResult>;
 
 const labelClass = 'block text-sm font-medium';
 const inputClass =
@@ -250,7 +254,7 @@ export function PackageForm({
   // form is editing (an `initial` was given).
   scheduleSeed?: ScheduleSeed | null;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
   const seed = initial === EMPTY ? scheduleSeed : null;
   // The form edits when an `initial` was given and creates otherwise; its save button follows that action.
   const saveAction = initial === EMPTY ? 'create' : 'update';
@@ -285,8 +289,8 @@ export function PackageForm({
 
   return (
     <form action={formAction} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <div className="space-y-1">
         <label htmlFor="name" className={labelClass}>
@@ -300,7 +304,7 @@ export function PackageForm({
           className={inputClass}
           required
         />
-        <FieldError errors={state?.fieldErrors?.name} />
+        <FieldError errors={state.validationErrors?.fieldErrors.name} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -316,7 +320,7 @@ export function PackageForm({
             className={inputClass}
             required
           />
-          <FieldError errors={state?.fieldErrors?.tier} />
+          <FieldError errors={state.validationErrors?.fieldErrors.tier} />
         </div>
 
         <div className="space-y-1">
@@ -331,7 +335,7 @@ export function PackageForm({
             className={inputClass}
             required
           />
-          <FieldError errors={state?.fieldErrors?.category} />
+          <FieldError errors={state.validationErrors?.fieldErrors.category} />
         </div>
       </div>
 
@@ -351,7 +355,7 @@ export function PackageForm({
           className={inputClass}
           required
         />
-        <FieldError errors={state?.fieldErrors?.price_with_vat} />
+        <FieldError errors={state.validationErrors?.fieldErrors.price_with_vat} />
       </div>
 
       <PackageCopyField
@@ -359,7 +363,7 @@ export function PackageForm({
         label="תיאור"
         initialValue={initial.description}
         rows={3}
-        errors={state?.fieldErrors?.description}
+        errors={state.validationErrors?.fieldErrors.description}
       />
 
       <PackageCopyField
@@ -367,7 +371,7 @@ export function PackageForm({
         label="כלול בחבילה (שורה לכל פריט)"
         initialValue={initial.includes.join('\n')}
         rows={5}
-        errors={state?.fieldErrors?.includes}
+        errors={state.validationErrors?.fieldErrors.includes}
       />
 
       <div className="space-y-1">
@@ -388,7 +392,7 @@ export function PackageForm({
         <p className="text-xs text-muted-foreground">
           מספר נמוך מוצג קודם בקטלוג הלקוחות. ברירת מחדל: 0.
         </p>
-        <FieldError errors={state?.fieldErrors?.sort_order} />
+        <FieldError errors={state.validationErrors?.fieldErrors.sort_order} />
       </div>
 
       <div className="flex items-center gap-2">
@@ -402,7 +406,7 @@ export function PackageForm({
         <label htmlFor="active" className="text-sm font-medium">
           חבילה פעילה (מוצגת ללקוחות)
         </label>
-        <FieldError errors={state?.fieldErrors?.active} />
+        <FieldError errors={state.validationErrors?.fieldErrors.active} />
       </div>
 
       <hr className="border-border" />
@@ -429,7 +433,7 @@ export function PackageForm({
           required
           placeholder="מספר שלם, 1 ומעלה"
         />
-        <FieldError errors={state?.fieldErrors?.contact_quota} />
+        <FieldError errors={state.validationErrors?.fieldErrors.contact_quota} />
       </div>
 
       <div className="space-y-1">
@@ -449,7 +453,7 @@ export function PackageForm({
             </label>
           ))}
         </div>
-        <FieldError errors={state?.fieldErrors?.channels} />
+        <FieldError errors={state.validationErrors?.fieldErrors.channels} />
       </div>
 
       <div className="space-y-2">
@@ -476,9 +480,9 @@ export function PackageForm({
               // days_before (structural), channel (§2#5 subset enforcement in
               // superRefine) and message_key (template validation). An empty
               // merged array renders nothing (FieldError returns null).
-              ...(state?.fieldErrors?.[`outreach_schedule.${i}.days_before`] ?? []),
-              ...(state?.fieldErrors?.[`outreach_schedule.${i}.channel`] ?? []),
-              ...(state?.fieldErrors?.[`outreach_schedule.${i}.message_key`] ?? []),
+              ...(state.validationErrors?.fieldErrors[`outreach_schedule.${i}.days_before`] ?? []),
+              ...(state.validationErrors?.fieldErrors[`outreach_schedule.${i}.channel`] ?? []),
+              ...(state.validationErrors?.fieldErrors[`outreach_schedule.${i}.message_key`] ?? []),
             ]}
           />
         ))}
@@ -489,7 +493,7 @@ export function PackageForm({
         >
           + הוספת שלב
         </button>
-        <FieldError errors={state?.fieldErrors?.outreach_schedule} />
+        <FieldError errors={state.validationErrors?.fieldErrors.outreach_schedule} />
         {/* Controlled JSON bridge — the admin never types this directly, only
             the structured rows above; readOperationalForm() parses it server-side. */}
         <input

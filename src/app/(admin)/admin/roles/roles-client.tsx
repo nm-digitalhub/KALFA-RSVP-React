@@ -24,6 +24,7 @@ import {
   FormNotice,
   SubmitButton,
 } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import type {
   PlatformPermissionDTO,
   PlatformRoleDTO,
@@ -107,9 +108,10 @@ function MatrixCell({
         permissionId,
         granted: next,
       });
-      if (result && 'error' in result && result.error) {
+      const message = actionErrorMessage(result);
+      if (message) {
         setChecked(!next); // revert
-        onError(result.error);
+        onError(message);
       }
     });
   };
@@ -127,8 +129,8 @@ function MatrixCell({
 // Create-role form: a new role starts with ZERO permissions (owner grants them
 // via the matrix afterwards).
 function CreateRoleForm() {
-  const [state, action] = useActionState(createPlatformRoleAction, null);
-  const fieldErrors = state?.fieldErrors;
+  const [state, action] = useActionState(createPlatformRoleAction, {});
+  const fieldErrors = state.validationErrors?.fieldErrors;
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-card p-5">
@@ -141,8 +143,8 @@ function CreateRoleForm() {
       </div>
 
       <form action={action} className="space-y-4">
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1">

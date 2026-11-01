@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe('StepActiveSwitch', () => {
   it('shows why the server refused to switch a step on', async () => {
-    vi.mocked(setStepActiveAction).mockResolvedValue({ ok: false, problems: ['התבנית מושהית — השלב לא נשלח'] });
+    vi.mocked(setStepActiveAction).mockResolvedValue({ data: { ok: false, problems: ['התבנית מושהית — השלב לא נשלח'] } });
     render(<StepActiveSwitch messageKey="invite" active={false} label="הזמנה" />);
 
     fireEvent.click(screen.getByRole('switch', { name: 'הזמנה — כבוי' }));
@@ -38,7 +38,7 @@ describe('RouteControl', () => {
   const base = { messageKey: 'invite', withMedia: false, options: [], audienceLabel: 'חתונה' };
 
   it('an audience on its own route can go back to the default', async () => {
-    vi.mocked(removeTemplateRouteAction).mockResolvedValue({ ok: true });
+    vi.mocked(removeTemplateRouteAction).mockResolvedValue({ data: { ok: true } });
     render(<RouteControl {...base} eventType="wedding" currentTemplateId="1" hasOwnRoute />);
 
     fireEvent.click(screen.getByRole('button', { name: 'חזרה לברירת המחדל של השלב' }));

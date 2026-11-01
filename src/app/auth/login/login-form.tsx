@@ -6,21 +6,24 @@ import { useActionState } from 'react';
 import { login, resendConfirmationEmail } from '../actions';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { PasswordInput } from '@/components/password-input';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 
 // Shown only after login reported `email_not_confirmed`, i.e. the password was
 // already correct — so the address is carried over from that attempt rather than
 // asked for again (React clears the inputs once a form action settles). Its own
 // <form>, because a form cannot nest inside another one.
 function ResendConfirmation({ email }: { email: string }) {
-  const [state, action] = useActionState(resendConfirmationEmail, null);
+  const [state, action] = useActionState(resendConfirmationEmail, {});
 
   return (
     <>
-      {state?.notice ? (
-        <FormNotice message={state.notice} />
+      {state.data?.notice ? (
+        <FormNotice message={state.data.notice} />
       ) : (
-        <form action={action} className="mt-3">
+        <form action={action} className="mt-3 space-y-2">
           <input type="hidden" name="email" value={email} />
+          {/* A failed send. The address is a hidden field, so its message can show only here. */}
+          <FormError message={actionErrorMessage(state)} />
           <SubmitButton className="w-auto" size="sm">
             שליחת מייל האישור מחדש
           </SubmitButton>
@@ -45,13 +48,14 @@ function ResendConfirmation({ email }: { email: string }) {
 // `next`: where to resume after sign-in (e.g. the OAuth consent page). The
 // login action re-validates it server-side — the hidden field is never trusted.
 export function LoginForm({ next }: { next?: string }) {
-  const [state, action] = useActionState(login, null);
+  const [state, action] = useActionState(login, {});
 
   return (
     <>
       <form action={action} className="space-y-4">
         {next ? <input type="hidden" name="next" value={next} /> : null}
-        <FormError message={state?.error} />
+        {/* The unconfirmed-account line comes back as data, next to the address it is about. */}
+        <FormError message={actionFormError(state) ?? state.data?.error} />
 
         <div>
           <label htmlFor="email" className="mb-1 block text-sm font-medium">
@@ -65,7 +69,7 @@ export function LoginForm({ next }: { next?: string }) {
             required
             className="w-full rounded-md border border-border bg-transparent px-3 py-2"
           />
-          <FieldError errors={state?.fieldErrors?.email} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.email} />
         </div>
 
         <div>
@@ -78,7 +82,7 @@ export function LoginForm({ next }: { next?: string }) {
             autoComplete="current-password"
             required
           />
-          <FieldError errors={state?.fieldErrors?.password} />
+          <FieldError errors={state.validationErrors?.fieldErrors?.password} />
           <div className="mt-1 text-end">
             <Link
               href="/auth/forgot-password"
@@ -92,8 +96,8 @@ export function LoginForm({ next }: { next?: string }) {
         <SubmitButton>התחברות</SubmitButton>
       </form>
 
-      {state?.unconfirmedEmail ? (
-        <ResendConfirmation email={state.unconfirmedEmail} />
+      {state.data?.unconfirmedEmail ? (
+        <ResendConfirmation email={state.data.unconfirmedEmail} />
       ) : null}
     </>
   );

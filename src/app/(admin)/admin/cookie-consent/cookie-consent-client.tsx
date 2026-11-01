@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import type { CookieConsentAdminView } from '@/lib/data/admin/cookie-consent';
 import {
   updateCookieConsentEnabledAction,
@@ -11,20 +12,26 @@ import {
   bumpCookieConsentRevisionAction,
 } from './actions';
 
-type ToggleAction = typeof updateCookieConsentEnabledAction;
+// Each toggle's action reads its own checkbox, so the three result types differ; the hooks live in the parent and
+// each form receives its own state and dispatcher.
+type ToggleResult =
+  | Awaited<ReturnType<typeof updateCookieConsentEnabledAction>>
+  | Awaited<ReturnType<typeof updateCookieConsentAnalyticsEnabledAction>>
+  | Awaited<ReturnType<typeof updateCookieConsentMarketingEnabledAction>>;
 
 function ToggleForm({
-  action,
+  state,
+  formAction,
   name,
   defaultChecked,
   label,
 }: {
-  action: ToggleAction;
+  state: ToggleResult;
+  formAction: (formData: FormData) => void;
   name: string;
   defaultChecked: boolean;
   label: string;
 }) {
-  const [state, formAction] = useActionState(action, {});
   return (
     <form action={formAction} className="flex flex-col gap-2">
       <label className="flex items-center gap-2 text-sm font-medium">
@@ -39,31 +46,37 @@ function ToggleForm({
       <div className="flex items-center gap-2">
         <SubmitButton className="w-auto">עדכון</SubmitButton>
       </div>
-      <FormNotice message={state?.notice} />
-      <FormError message={state?.error} />
+      <FormNotice message={state.data?.notice} />
+      <FormError message={actionErrorMessage(state)} />
     </form>
   );
 }
 
 export function CookieConsentClient({ view }: { view: CookieConsentAdminView }) {
+  const [enabledState, enabledAction] = useActionState(updateCookieConsentEnabledAction, {});
+  const [analyticsState, analyticsAction] = useActionState(updateCookieConsentAnalyticsEnabledAction, {});
+  const [marketingState, marketingAction] = useActionState(updateCookieConsentMarketingEnabledAction, {});
   const [bumpState, bumpAction] = useActionState(bumpCookieConsentRevisionAction, {});
 
   return (
     <div className="space-y-6">
       <ToggleForm
-        action={updateCookieConsentEnabledAction}
+        state={enabledState}
+        formAction={enabledAction}
         name="cookie_consent_enabled"
         defaultChecked={view.enabled}
         label="מנגנון ההסכמה מופעל"
       />
       <ToggleForm
-        action={updateCookieConsentAnalyticsEnabledAction}
+        state={analyticsState}
+        formAction={analyticsAction}
         name="cookie_consent_analytics_enabled"
         defaultChecked={view.analyticsEnabled}
         label="קטגוריית אנליטיקה מוצעת"
       />
       <ToggleForm
-        action={updateCookieConsentMarketingEnabledAction}
+        state={marketingState}
+        formAction={marketingAction}
         name="cookie_consent_marketing_enabled"
         defaultChecked={view.marketingEnabled}
         label="קטגוריית שיווק/רימרקטינג מוצעת"
@@ -79,8 +92,8 @@ export function CookieConsentClient({ view }: { view: CookieConsentAdminView }) 
         <form action={bumpAction} className="mt-3 flex items-center gap-2">
           <SubmitButton className="w-auto">הכרזת גרסה חדשה (בקש הסכמה מחדש)</SubmitButton>
         </form>
-        <FormNotice message={bumpState?.notice} />
-        <FormError message={bumpState?.error} />
+        <FormNotice message={bumpState.data?.notice} />
+        <FormError message={actionErrorMessage(bumpState)} />
       </div>
     </div>
   );

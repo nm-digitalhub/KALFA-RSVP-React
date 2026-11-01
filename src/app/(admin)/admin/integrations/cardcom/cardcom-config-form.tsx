@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import { FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { EditableField } from '@/app/(admin)/admin/_form-fields';
+import { actionFormError } from '@/lib/action-result';
 import type { GooglePayMode } from '@/lib/cardcom/google-pay-mode';
 
 import { updateCardcomConfigAction } from './actions';
@@ -39,13 +40,13 @@ export type CardcomConfigFormValues = {
 // credentials (one save to configure one provider); the database refuses to switch the pilot on without a stored
 // password, because a pilot that cannot refund must not run.
 export function CardcomConfigForm({ values }: { values: CardcomConfigFormValues }) {
-  const [state, action] = useActionState(updateCardcomConfigAction, null);
-  const e = state?.fieldErrors;
+  const [state, action] = useActionState(updateCardcomConfigAction, {});
+  const e = state.validationErrors?.fieldErrors;
 
   return (
     <form action={action} className="space-y-4">
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
 
       <EditableField
         name="terminal_number"

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// safe-action.ts (the action's client) imports the server-only guard, which throws outside a server bundle.
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', () => ({ unstable_rethrow: vi.fn() }));
 vi.mock('@/lib/data/events', () => ({ requireEventAccess: vi.fn() }));
@@ -25,16 +27,16 @@ beforeEach(() => {
 
 describe('grantCallConsentAction', () => {
   it('rejects a non-UUID id without touching authz or the DB', async () => {
-    const result = await grantCallConsentAction('not-a-uuid', CONTACT);
-    expect(result).toEqual({ ok: false, error: 'מזהה לא תקין' });
+    const result = await grantCallConsentAction({ eventId: 'not-a-uuid', contactId: CONTACT });
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors: { eventId: ['מזהה לא תקין'] } } });
     expect(requireEventAccess).not.toHaveBeenCalled();
     expect(recordCallConsent).not.toHaveBeenCalled();
   });
 
   it('no-ops (does not record) when outreach is disabled', async () => {
     vi.mocked(getOutreachEnabled).mockResolvedValue(false);
-    const result = await grantCallConsentAction(EVENT, CONTACT);
-    expect(result).toEqual({ ok: false, error: 'פנייה לאורחים אינה מופעלת' });
+    const result = await grantCallConsentAction({ eventId: EVENT, contactId: CONTACT });
+    expect(result).toEqual({ serverError: 'פנייה לאורחים אינה מופעלת' });
     // authorized first, but no write
     expect(requireEventAccess).toHaveBeenCalledWith(EVENT, 'contacts', 'edit');
     expect(recordCallConsent).not.toHaveBeenCalled();
@@ -42,8 +44,8 @@ describe('grantCallConsentAction', () => {
   });
 
   it('records consent + a PII-free audit row on the happy path', async () => {
-    const result = await grantCallConsentAction(EVENT, CONTACT);
-    expect(result).toEqual({ ok: true });
+    const result = await grantCallConsentAction({ eventId: EVENT, contactId: CONTACT });
+    expect(result).toEqual({ data: { ok: true } });
     expect(requireEventAccess).toHaveBeenCalledWith(EVENT, 'contacts', 'edit');
     expect(recordCallConsent).toHaveBeenCalledWith(EVENT, CONTACT);
     expect(logActivity).toHaveBeenCalledWith({
@@ -56,8 +58,8 @@ describe('grantCallConsentAction', () => {
 
   it('returns a friendly error when the write throws', async () => {
     vi.mocked(recordCallConsent).mockRejectedValue(new Error('db down'));
-    const result = await grantCallConsentAction(EVENT, CONTACT);
-    expect(result).toEqual({ ok: false, error: 'שמירת ההסכמה נכשלה' });
+    const result = await grantCallConsentAction({ eventId: EVENT, contactId: CONTACT });
+    expect(result).toEqual({ serverError: 'שמירת ההסכמה נכשלה' });
     expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

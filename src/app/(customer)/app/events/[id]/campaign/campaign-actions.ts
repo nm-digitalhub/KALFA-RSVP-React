@@ -32,7 +32,12 @@ import {
   thankyouScheduleSchema,
 } from '@/lib/validation/campaigns';
 import { rescheduleEventForAdmin } from '@/lib/data/admin/events';
-import type { FormState } from '@/lib/validation/result';
+import { actionClient, returnUserError } from '@/lib/safe-action';
+import { zfd } from 'zod-form-data';
+
+// A form whose fields this file does not read: the one-button forms (pause, close, cancel, the three sends, the event
+// close, the benefit) post nothing but the bound ids. It accepts any FormData and never fails.
+const buttonForm = zfd.formData({});
 
 // "אישור פרטי האירוע והמשך" — ONE owner decision that (audit §2 / recommended
 // flow step 5): confirms the event details (the former "publish" — moves
@@ -48,23 +53,24 @@ import type { FormState } from '@/lib/validation/result';
 // never the wording or any personal data). On an already-confirmed event this is
 // a plain continue and needs neither.
 //
-// publishEvent throws only our own safe Hebrew messages, so surfacing err.message is safe and useful.
-export async function setupCampaignAction(
-  eventId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  try {
+// The acknowledgments are checked in the body, after the ownership gate and only on a draft, so the input schema takes
+// the form as it is and never fails.
+//
+// publishEvent throws only our own safe Hebrew messages, which reach the customer as they are (src/lib/safe-action.ts).
+export const setupCampaignAction = actionClient
+  .inputSchema(zfd.formData(z.record(z.string(), z.unknown())))
+  .bindArgsSchemas([z.uuid()])
+  .stateAction(async ({ parsedInput, bindArgsParsedInputs: [eventId] }) => {
     const event = await requireOwnedEvent(eventId);
     if (event.status === 'draft') {
-      if (!setupAcknowledgmentsSchema.safeParse(Object.fromEntries(_formData)).success) {
-        return { error: 'יש לאשר את כל הסעיפים כדי להמשיך.' };
+      if (!setupAcknowledgmentsSchema.safeParse(parsedInput).success) {
+        returnUserError('יש לאשר את כל הסעיפים כדי להמשיך.');
       }
       // Ownership is already proven above; the prerequisites need the venue and
       // celebrant columns that the ownership gate does not select.
       const missing = missingEventPrerequisites(await getEvent(eventId));
       if (missing.length > 0) {
-        return { error: `יש להשלים לפני האישור: ${missing.join(', ')}` };
+        returnUserError(`יש להשלים לפני האישור: ${missing.join(', ')}`);
       }
       await publishEvent(eventId);
       await logActivity({
@@ -79,63 +85,47 @@ export async function setupCampaignAction(
     }
     // The campaign is created in the next step, when the owner chooses a package; its price and quota are the ones
     // chosen.
-  } catch (err) {
-    unstable_rethrow(err);
-    return {
-      error:
-        err instanceof Error ? err.message : 'אישור פרטי האירוע נכשל. נסו שוב.',
-    };
-  }
 
-  revalidatePath(`/app/events/${eventId}`);
-  revalidatePath(`/app/events/${eventId}/campaign`);
-  redirect(`/app/events/${eventId}/setup`);
-}
+    revalidatePath(`/app/events/${eventId}`);
+    revalidatePath(`/app/events/${eventId}/campaign`);
+    redirect(`/app/events/${eventId}/setup`);
+  });
 
 // The setup flow's "בחירת חבילה" step: the owner picks one of the fixed-price packages on offer, and the campaign is
 // created from it. The browser submits only the package id; createCampaign re-checks everything on the server —
 // ownership, that the event is open and in the future, that the package is an offer (the package switch is on), and that
 // the package contract (its own agreement document) is approved — and throws only its own safe Hebrew messages.
-export async function choosePackageAction(
-  eventId: string,
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = choosePackageSchema.safeParse({ package_id: formData.get('package_id') });
-  if (!parsed.success) return { error: 'יש לבחור חבילה' };
-
-  try {
+export const choosePackageAction = actionClient
+  .inputSchema(zfd.formData({ package_id: zfd.text(choosePackageSchema.shape.package_id) }))
+  .bindArgsSchemas([z.uuid()])
+  .stateAction(async ({ parsedInput: { package_id }, bindArgsParsedInputs: [eventId] }) => {
     // A pending campaign already exists → this is a PACKAGE CHANGE (personal-coupons task 5.3,
     // D5/D17): one DB transaction moves the campaign, the price and the bound benefit to the new
     // package. Any other state keeps createCampaign's create-or-continue contract (an approved or
     // later campaign is returned unchanged — no silent price change past approval).
     const existing = await getCampaignForEvent(eventId);
     if (existing && existing.status === 'pending_approval') {
-      const changed = await changeCampaignPackage(eventId, parsed.data.package_id);
+      const changed = await changeCampaignPackage(eventId, package_id);
       if (changed.changed) {
         await logActivity({
           eventId,
           action: 'campaign.package_chosen',
-          meta: { campaignId: changed.id, packageId: parsed.data.package_id, changedExisting: true },
+          meta: { campaignId: changed.id, packageId: package_id, changedExisting: true },
         });
       }
     } else {
-      const campaign = await createCampaign(eventId, parsed.data.package_id);
+      const campaign = await createCampaign(eventId, package_id);
       await logActivity({
         eventId,
         action: 'campaign.package_chosen',
-        meta: { campaignId: campaign.id, packageId: parsed.data.package_id },
+        meta: { campaignId: campaign.id, packageId: package_id },
       });
     }
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'בחירת החבילה נכשלה. נסו שוב.' };
-  }
 
-  revalidatePath(`/app/events/${eventId}`);
-  revalidatePath(`/app/events/${eventId}/campaign`);
-  redirect(`/app/events/${eventId}/setup`);
-}
+    revalidatePath(`/app/events/${eventId}`);
+    revalidatePath(`/app/events/${eventId}/campaign`);
+    redirect(`/app/events/${eventId}/setup`);
+  });
 
 
 // The fixed-price package is APPROVED, not signed: the customer reads the terms and ticks two boxes (the terms and
@@ -147,68 +137,61 @@ export async function choosePackageAction(
 // supersedes the approved price with the benefit's discounted one and routes back to the approval
 // step (the campaign is pending_approval again); ignoring the banner leaves the approved price
 // payable as it is.
-export async function acceptBenefitAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  void _prevState;
-  void _formData;
-  try {
+export const acceptBenefitAction = actionClient
+  .inputSchema(buttonForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [eventId, campaignId] }) => {
     const result = await acceptCampaignBenefit(eventId, campaignId);
     if (result === 'none') {
-      return { error: 'לא נמצאה הטבה זמינה לקבלת ההנחה. ייתכן שפג תוקפה.' };
+      returnUserError('לא נמצאה הטבה זמינה לקבלת ההנחה. ייתכן שפג תוקפה.');
     }
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'קבלת ההטבה נכשלה. נסו שוב.' };
-  }
 
-  revalidatePath(`/app/events/${eventId}`);
-  revalidatePath(`/app/events/${eventId}/campaign`);
-  // Straight to approving the NEW terms at the discounted price.
-  redirect(`/app/events/${eventId}/setup`);
-}
-
-export async function approvePackageTermsAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const consents = approveCampaignSchema.safeParse({
-    campaign_id: campaignId,
-    tos_version: formData.get('terms_version'),
-    terms_accepted: formData.get('terms_accepted') === 'on',
-    privacy_accepted: formData.get('privacy_accepted') === 'on',
+    revalidatePath(`/app/events/${eventId}`);
+    revalidatePath(`/app/events/${eventId}/campaign`);
+    // Straight to approving the NEW terms at the discounted price.
+    redirect(`/app/events/${eventId}/setup`);
   });
-  if (!consents.success) {
-    return { fieldErrors: z.flattenError(consents.error).fieldErrors };
-  }
 
-  const h = await headers();
-  const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
-  const userAgent = h.get('user-agent');
+// The approval form as posted, read into approveCampaignSchema's own keys (the version shown is `terms_version` on the
+// form, `tos_version` in the schema), so each message lands where the form shows it. The campaign id is the bound
+// argument.
+const approvePackageTermsForm = zfd.formData(
+  z.preprocess(
+    (form: Record<string, unknown>) => ({
+      tos_version: form.terms_version ?? null,
+      terms_accepted: form.terms_accepted === 'on',
+      privacy_accepted: form.privacy_accepted === 'on',
+    }),
+    approveCampaignSchema.omit({ campaign_id: true }),
+  ),
+);
 
-  let result: Awaited<ReturnType<typeof recordPackageApproval>>;
-  try {
-    result = await recordPackageApproval({
-      campaignId,
-      termsVersion: consents.data.tos_version,
-      ip,
-      userAgent,
-    });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שמירת האישור נכשלה. נסו שוב.' };
-  }
-  if (!result.ok) return { error: result.error };
+export const approvePackageTermsAction = actionClient
+  .inputSchema(approvePackageTermsForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ parsedInput, bindArgsParsedInputs: [eventId, campaignId] }) => {
+    const h = await headers();
+    const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const userAgent = h.get('user-agent');
 
-  revalidatePath(`/app/events/${eventId}`);
-  revalidatePath(`/app/events/${eventId}/campaign`);
-  redirect(`/app/events/${eventId}/campaign/${campaignId}/payment`);
-}
+    let result: Awaited<ReturnType<typeof recordPackageApproval>>;
+    try {
+      result = await recordPackageApproval({
+        campaignId,
+        termsVersion: parsedInput.tos_version,
+        ip,
+        userAgent,
+      });
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שמירת האישור נכשלה. נסו שוב.');
+    }
+    if (!result.ok) returnUserError(result.error);
+
+    revalidatePath(`/app/events/${eventId}`);
+    revalidatePath(`/app/events/${eventId}/campaign`);
+    redirect(`/app/events/${eventId}/campaign/${campaignId}/payment`);
+  });
 
 // --- Campaign lifecycle (§9) ----------------------------------------------------
 // Each binds (eventId, campaignId) on the client; authorization is enforced inside
@@ -216,37 +199,33 @@ export async function approvePackageTermsAction(
 // revalidate the manage page. There is no customer start: a recorded payment
 // starts a package (design D23, activate-paid-package.ts).
 
-export async function pauseCampaignAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  try {
-    await pauseCampaign(campaignId);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'השהיית הקמפיין נכשלה.' };
-  }
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  return { notice: 'הקמפיין הושהה — לא יישלחו פניות חדשות.' };
-}
+export const pauseCampaignAction = actionClient
+  .inputSchema(buttonForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [eventId, campaignId] }) => {
+    try {
+      await pauseCampaign(campaignId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('השהיית הקמפיין נכשלה.');
+    }
+    revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+    return { notice: 'הקמפיין הושהה — לא יישלחו פניות חדשות.' };
+  });
 
-export async function closeCampaignAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  try {
-    await closeCampaign(campaignId);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'סגירת הקמפיין נכשלה.' };
-  }
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  return { notice: 'הקמפיין נסגר.' };
-}
+export const closeCampaignAction = actionClient
+  .inputSchema(buttonForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [eventId, campaignId] }) => {
+    try {
+      await closeCampaign(campaignId);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('סגירת הקמפיין נכשלה.');
+    }
+    revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+    return { notice: 'הקמפיין נסגר.' };
+  });
 
 // Manual gift-reminder send (message_key 'gift', kalfa_event_gift_v1).
 // Ownership contract: resolve the campaign's event server-side, verify the
@@ -254,75 +233,72 @@ export async function closeCampaignAction(
 // sendCampaignWhatsApp re-checks every §8.3 gate (outreach enabled, campaign
 // active, allowed channel, active template, consent) and fail-closes into the
 // params_incomplete sink when the gift link is not configured.
-export async function sendGiftReminderAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  let result: { sent: number; skipped: number };
-  try {
-    const campaign = await getCampaignRef(campaignId);
-    if (!campaign || campaign.event_id !== eventId) {
-      return { error: 'הקמפיין לא נמצא.' };
+//
+// In the three sends below, `result` stays null when the campaign is not this event's: the "not found" message is
+// raised after the try, since one raised inside it would be caught and replaced by the send's failure message.
+export const sendGiftReminderAction = actionClient
+  .inputSchema(buttonForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [eventId, campaignId] }) => {
+    let result: { sent: number; skipped: number } | null = null;
+    try {
+      const campaign = await getCampaignRef(campaignId);
+      if (campaign && campaign.event_id === eventId) {
+        await requireOwnedEvent(campaign.event_id);
+        result = await sendCampaignWhatsApp(campaignId, 'gift');
+      }
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שליחת תזכורת המתנה נכשלה.');
     }
-    await requireOwnedEvent(campaign.event_id);
-    result = await sendCampaignWhatsApp(campaignId, 'gift');
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שליחת תזכורת המתנה נכשלה.' };
-  }
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  if (result.sent === 0) {
+    if (!result) returnUserError('השירות לא נמצא.');
+    revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+    if (result.sent === 0) {
+      returnUserError(
+        'לא נשלחו תזכורות — ודאו שקישור המתנה מולא באירוע, שהשירות פעיל ושתבנית המתנה מאושרת ופעילה.',
+      );
+    }
     return {
-      error:
-        'לא נשלחו תזכורות — ודאו שקישור המתנה מולא באירוע, שהקמפיין פעיל ושתבנית המתנה מאושרת ופעילה.',
+      notice:
+        result.skipped > 0
+          ? `נשלחו ${result.sent} תזכורות מתנה (${result.skipped} דולגו).`
+          : `נשלחו ${result.sent} תזכורות מתנה.`,
     };
-  }
-  return {
-    notice:
-      result.skipped > 0
-        ? `נשלחו ${result.sent} תזכורות מתנה (${result.skipped} דולגו).`
-        : `נשלחו ${result.sent} תזכורות מתנה.`,
-  };
-}
+  });
 
 // Event-day reminder to CONFIRMED guests (guests.status='attending') + a Bit
 // payment button. Manual, non-billable — same gate model as the gift send
 // (sendCampaignWhatsApp re-checks outreach enabled + active campaign + approved
 // template; the confirmed-only filter and the Bit token live in that batch).
-export async function sendEventDayReminderAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  let result: { sent: number; skipped: number };
-  try {
-    const campaign = await getCampaignRef(campaignId);
-    if (!campaign || campaign.event_id !== eventId) {
-      return { error: 'הקמפיין לא נמצא.' };
+export const sendEventDayReminderAction = actionClient
+  .inputSchema(buttonForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [eventId, campaignId] }) => {
+    let result: { sent: number; skipped: number } | null = null;
+    try {
+      const campaign = await getCampaignRef(campaignId);
+      if (campaign && campaign.event_id === eventId) {
+        await requireOwnedEvent(campaign.event_id);
+        result = await sendCampaignWhatsApp(campaignId, 'event_day_pay');
+      }
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שליחת תזכורת יום האירוע נכשלה.');
     }
-    await requireOwnedEvent(campaign.event_id);
-    result = await sendCampaignWhatsApp(campaignId, 'event_day_pay');
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שליחת תזכורת יום האירוע נכשלה.' };
-  }
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  if (result.sent === 0) {
+    if (!result) returnUserError('השירות לא נמצא.');
+    revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+    if (result.sent === 0) {
+      returnUserError(
+        'לא נשלחו תזכורות — ודאו שקישור הביט מולא באירוע, שיש מאשרי הגעה, שהשירות פעיל ושתבנית יום האירוע מאושרת ופעילה.',
+      );
+    }
     return {
-      error:
-        'לא נשלחו תזכורות — ודאו שקישור הביט מולא באירוע, שיש מאשרי הגעה, שהקמפיין פעיל ושתבנית יום האירוע מאושרת ופעילה.',
+      notice:
+        result.skipped > 0
+          ? `נשלחו ${result.sent} תזכורות יום האירוע (${result.skipped} דולגו).`
+          : `נשלחו ${result.sent} תזכורות יום האירוע.`,
     };
-  }
-  return {
-    notice:
-      result.skipped > 0
-        ? `נשלחו ${result.sent} תזכורות יום האירוע (${result.skipped} דולגו).`
-        : `נשלחו ${result.sent} תזכורות יום האירוע.`,
-  };
-}
+  });
 
 // Post-event thank-you (message_key 'thankyou'). Manual, non-billable — same
 // gate model as gift/event-day (sendCampaignWhatsApp re-checks outreach enabled +
@@ -330,37 +306,33 @@ export async function sendEventDayReminderAction(
 // the L1 past-event gate (POST_EVENT_MESSAGE_KEYS in template-spec.ts). This is
 // the manual, owner-driven path; the auto-thankyou sweep (worker) sends the same
 // key headlessly.
-export async function sendThankyouAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  let result: { sent: number; skipped: number };
-  try {
-    const campaign = await getCampaignRef(campaignId);
-    if (!campaign || campaign.event_id !== eventId) {
-      return { error: 'הקמפיין לא נמצא.' };
+export const sendThankyouAction = actionClient
+  .inputSchema(buttonForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [eventId, campaignId] }) => {
+    let result: { sent: number; skipped: number } | null = null;
+    try {
+      const campaign = await getCampaignRef(campaignId);
+      if (campaign && campaign.event_id === eventId) {
+        await requireOwnedEvent(campaign.event_id);
+        result = await sendCampaignWhatsApp(campaignId, 'thankyou');
+      }
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שליחת הודעת התודה נכשלה.');
     }
-    await requireOwnedEvent(campaign.event_id);
-    result = await sendCampaignWhatsApp(campaignId, 'thankyou');
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שליחת הודעת התודה נכשלה.' };
-  }
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  if (result.sent === 0) {
+    if (!result) returnUserError('השירות לא נמצא.');
+    revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+    if (result.sent === 0) {
+      returnUserError('לא נשלחו הודעות תודה — ודאו שהשירות פעיל ושתבנית התודה מאושרת ופעילה.');
+    }
     return {
-      error: 'לא נשלחו הודעות תודה — ודאו שהקמפיין פעיל ושתבנית התודה מאושרת ופעילה.',
+      notice:
+        result.skipped > 0
+          ? `נשלחו ${result.sent} הודעות תודה (${result.skipped} דולגו).`
+          : `נשלחו ${result.sent} הודעות תודה.`,
     };
-  }
-  return {
-    notice:
-      result.skipped > 0
-        ? `נשלחו ${result.sent} הודעות תודה (${result.skipped} דולגו).`
-        : `נשלחו ${result.sent} הודעות תודה.`,
-  };
-}
+  });
 
 // --- Event lifecycle (R6/R7) — Close ----------------------------------------
 // Confirming the details (draft → active, the former "publish") lives in
@@ -368,30 +340,22 @@ export async function sendThankyouAction(
 // offered on the event page and inside setup (design D5). Who may close
 // (`events.close` through can_access_event), the money rules and the atomic
 // retire+close are all inside closeEvent (events.ts) and its database function;
-// this is a thin wrapper surfacing the data layer's own safe Hebrew message.
+// this is a thin wrapper: the data layer's own safe Hebrew message reaches the customer as it is.
 // On success it lands on the event page, which shows the closed event's summary
 // — wherever the close was pressed.
 
-export async function closeEventAction(
-  eventId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  try {
+export const closeEventAction = actionClient
+  .inputSchema(buttonForm)
+  .bindArgsSchemas([z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [eventId] }) => {
     await closeEvent(eventId);
-  } catch (err) {
-    unstable_rethrow(err);
-    return {
-      error: err instanceof Error ? err.message : 'סגירת האירוע נכשלה. נסו שוב.',
-    };
-  }
-  // Best-effort cancellation marking on the already-synced Exchange
-  // appointment(s) — same never-throws contract as syncEventToExchange.
-  await markEventExchangeCancelled(eventId);
-  revalidatePath('/app/events');
-  revalidatePath(`/app/events/${eventId}`);
-  redirect(`/app/events/${eventId}`);
-}
+    // Best-effort cancellation marking on the already-synced Exchange
+    // appointment(s) — same never-throws contract as syncEventToExchange.
+    await markEventExchangeCancelled(eventId);
+    revalidatePath('/app/events');
+    revalidatePath(`/app/events/${eventId}`);
+    redirect(`/app/events/${eventId}`);
+  });
 
 // R8 — minimal Cancel-campaign action. NOT an ownership check, despite living on
 // a customer page: cancelCampaign (campaigns.ts) requires
@@ -399,23 +363,14 @@ export async function closeEventAction(
 // ever called, and campaignId is never trusted from the browser to imply
 // authorization. The button matches: manage-client.tsx renders it under
 // `canCancel = viewerIsAdmin && …`.
-export async function cancelCampaignAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  try {
+export const cancelCampaignAction = actionClient
+  .inputSchema(buttonForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [eventId, campaignId] }) => {
     await cancelCampaign(campaignId);
-  } catch (err) {
-    unstable_rethrow(err);
-    return {
-      error: err instanceof Error ? err.message : 'ביטול הקמפיין נכשל. נסו שוב.',
-    };
-  }
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  return { notice: 'הקמפיין בוטל' };
-}
+    revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+    return { notice: 'הקמפיין בוטל' };
+  });
 
 // Auto-thankyou owner controls: opt-in toggle + editable schedule. Checkbox
 // semantics: the input is always rendered, so key presence IS the checked
@@ -423,79 +378,65 @@ export async function cancelCampaignAction(
 // (the owner, or platform staff holding manage_billing) is re-verified inside
 // updateThankyouSchedule; the "already sent" guard there surfaces as a plain
 // error rather than a silent no-op.
-export async function updateThankyouScheduleAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = thankyouScheduleSchema.safeParse({
-    auto_enabled: formData.has('auto_enabled'),
-    send_date: formData.get('send_date') ?? '',
-    send_time: formData.get('send_time') ?? '',
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-  const { auto_enabled, send_date, send_time } = parsed.data;
+const thankyouScheduleForm = zfd.formData(
+  z.preprocess(
+    (form: Record<string, unknown>) => ({
+      auto_enabled: 'auto_enabled' in form,
+      send_date: form.send_date ?? '',
+      send_time: form.send_time ?? '',
+    }),
+    thankyouScheduleSchema,
+  ),
+);
 
-  try {
+export const updateThankyouScheduleAction = actionClient
+  .inputSchema(thankyouScheduleForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ parsedInput: { auto_enabled, send_date, send_time }, bindArgsParsedInputs: [eventId, campaignId] }) => {
     await updateThankyouSchedule(campaignId, {
       autoEnabled: auto_enabled,
       sendAt: send_date && send_time ? ilWallTimeToIso(send_date, send_time) : null,
     });
-  } catch (err) {
-    unstable_rethrow(err);
-    return {
-      error: err instanceof Error ? err.message : 'עדכון לוח הזמנים נכשל. נסו שוב.',
-    };
-  }
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  return { notice: 'לוח הזמנים לתודה עודכן' };
-}
+    revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
+    return { notice: 'לוח הזמנים לתודה עודכן' };
+  });
 
 // Staff-only: move a live event's date. Everything that authorizes this lives
 // deeper — rescheduleEventForAdmin checks manage_billing and writes the audit
 // row, and the database function beneath it re-checks the permission itself.
-// This layer parses the form and turns the outcome into a message.
-export async function rescheduleEventAction(
-  eventId: string,
-  campaignId: string,
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = rescheduleEventSchema.safeParse({
-    event_date: formData.get('new_event_date') ?? '',
-    event_time: formData.get('new_event_time') ?? '',
-    reason: formData.get('reschedule_reason') ?? '',
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
+// This layer parses the form and turns the outcome into a message. The form's
+// fields (new_event_date, new_event_time, reschedule_reason) are read into the
+// schema's own keys, where the form shows their messages.
+const rescheduleEventForm = zfd.formData(
+  z.preprocess(
+    (form: Record<string, unknown>) => ({
+      event_date: form.new_event_date ?? '',
+      event_time: form.new_event_time ?? '',
+      reason: form.reschedule_reason ?? '',
+    }),
+    rescheduleEventSchema,
+  ),
+);
 
-  // The owner's own date fields are stored as an Israel wall-clock instant; a
-  // staff edit must produce the identical shape, or the same wall time would
-  // land an hour out across a DST boundary.
-  const iso = ilWallTimeToIso(parsed.data.event_date, parsed.data.event_time);
+export const rescheduleEventAction = actionClient
+  .inputSchema(rescheduleEventForm)
+  .bindArgsSchemas([z.uuid(), z.uuid()])
+  .stateAction(async ({ parsedInput, bindArgsParsedInputs: [eventId, campaignId] }) => {
+    // The owner's own date fields are stored as an Israel wall-clock instant; a
+    // staff edit must produce the identical shape, or the same wall time would
+    // land an hour out across a DST boundary.
+    const iso = ilWallTimeToIso(parsedInput.event_date, parsedInput.event_time);
 
-  let clamped = false;
-  try {
-    const result = await rescheduleEventForAdmin(eventId, iso, parsed.data.reason);
-    clamped = result.deadlineClamped;
-  } catch (err) {
-    unstable_rethrow(err);
+    const result = await rescheduleEventForAdmin(eventId, iso, parsedInput.reason);
+    const clamped = result.deadlineClamped;
+
+    // Both pages show the date; the campaign board also shows the billing window
+    // that the database trigger has just moved with it.
+    revalidatePath(`/app/events/${eventId}`);
+    revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
     return {
-      error: err instanceof Error ? err.message : 'שינוי מועד האירוע נכשל. נסו שוב.',
+      notice: clamped
+        ? 'מועד האירוע עודכן. המועד האחרון לאישור הגעה הוצמד ליום האירוע החדש.'
+        : 'מועד האירוע עודכן, וחלון החיוב של הקמפיין עודכן איתו.',
     };
-  }
-
-  // Both pages show the date; the campaign board also shows the billing window
-  // that the database trigger has just moved with it.
-  revalidatePath(`/app/events/${eventId}`);
-  revalidatePath(`/app/events/${eventId}/campaign/${campaignId}`);
-  return {
-    notice: clamped
-      ? 'מועד האירוע עודכן. המועד האחרון לאישור הגעה הוצמד ליום האירוע החדש.'
-      : 'מועד האירוע עודכן, וחלון החיוב של הקמפיין עודכן איתו.',
-  };
-}
+  });

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
@@ -47,7 +48,7 @@ describe('createEventAction — celebrants (בעלי שמחה)', () => {
 
   it('passes the parsed celebrants of the submitted event type to createEvent', async () => {
     await createEventAction(
-      null,
+      {},
       fd({
         ...FIELDS,
         'celebrants.groom': 'יוסי',
@@ -62,7 +63,7 @@ describe('createEventAction — celebrants (בעלי שמחה)', () => {
 
   it('maps an all-empty celebrant group to celebrants: null (never {})', async () => {
     await createEventAction(
-      null,
+      {},
       fd({ ...FIELDS, 'celebrants.groom': '', 'celebrants.bride': '' }),
     );
 
@@ -73,11 +74,13 @@ describe('createEventAction — celebrants (בעלי שמחה)', () => {
 
   it('returns a DOTTED fieldErrors key for an invalid celebrant name and does not create', async () => {
     const result = await createEventAction(
-      null,
+      {},
       fd({ ...FIELDS, 'celebrants.groom': 'א'.repeat(121) }),
     );
 
-    expect(result?.fieldErrors?.['celebrants.groom']).toEqual(['השם ארוך מדי']);
+    expect(result).toEqual({
+      validationErrors: { formErrors: [], fieldErrors: { 'celebrants.groom': ['השם ארוך מדי'] } },
+    });
     expect(createEvent).not.toHaveBeenCalled();
   });
 
@@ -85,7 +88,7 @@ describe('createEventAction — celebrants (בעלי שמחה)', () => {
     // A user picked wedding, typed a groom, then switched to birthday: the
     // browser may still post the stale wedding inputs alongside the new ones.
     await createEventAction(
-      null,
+      {},
       fd({
         ...FIELDS,
         event_type: 'birthday',
@@ -104,7 +107,7 @@ describe('createEventAction — Next.js control-flow signals', () => {
   it('propagates a NEXT_REDIRECT from createEvent (requireUser) instead of returning { error }', async () => {
     vi.mocked(createEvent).mockRejectedValue(NEXT_REDIRECT);
 
-    await expect(createEventAction(null, fd(FIELDS))).rejects.toThrow(
+    await expect(createEventAction({}, fd(FIELDS))).rejects.toThrow(
       'NEXT_REDIRECT',
     );
   });
@@ -112,9 +115,9 @@ describe('createEventAction — Next.js control-flow signals', () => {
   it('converts a genuine (non-framework) error into the existing friendly message, not a thrown error', async () => {
     vi.mocked(createEvent).mockRejectedValue(new Error('db down'));
 
-    const result = await createEventAction(null, fd(FIELDS));
+    const result = await createEventAction({}, fd(FIELDS));
 
-    expect(result).toEqual({ error: 'יצירת האירוע נכשלה. נסו שוב.' });
+    expect(result).toEqual({ serverError: 'יצירת האירוע נכשלה. נסו שוב.' });
   });
 });
 
@@ -130,7 +133,7 @@ describe('createEventAction — the edit-form fields at create time', () => {
 
   it("forwards venue_address / rsvp_deadline / gift_payment_url ('' → null) and show_meal_pref from checkbox presence", async () => {
     await createEventAction(
-      null,
+      {},
       fd({
         ...FIELDS,
         venue_address: 'הרצל 1',
@@ -152,18 +155,18 @@ describe('createEventAction — the edit-form fields at create time', () => {
   });
 
   it('an unchecked meal-pref box (key absent) → show_meal_pref: false', async () => {
-    await createEventAction(null, fd(FIELDS));
+    await createEventAction({}, fd(FIELDS));
 
     expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({ show_meal_pref: false }));
   });
 
   it('rejects a non-https gift link with a field error and creates nothing', async () => {
     const result = await createEventAction(
-      null,
+      {},
       fd({ ...FIELDS, gift_payment_url: 'http://payboxapp.com/x' }),
     );
 
-    expect(result?.fieldErrors?.gift_payment_url).toBeDefined();
+    expect(result?.validationErrors?.fieldErrors?.gift_payment_url).toBeDefined();
     expect(createEvent).not.toHaveBeenCalled();
   });
 
@@ -174,9 +177,9 @@ describe('createEventAction — the edit-form fields at create time', () => {
       new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' }),
     );
 
-    const result = await createEventAction(null, f);
+    const result = await createEventAction({}, f);
 
-    expect(result?.error).toBe('תמונת ההזמנה גדולה מדי (עד 5MB).');
+    expect(result?.serverError).toBe('תמונת ההזמנה גדולה מדי (עד 5MB).');
     expect(uploadInviteImage).not.toHaveBeenCalled();
     expect(createEvent).not.toHaveBeenCalled();
   });
@@ -185,18 +188,32 @@ describe('createEventAction — the edit-form fields at create time', () => {
     const f = fd(FIELDS);
     f.set('invite_image', new File([new Uint8Array(16)], 'a.gif', { type: 'image/gif' }));
 
-    const result = await createEventAction(null, f);
+    const result = await createEventAction({}, f);
 
-    expect(result?.error).toBe('תמונת ההזמנה חייבת להיות JPG, PNG או WebP.');
+    expect(result?.serverError).toBe('תמונת ההזמנה חייבת להיות JPG, PNG או WebP.');
     expect(uploadInviteImage).not.toHaveBeenCalled();
     expect(createEvent).not.toHaveBeenCalled();
+  });
+
+  // A browser submits a file input with no file chosen as an EMPTY File, not as a missing field. That submission must
+  // create the event with no image — the E2E setup flow caught it refused, silently, on 30.10.2026.
+  it('creates the event when no image is chosen and the browser sends an empty file', async () => {
+    const f = fd(FIELDS);
+    f.set('invite_image', new File([], '', { type: 'application/octet-stream' }));
+
+    const result = await createEventAction({}, f).catch((e: unknown) => e);
+
+    expect(uploadInviteImage).not.toHaveBeenCalled();
+    expect(createEvent).toHaveBeenCalledTimes(1);
+    expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({ invite_image_path: null }));
+    expect((result as { validationErrors?: unknown })?.validationErrors).toBeUndefined();
   });
 
   it('uploads the image under a server-generated id BEFORE the insert, and inserts with that id + path', async () => {
     const f = fd(FIELDS);
     f.set('invite_image', new File([new Uint8Array(16)], 'a.png', { type: 'image/png' }));
 
-    await createEventAction(null, f);
+    await createEventAction({}, f);
 
     expect(uploadInviteImage).toHaveBeenCalledTimes(1);
     const [uploadedForId, , contentType] = vi.mocked(uploadInviteImage).mock.calls[0];
@@ -218,9 +235,9 @@ describe('createEventAction — the edit-form fields at create time', () => {
     const f = fd(FIELDS);
     f.set('invite_image', new File([new Uint8Array(16)], 'a.png', { type: 'image/png' }));
 
-    const result = await createEventAction(null, f);
+    const result = await createEventAction({}, f);
 
-    expect(result?.error).toBe('העלאת תמונת ההזמנה נכשלה. נסו שוב.');
+    expect(result?.serverError).toBe('העלאת תמונת ההזמנה נכשלה. נסו שוב.');
     expect(createEvent).not.toHaveBeenCalled();
   });
 
@@ -229,16 +246,16 @@ describe('createEventAction — the edit-form fields at create time', () => {
     const f = fd(FIELDS);
     f.set('invite_image', new File([new Uint8Array(16)], 'a.png', { type: 'image/png' }));
 
-    const result = await createEventAction(null, f);
+    const result = await createEventAction({}, f);
 
-    expect(result).toEqual({ error: 'יצירת האירוע נכשלה. נסו שוב.' });
+    expect(result).toEqual({ serverError: 'יצירת האירוע נכשלה. נסו שוב.' });
     expect(removeInviteImage).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111/invite.png');
   });
 
   it('without an image, createEvent is called with invite_image_path: null and no cleanup runs on failure', async () => {
     vi.mocked(createEvent).mockRejectedValue(new Error('db down'));
 
-    await createEventAction(null, fd(FIELDS));
+    await createEventAction({}, fd(FIELDS));
 
     expect(uploadInviteImage).not.toHaveBeenCalled();
     expect(removeInviteImage).not.toHaveBeenCalled();
@@ -253,18 +270,47 @@ describe('createEventAction — the one-event refusal', () => {
       new Error('לחשבון שלכם כבר קיים אירוע. לפתיחת אירוע נוסף פנו אלינו.'),
     );
 
-    const result = await createEventAction(null, fd(FIELDS));
+    const result = await createEventAction({}, fd(FIELDS));
 
     expect(result).toEqual({
-      error: 'לחשבון שלכם כבר קיים אירוע. לפתיחת אירוע נוסף פנו אלינו.',
+      serverError: 'לחשבון שלכם כבר קיים אירוע. לפתיחת אירוע נוסף פנו אלינו.',
     });
   });
 
   it('still hides an unexpected failure behind the generic message', async () => {
     vi.mocked(createEvent).mockRejectedValue(new Error('duplicate key value violates …'));
 
-    const result = await createEventAction(null, fd(FIELDS));
+    const result = await createEventAction({}, fd(FIELDS));
 
-    expect(result).toEqual({ error: 'יצירת האירוע נכשלה. נסו שוב.' });
+    expect(result).toEqual({ serverError: 'יצירת האירוע נכשלה. נסו שוב.' });
+  });
+});
+
+// The input schema (createEventSchema read from the FormData, celebrants checked after it) answers a bad field with
+// the same Hebrew the action always returned, under the same key.
+describe('createEventAction — the schema’s own Hebrew, in the old order', () => {
+  it('an empty name is the schema’s message, and nothing is created', async () => {
+    const result = await createEventAction({}, fd({ ...FIELDS, name: '' }));
+
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors: { name: ['נא להזין שם אירוע'] } } });
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cross-field rules: a deadline without an event date', async () => {
+    const result = await createEventAction({}, fd({ ...FIELDS, rsvp_deadline: '2099-01-01' }));
+
+    expect(result).toEqual({
+      validationErrors: {
+        formErrors: [],
+        fieldErrors: { rsvp_deadline: ['יש להזין תאריך אירוע כדי לקבוע מועד אחרון לאישור הגעה'] },
+      },
+    });
+    expect(createEvent).not.toHaveBeenCalled();
+  });
+
+  it('checks the celebrants only once the base fields pass', async () => {
+    const result = await createEventAction({}, fd({ ...FIELDS, name: '', 'celebrants.groom': 'א'.repeat(121) }));
+
+    expect(result).toEqual({ validationErrors: { formErrors: [], fieldErrors: { name: ['נא להזין שם אירוע'] } } });
   });
 });

@@ -46,7 +46,9 @@ export function GuestRowActions({
     setFailed(false);
     startTransition(async () => {
       try {
-        await deleteGuestAction(eventId, guestId);
+        // A failure comes back as the result, not a throw.
+        const result = await deleteGuestAction({ eventId, guestId });
+        if (result.serverError || result.validationErrors) setFailed(true);
       } catch (err) {
         // A stale-deployment action id reloads the tab (shared recovery);
         // anything else keeps the inline "נכשל" indicator.

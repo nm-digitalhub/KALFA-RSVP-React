@@ -28,6 +28,7 @@ import {
   revokeInvitationAction,
 } from './actions';
 import { formatIsraelDate } from '@/lib/date';
+import { actionFormError } from '@/lib/action-result';
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm';
@@ -132,13 +133,13 @@ function RemoveMemberForm({
 }
 
 function InviteForm({ roles }: { roles: OrgRoleDTO[] }) {
-  const [state, action] = useActionState(inviteMemberAction, null);
+  const [state, action] = useActionState(inviteMemberAction, {});
   return (
     <section className={sectionClass}>
       <h2 className="text-lg font-semibold">הזמנת משתמש</h2>
       <form action={action} className="space-y-3">
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
           <div>
             <label htmlFor="invite-email" className="mb-1 block text-sm font-medium">
@@ -152,7 +153,7 @@ function InviteForm({ roles }: { roles: OrgRoleDTO[] }) {
               dir="ltr"
               className={inputClass}
             />
-            <FieldError errors={state?.fieldErrors?.email} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.email} />
           </div>
           <div>
             <label htmlFor="invite-role" className="mb-1 block text-sm font-medium">
@@ -176,7 +177,7 @@ function InviteForm({ roles }: { roles: OrgRoleDTO[] }) {
                   </option>
                 ))}
             </select>
-            <FieldError errors={state?.fieldErrors?.role_id} />
+            <FieldError errors={state.validationErrors?.fieldErrors?.role_id} />
           </div>
           <RowSubmit>שליחת הזמנה</RowSubmit>
         </div>
@@ -196,8 +197,8 @@ function MemberRow({
   canManage: boolean;
   isSelf: boolean;
 }) {
-  const [roleState, roleAction] = useActionState(changeMemberRoleAction, null);
-  const [removeState, removeAction] = useActionState(removeMemberAction, null);
+  const [roleState, roleAction] = useActionState(changeMemberRoleAction, {});
+  const [removeState, removeAction] = useActionState(removeMemberAction, {});
   const memberName = member.fullName || member.email || 'חבר צוות';
   return (
     <li className="py-3">
@@ -241,16 +242,16 @@ function MemberRow({
         </div>
       ) : null}
 
-      {roleState?.error ? <FormError message={roleState.error} /> : null}
-      {roleState?.notice ? <FormNotice message={roleState.notice} /> : null}
-      {removeState?.error ? <FormError message={removeState.error} /> : null}
+      <FormError message={actionFormError(roleState)} />
+      {roleState.data?.notice ? <FormNotice message={roleState.data.notice} /> : null}
+      <FormError message={actionFormError(removeState)} />
     </li>
   );
 }
 
 function InvitationRow({ invitation }: { invitation: OrgInvitationDTO }) {
-  const [resendState, resendAction] = useActionState(resendInvitationAction, null);
-  const [revokeState, revokeAction] = useActionState(revokeInvitationAction, null);
+  const [resendState, resendAction] = useActionState(resendInvitationAction, {});
+  const [revokeState, revokeAction] = useActionState(revokeInvitationAction, {});
   return (
     <li className="py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -275,10 +276,10 @@ function InvitationRow({ invitation }: { invitation: OrgInvitationDTO }) {
           </form>
         </div>
       </div>
-      {resendState?.error ? <FormError message={resendState.error} /> : null}
-      {resendState?.notice ? <FormNotice message={resendState.notice} /> : null}
-      {revokeState?.error ? <FormError message={revokeState.error} /> : null}
-      {revokeState?.notice ? <FormNotice message={revokeState.notice} /> : null}
+      <FormError message={actionFormError(resendState)} />
+      {resendState.data?.notice ? <FormNotice message={resendState.data.notice} /> : null}
+      <FormError message={actionFormError(revokeState)} />
+      {revokeState.data?.notice ? <FormNotice message={revokeState.data.notice} /> : null}
     </li>
   );
 }

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// safe-action.ts (the action's client) imports the server-only guard, which throws outside a server bundle.
+vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => {
   const existing: { data: Array<{ full_name: string; phone: string }> | null } = { data: [] };
   const chain = {
@@ -37,6 +39,7 @@ vi.mock('@/lib/data/events', () => ({ requireEventAccess: vi.fn() }));
 import { bulkInsertGuests, createGroup, listGroups } from '@/lib/data/guests';
 import { requireEventAccess } from '@/lib/data/events';
 import { buildContactsForEvent, reconcileCampaignSetForContact } from '@/lib/data/contacts';
+import { GENERIC_ACTION_ERROR } from '@/lib/safe-action';
 import { importGuestsAction } from './import-actions';
 import { buildTemplateCsv } from '@/lib/guests/import-template';
 
@@ -54,6 +57,9 @@ function csvFile(): File {
     type: 'text/csv',
   });
 }
+
+// The bound event id is validated (bindArgsSchemas: z.uuid()).
+const E1 = '11111111-1111-4111-8111-111111111111';
 
 function fd(file: File): FormData {
   const f = new FormData();
@@ -89,15 +95,34 @@ describe('importGuestsAction — its own authorization gate runs before any data
       return [];
     });
     vi.mocked(bulkInsertGuests).mockResolvedValue(0);
-    await importGuestsAction('e-1', null, fd(csvFile()));
-    expect(requireEventAccess).toHaveBeenCalledWith('e-1', 'guests', 'create');
+    await importGuestsAction(E1, {}, fd(csvFile()));
+    expect(requireEventAccess).toHaveBeenCalledWith(E1, 'guests', 'create');
     expect(order[0]).toBe('gate');
+  });
+
+  it('checks the upload only after the gate: no file is answered with its Hebrew message, gate first', async () => {
+    const result = await importGuestsAction(E1, {}, new FormData());
+
+    expect(requireEventAccess).toHaveBeenCalledWith(E1, 'guests', 'create');
+    expect(result).toEqual({ serverError: 'נא לבחור קובץ CSV.' });
+    expect(listGroups).not.toHaveBeenCalled();
+  });
+
+  it('runs before the input is validated: a bound id that fails validation still reaches the gate first', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await importGuestsAction('not-an-id', {}, fd(csvFile()));
+
+    expect(requireEventAccess).toHaveBeenCalledWith('not-an-id', 'guests', 'create');
+    expect(result).toEqual({ serverError: GENERIC_ACTION_ERROR });
+    expect(listGroups).not.toHaveBeenCalled();
+    log.mockRestore();
   });
 
   it('a NEXT_NOT_FOUND from the gate propagates and nothing else runs', async () => {
     vi.mocked(requireEventAccess).mockRejectedValue(NEXT_NOT_FOUND);
     await expect(
-      importGuestsAction('e-1', null, fd(csvFile())),
+      importGuestsAction(E1, {}, fd(csvFile())),
     ).rejects.toThrow('NEXT_NOT_FOUND');
     expect(listGroups).not.toHaveBeenCalled();
   });
@@ -108,7 +133,7 @@ describe('importGuestsAction — Next.js control-flow signals from the ownership
     vi.mocked(listGroups).mockRejectedValue(NEXT_REDIRECT);
 
     await expect(
-      importGuestsAction('e-1', null, fd(csvFile())),
+      importGuestsAction(E1, {}, fd(csvFile())),
     ).rejects.toThrow('NEXT_REDIRECT');
   });
 
@@ -116,16 +141,16 @@ describe('importGuestsAction — Next.js control-flow signals from the ownership
     vi.mocked(listGroups).mockRejectedValue(NEXT_NOT_FOUND);
 
     await expect(
-      importGuestsAction('e-1', null, fd(csvFile())),
+      importGuestsAction(E1, {}, fd(csvFile())),
     ).rejects.toThrow('NEXT_NOT_FOUND');
   });
 
   it('converts a genuine (non-framework) error into the existing friendly message, not a thrown error', async () => {
     vi.mocked(listGroups).mockRejectedValue(new Error('db down'));
 
-    const result = await importGuestsAction('e-1', null, fd(csvFile()));
+    const result = await importGuestsAction(E1, {}, fd(csvFile()));
 
-    expect(result).toEqual({ error: 'טעינת הקבוצות נכשלה.' });
+    expect(result).toEqual({ serverError: 'טעינת הקבוצות נכשלה.' });
   });
 });
 
@@ -154,20 +179,20 @@ describe('importGuestsAction — outreach list admission', () => {
   });
 
   it('asks to admit every contact of the event after the import (op add)', async () => {
-    const result = await importGuestsAction('e-1', null, fd(csvFile()));
+    const result = await importGuestsAction(E1, {}, fd(csvFile()));
 
-    expect(result).toMatchObject({ done: true, imported: 1, failed: [] });
+    expect(result.data).toMatchObject({ done: true, imported: 1, failed: [] });
     expect(reconcileCampaignSetForContact).toHaveBeenCalledTimes(2);
-    expect(reconcileCampaignSetForContact).toHaveBeenNthCalledWith(1, 'e-1', 'add', 'c1');
-    expect(reconcileCampaignSetForContact).toHaveBeenNthCalledWith(2, 'e-1', 'add', 'c2');
+    expect(reconcileCampaignSetForContact).toHaveBeenNthCalledWith(1, E1, 'add', 'c1');
+    expect(reconcileCampaignSetForContact).toHaveBeenNthCalledWith(2, E1, 'add', 'c2');
   });
 
   it('still reports the guests as imported when the package is full (the admission resolves)', async () => {
     vi.mocked(reconcileCampaignSetForContact).mockResolvedValue(undefined);
 
-    const result = await importGuestsAction('e-1', null, fd(csvFile()));
+    const result = await importGuestsAction(E1, {}, fd(csvFile()));
 
-    expect(result).toMatchObject({ done: true, imported: 1, failed: [] });
+    expect(result.data).toMatchObject({ done: true, imported: 1, failed: [] });
   });
 });
 
@@ -188,10 +213,10 @@ describe('importGuestsAction — Excel traps', () => {
       ...ascii(',0501234567\n'),
     ]);
 
-    const result = await importGuestsAction('e-1', null, fd(fileOf([bytes])));
+    const result = await importGuestsAction(E1, {}, fd(fileOf([bytes])));
 
-    expect(result).toMatchObject({ done: true, imported: 1, failed: [] });
-    expect(bulkInsertGuests).toHaveBeenCalledWith('e-1', [
+    expect(result.data).toMatchObject({ done: true, imported: 1, failed: [] });
+    expect(bulkInsertGuests).toHaveBeenCalledWith(E1, [
       expect.objectContaining({ full_name: 'דנה', phone: '0501234567' }),
     ]);
   });
@@ -200,49 +225,49 @@ describe('importGuestsAction — Excel traps', () => {
     const xlsxMagic = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
 
     const result = await importGuestsAction(
-      'e-1',
-      null,
+      E1,
+      {},
       fd(fileOf([xlsxMagic], 'guests.xlsx')),
     );
 
-    expect(result?.error).toContain('CSV UTF-8');
+    expect(result.serverError).toContain('CSV UTF-8');
     expect(bulkInsertGuests).not.toHaveBeenCalled();
   });
 
   it('repairs a phone that lost its leading zero in Excel', async () => {
     const result = await importGuestsAction(
-      'e-1',
-      null,
+      E1,
+      {},
       fd(fileOf(['שם,טלפון\nדנה,501234567\n'])),
     );
 
-    expect(result).toMatchObject({ done: true, imported: 1, failed: [] });
-    expect(bulkInsertGuests).toHaveBeenCalledWith('e-1', [
+    expect(result.data).toMatchObject({ done: true, imported: 1, failed: [] });
+    expect(bulkInsertGuests).toHaveBeenCalledWith(E1, [
       expect.objectContaining({ phone: '0501234567' }),
     ]);
   });
 
   it('still reports a truly invalid phone per-row (repair must not mask errors)', async () => {
     const result = await importGuestsAction(
-      'e-1',
-      null,
+      E1,
+      {},
       fd(fileOf(['שם,טלפון\nדנה,12345\n'])),
     );
 
-    expect(result?.imported).toBe(0);
-    expect(result?.failed).toHaveLength(1);
+    expect(result.data?.imported).toBe(0);
+    expect(result.data?.failed).toHaveLength(1);
     expect(bulkInsertGuests).not.toHaveBeenCalled();
   });
 
   it('maps the כמות column, and an EMPTY count stays null — never 0', async () => {
     const result = await importGuestsAction(
-      'e-1',
-      null,
+      E1,
+      {},
       fd(fileOf(['שם מלא,טלפון,כמות\nמשפחת כהן,0501234567,4\nסבתא רחל,,\n'])),
     );
 
-    expect(result).toMatchObject({ done: true, imported: 2, failed: [] });
-    expect(bulkInsertGuests).toHaveBeenCalledWith('e-1', [
+    expect(result.data).toMatchObject({ done: true, imported: 2, failed: [] });
+    expect(bulkInsertGuests).toHaveBeenCalledWith(E1, [
       expect.objectContaining({ full_name: 'משפחת כהן', expected_count: 4 }),
       expect.objectContaining({ full_name: 'סבתא רחל', expected_count: null }),
     ]);
@@ -263,13 +288,13 @@ describe('the downloadable template round-trips through the import', () => {
     );
 
     const result = await importGuestsAction(
-      'e-1',
-      null,
+      E1,
+      {},
       fd(fileOf([buildTemplateCsv()], 'template.csv')),
     );
 
-    expect(result).toMatchObject({ done: true, imported: 3, failed: [] });
-    expect(bulkInsertGuests).toHaveBeenCalledWith('e-1', [
+    expect(result.data).toMatchObject({ done: true, imported: 3, failed: [] });
+    expect(bulkInsertGuests).toHaveBeenCalledWith(E1, [
       expect.objectContaining({
         full_name: 'משפחת כהן',
         phone: '0501234567',
@@ -294,14 +319,14 @@ describe('importGuestsAction — one guest per phone', () => {
 
   it('a duplicate inside the file becomes a row error naming the first row', async () => {
     const result = await importGuestsAction(
-      'e-1',
-      null,
+      E1,
+      {},
       fd(fileOf(['שם,טלפון\nדנה,0501234567\nיוסי,+972501234567\n'])),
     );
 
-    expect(result).toMatchObject({ done: true, imported: 1 });
-    expect(result?.failed?.[0]?.row).toBe(2);
-    expect(result?.failed?.[0]?.message).toContain('כפול בקובץ');
+    expect(result.data).toMatchObject({ done: true, imported: 1 });
+    expect(result.data?.failed[0]?.row).toBe(2);
+    expect(result.data?.failed[0]?.message).toContain('כפול בקובץ');
   });
 
   it('a phone already on an existing guest becomes a row error naming them', async () => {
@@ -311,20 +336,20 @@ describe('importGuestsAction — one guest per phone', () => {
     adminMock.__setExistingGuests([{ full_name: 'משפחת כהן', phone: '0501234567' }]);
 
     const result = await importGuestsAction(
-      'e-1',
-      null,
+      E1,
+      {},
       fd(fileOf(['שם,טלפון\nדנה,050-123-4567\n'])),
     );
     adminMock.__setExistingGuests([]);
 
-    expect(result?.imported).toBe(0);
-    expect(result?.failed?.[0]?.message).toContain('משפחת כהן');
+    expect(result.data?.imported).toBe(0);
+    expect(result.data?.failed[0]?.message).toContain('משפחת כהן');
   });
 });
 
 it('returns a fixed error for malformed CSV and inserts no guests', async () => {
   const file = new File(['name,phone\n"unfinished,0501234567'], 'bad.csv', { type: 'text/csv' });
-  const result = await importGuestsAction('e-1', null, fd(file));
-  expect(result?.error).toContain('CSV UTF-8');
+  const result = await importGuestsAction(E1, {}, fd(file));
+  expect(result.serverError).toContain('CSV UTF-8');
   expect(bulkInsertGuests).not.toHaveBeenCalled();
 });

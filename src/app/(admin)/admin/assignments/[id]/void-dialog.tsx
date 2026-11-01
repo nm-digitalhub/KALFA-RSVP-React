@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { FormError } from '@/components/forms';
+import { actionErrorMessage } from '@/lib/action-result';
 import { voidAssignmentAction } from '../actions';
 
 // The void dialog (admin-panel ד.6, spec §9): opened only from the detail page, the
@@ -35,7 +36,7 @@ export function VoidAssignmentDialog({
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const action = voidAssignmentAction.bind(null, assignmentId, listSearch);
-  const [state, formAction, pending] = useActionState(action, null);
+  const [state, formAction, pending] = useActionState(action, {});
 
   // Only validation and unexpected errors come back here (the reason stays in this component's
   // state; the action refreshes the details itself); a refusal or a success navigates instead.
@@ -58,7 +59,7 @@ export function VoidAssignmentDialog({
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <FormError message={state?.error} />
+          <FormError message={actionErrorMessage(state)} />
 
           <div className="space-y-1">
             <label htmlFor="void-reason" className="block text-sm font-medium">

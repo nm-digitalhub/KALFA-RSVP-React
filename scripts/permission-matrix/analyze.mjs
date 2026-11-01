@@ -642,6 +642,28 @@ export function analyze({
     const p = file.replace(/^src\/app/, '').split('/').filter((s) => !(s.startsWith('(') && s.endsWith(')'))).join('/');
     return p.replace(/\/(page|layout|route)\.(tsx|ts)$/, '').replace(/\/[^/]+\.(tsx|ts)$/, '') || '/';
   };
+  // A Server Action built from the next-safe-action client (src/lib/safe-action.ts):
+  //   export const x = actionClient.use(gate).inputSchema(…).stateAction(body)
+  // `use()` middleware runs BEFORE the body (and before validation), so its callbacks are walked first and what they
+  // prove protects the body. Returns null for anything that is not such a chain.
+  function actionChainOf(decl) {
+    if (!decl || !ts.isVariableDeclaration(decl) || !decl.initializer) return null;
+    const calls = [];
+    let expr = unwrap(decl.initializer);
+    while (ts.isCallExpression(expr) && ts.isPropertyAccessExpression(expr.expression)) {
+      calls.unshift({ method: expr.expression.name.text, args: expr.arguments });
+      expr = unwrap(expr.expression.expression);
+    }
+    if (!ts.isIdentifier(expr) || expr.text !== 'actionClient' || calls.length === 0) return null;
+    const last = calls[calls.length - 1];
+    if (last.method !== 'action' && last.method !== 'stateAction') return null;
+    const isFn = (a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a);
+    const fn = last.args.find(isFn);
+    if (!fn) return null;
+    const pre = calls.filter((c) => c.method === 'use').map((c) => c.args.find(isFn)).filter(Boolean);
+    return { fn, pre };
+  }
+
   function exportedFunctions(sf) {
     const out = [];
     const has = (n, kind) => n.modifiers?.some((m) => m.kind === kind);
@@ -651,6 +673,11 @@ export function analyze({
       }
       if (ts.isVariableStatement(st) && has(st, ts.SyntaxKind.ExportKeyword)) {
         for (const d of st.declarationList.declarations) {
+          const chain = actionChainOf(d);
+          if (chain) {
+            out.push({ name: d.name.getText(), fn: chain.fn, pre: chain.pre });
+            continue;
+          }
           const fn = functionOf(d);
           if (fn) out.push({ name: d.name.getText(), fn });
         }
@@ -684,7 +711,7 @@ export function analyze({
     let fns = exportedFunctions(sf);
     if (kind === 'page' || kind === 'layout') fns = fns.filter((f) => f.name.startsWith('default'));
     if (kind === 'route') fns = fns.filter((f) => /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(f.name));
-    for (const f of fns) entries.push({ file, kind, route: routeOf(file), name: f.name, fn: f.fn, id: `${routeOf(file)} · ${kind} ${f.name}` });
+    for (const f of fns) entries.push({ file, kind, route: routeOf(file), name: f.name, fn: f.fn, pre: f.pre ?? [], id: `${routeOf(file)} · ${kind} ${f.name}` });
   }
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -731,8 +758,17 @@ export function analyze({
         }
       }
     };
-    visit(entry.fn, entry.file, entry.name, { depth: 0, may: false, proven: new Set(), unresolvedBefore: false, params: [], condKeys: new Set(), chain: [] });
-    out.exit = new Set(flowOf(entry.fn).exit);
+    // A next-safe-action entry: its `use()` middleware runs first, and the keys proven when each one returns hold for
+    // the body. The middleware's own call to `next()` is the body itself, not an unresolved call.
+    const provenBefore = new Set();
+    for (const pre of entry.pre ?? []) {
+      const unresolvedAt = out.unresolved.length;
+      visit(pre, entry.file, `${entry.name} · use()`, { depth: 0, may: false, proven: new Set(provenBefore), unresolvedBefore: false, params: [], condKeys: new Set(), chain: [] });
+      out.unresolved.splice(unresolvedAt, Infinity, ...out.unresolved.slice(unresolvedAt).filter((u) => u.name !== 'next'));
+      for (const key of flowOf(pre).exit) provenBefore.add(key);
+    }
+    visit(entry.fn, entry.file, entry.name, { depth: 0, may: false, proven: new Set(provenBefore), unresolvedBefore: false, params: [], condKeys: new Set(), chain: [] });
+    out.exit = new Set([...provenBefore, ...flowOf(entry.fn).exit]);
     return out;
   }
 

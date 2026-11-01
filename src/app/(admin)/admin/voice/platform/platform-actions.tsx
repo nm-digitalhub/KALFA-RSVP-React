@@ -3,13 +3,12 @@
 import { useActionState } from 'react';
 
 import { FormError, FormNotice } from '@/components/forms';
-import type { FormState } from '@/lib/validation/result';
 import { refreshVoicePlatformAction, runLogExportAction } from '../actions';
 
 // Small client wrappers for the two read-only/internal platform actions.
 
 export function RefreshButton() {
-  const [state, action, pending] = useActionState<FormState>(refreshVoicePlatformAction, null);
+  const [state, action, pending] = useActionState(refreshVoicePlatformAction, {});
   return (
     <form action={action} className="inline">
       <button
@@ -19,14 +18,14 @@ export function RefreshButton() {
       >
         {pending ? 'רגע…' : 'רענן'}
       </button>
-      <FormNotice message={state?.notice} />
-      <FormError message={state?.error} />
+      <FormNotice message={state.data?.notice} />
+      <FormError message={state.serverError} />
     </form>
   );
 }
 
 export function RunLogExportButton() {
-  const [state, action, pending] = useActionState<FormState>(runLogExportAction, null);
+  const [state, action, pending] = useActionState(runLogExportAction, {});
   return (
     <form action={action} className="space-y-2">
       <button
@@ -36,8 +35,8 @@ export function RunLogExportButton() {
       >
         {pending ? 'מריץ…' : 'הרץ ייצוא עכשיו'}
       </button>
-      <FormNotice message={state?.notice} />
-      <FormError message={state?.error} />
+      <FormNotice message={state.data?.notice} />
+      <FormError message={state.serverError} />
     </form>
   );
 }

@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { actionErrorMessage } from '@/lib/action-result';
 
 import { setWorkflowActiveAction } from './actions';
 
@@ -26,7 +27,10 @@ export function ArmToggle({ id, isActive }: { id: string; isActive: boolean }) {
       const formData = new FormData();
       formData.set('id', id);
       formData.set('isActive', String(!isActive));
-      const result = await setWorkflowActiveAction(formData);
+      const res = await setWorkflowActiveAction(formData);
+      // A failure (not a refusal) arrives as the result's error; it still ends in the error boundary.
+      if (!res.data) throw new Error(actionErrorMessage(res));
+      const result = res.data;
       if (!result.ok) setErrors(result.errors);
       // Arming can do things BESIDES arming — claim the guest-list role for the
       // number the trigger names, which changes how every inbound message

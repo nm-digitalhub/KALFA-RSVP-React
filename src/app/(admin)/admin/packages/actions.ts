@@ -2,8 +2,11 @@
 
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { returnValidationErrors } from 'next-safe-action';
+import { z } from 'zod';
 
 import { requirePlatformAction } from '@/lib/auth/platform-ability';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 
 import {
   createPackage,
@@ -14,7 +17,6 @@ import {
 import { packageBaseSchema, operationalFieldsSchema } from '@/lib/validation/admin';
 import type { OperationalFieldsInput, PackageInput } from '@/lib/validation/admin';
 import { issuesToFieldErrors, mergeFieldErrors } from '@/lib/validation/result';
-import type { FormState } from '@/lib/validation/result';
 
 // Read the package fields from the form into the shape packageBaseSchema parses.
 // Prices/flags are validated and coerced server-side; nothing is trusted from
@@ -76,27 +78,54 @@ function isCampaignEnabled(operational: OperationalFieldsInput): boolean {
   return operational.contact_quota !== null;
 }
 
-export async function createPackageAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
-  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
-  await requirePlatformAction('create', 'Package');
+// The package form stays FormData and is parsed in the action as before (getAll for the channels, the schedule's JSON
+// with its fallback). Its field errors are keyed by the field's dotted path ("outreach_schedule.0.message_key", as
+// issuesToFieldErrors builds them): that is how the form finds the touchpoint a message belongs to. They leave one level
+// deep (refuse, with fieldPaths naming their key space) and are read back as they are (shapeByPath).
+const packageForm = z.instanceof(FormData);
+const fieldPaths = z.record(z.string(), z.unknown());
 
+function refuse(fieldErrors: Record<string, string[]>): never {
+  return returnValidationErrors(
+    fieldPaths,
+    Object.fromEntries(Object.entries(fieldErrors).map(([path, messages]) => [path, { _errors: messages }])),
+  );
+}
+
+function shapeByPath(errors: object): { formErrors: string[]; fieldErrors: Record<string, string[]> } {
+  const formErrors: string[] = [];
+  const fieldErrors: Record<string, string[]> = {};
+  for (const [key, node] of Object.entries(errors)) {
+    if (key === '_errors') {
+      if (Array.isArray(node)) formErrors.push(...node.map(String));
+    } else if (node && typeof node === 'object' && '_errors' in node && Array.isArray(node._errors)) {
+      fieldErrors[key] = node._errors.map(String);
+    }
+  }
+  return { formErrors, fieldErrors };
+}
+
+const packageFormErrors = { handleValidationErrorsShape: async (errors: object) => shapeByPath(errors) };
+
+// Both package-form actions answer alike, so one form serves both: update says it saved; create redirects instead, and
+// declares the same output.
+const packageFormOutput = z.object({ notice: z.string() });
+
+// The fields, parsed and checked, or the field errors the form shows.
+async function parsePackageForm(formData: FormData) {
   const parsed = packageBaseSchema.safeParse(readPackageForm(formData));
   const operationalParsed = operationalFieldsSchema.safeParse(readOperationalForm(formData));
   if (!parsed.success || !operationalParsed.success) {
-    return {
-      fieldErrors: mergeFieldErrors(
+    refuse(
+      mergeFieldErrors(
         parsed.success ? undefined : issuesToFieldErrors(parsed.error.issues),
         operationalParsed.success ? undefined : issuesToFieldErrors(operationalParsed.error.issues),
       ),
-    };
+    );
   }
 
   const priceErrors = fixedPriceErrors(parsed.data, operationalParsed.data);
-  if (priceErrors) return { fieldErrors: priceErrors };
+  if (priceErrors) refuse(priceErrors);
 
   // Template validation runs only for a campaign-enabled package (one with a contact quota) — campaign-field
   // requirements are never enforced on a non-campaign package, e.g. a future package drafted with touchpoints whose
@@ -109,87 +138,72 @@ export async function createPackageAction(
     for (const { index, message } of templateErrors) {
       (fieldErrors[`outreach_schedule.${index}.message_key`] ??= []).push(message);
     }
-    return { fieldErrors };
+    refuse(fieldErrors);
   }
 
-  try {
-    await createPackage(parsed.data, operationalParsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'יצירת החבילה נכשלה. נסו שוב.' };
-  }
-
-  revalidatePath('/admin/packages');
-  redirect('/admin/packages');
+  return { base: parsed.data, operational: operationalParsed.data };
 }
 
-export async function updatePackageAction(
-  id: string,
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
-  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
-  await requirePlatformAction('update', 'Package');
+// Each action checks the caller's right to it FIRST, in a middleware that runs before any input is validated (the form
+// and the bound id alike): a Server Action is reachable by direct POST, and the access-denied redirect propagates as it
+// does from the DAL (pilot-casl-package-permissions, task 3.3).
 
-  const parsed = packageBaseSchema.safeParse(readPackageForm(formData));
-  const operationalParsed = operationalFieldsSchema.safeParse(readOperationalForm(formData));
-  if (!parsed.success || !operationalParsed.success) {
-    return {
-      fieldErrors: mergeFieldErrors(
-        parsed.success ? undefined : issuesToFieldErrors(parsed.error.issues),
-        operationalParsed.success ? undefined : issuesToFieldErrors(operationalParsed.error.issues),
-      ),
-    };
-  }
+export const createPackageAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformAction('create', 'Package');
+    return next();
+  })
+  .inputSchema(packageForm, packageFormErrors)
+  .outputSchema(packageFormOutput)
+  .stateAction<z.infer<typeof packageFormOutput>>(async ({ parsedInput: formData }) => {
+    const { base, operational } = await parsePackageForm(formData);
 
-  const priceErrors = fixedPriceErrors(parsed.data, operationalParsed.data);
-  if (priceErrors) return { fieldErrors: priceErrors };
-
-  // Same campaign-enabled gate as createPackageAction.
-  const templateErrors = isCampaignEnabled(operationalParsed.data)
-    ? await validateOutreachScheduleForPackage(operationalParsed.data.outreach_schedule)
-    : [];
-  if (templateErrors.length > 0) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const { index, message } of templateErrors) {
-      (fieldErrors[`outreach_schedule.${index}.message_key`] ??= []).push(message);
+    try {
+      await createPackage(base, operational);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('יצירת החבילה נכשלה. נסו שוב.');
     }
-    return { fieldErrors };
-  }
 
-  try {
-    await updatePackage(id, parsed.data, operationalParsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'עדכון החבילה נכשל. נסו שוב.' };
-  }
+    revalidatePath('/admin/packages');
+    redirect('/admin/packages');
+  });
 
-  revalidatePath('/admin/packages');
-  revalidatePath(`/admin/packages/${id}`);
-  return { notice: 'החבילה נשמרה' };
-}
+export const updatePackageAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformAction('update', 'Package');
+    return next();
+  })
+  .inputSchema(packageForm, packageFormErrors)
+  .outputSchema(packageFormOutput)
+  .bindArgsSchemas([z.uuid()])
+  .stateAction(async ({ parsedInput: formData, bindArgsParsedInputs: [id] }) => {
+    // Same campaign-enabled gate as createPackageAction.
+    const { base, operational } = await parsePackageForm(formData);
 
-export async function deletePackageAction(
-  id: string,
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  // First, outside any try: a Server Action is reachable by direct POST, so the caller's right to the action is
-  // checked before the form is parsed, and the access-denied redirect propagates as it does from the DAL.
-  await requirePlatformAction('delete', 'Package');
+    try {
+      await updatePackage(id, base, operational);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('עדכון החבילה נכשל. נסו שוב.');
+    }
 
-  // Bound with the id; useActionState always supplies (state, formData), neither
-  // of which this destructive action reads. Marked intentionally unused.
-  void _prevState;
-  void _formData;
-  try {
+    revalidatePath('/admin/packages');
+    revalidatePath(`/admin/packages/${id}`);
+    return { notice: 'החבילה נשמרה' };
+  });
+
+// Bound with the id; useActionState always supplies (state, formData), neither of which this destructive action reads.
+export const deletePackageAction = actionClient
+  .use(async ({ next }) => {
+    await requirePlatformAction('delete', 'Package');
+    return next();
+  })
+  .inputSchema(z.unknown())
+  .bindArgsSchemas([z.uuid()])
+  .stateAction(async ({ bindArgsParsedInputs: [id] }) => {
     await deletePackage(id);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: err instanceof Error ? err.message : 'מחיקת החבילה נכשלה. נסו שוב.' };
-  }
 
-  revalidatePath('/admin/packages');
-  redirect('/admin/packages');
-}
+    revalidatePath('/admin/packages');
+    redirect('/admin/packages');
+  });

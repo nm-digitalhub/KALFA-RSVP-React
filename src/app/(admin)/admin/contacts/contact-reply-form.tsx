@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
+import { actionFormError } from '@/lib/action-result';
 import { sendInquiryReplyAction } from './actions';
 
 // Inline reply composer for a contact message — same useActionState + native
@@ -19,7 +20,7 @@ export function ContactReplyForm({
   defaultReply?: string | null;
   alreadyReplied: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(sendInquiryReplyAction, null);
+  const [state, formAction, pending] = useActionState(sendInquiryReplyAction, {});
   const textareaId = `reply-${id}`;
 
   return (
@@ -46,9 +47,9 @@ export function ContactReplyForm({
           {pending ? 'שולח…' : 'שליחת מענה'}
         </button>
       </div>
-      <FieldError errors={state?.fieldErrors?.reply} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FieldError errors={state.validationErrors?.fieldErrors?.reply} />
+      <FormError message={actionFormError(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }

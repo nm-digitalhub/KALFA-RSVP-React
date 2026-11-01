@@ -1,5 +1,6 @@
 'use server';
 
+import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 import { unstable_rethrow } from 'next/navigation';
@@ -9,77 +10,72 @@ import {
   sendPushToCurrentUser,
   upsertCurrentUserPushSubscription,
 } from '@/lib/data/push-subscriptions';
-import type { BrowserPushSubscription, PushSendSummary } from '@/lib/push/types';
+import { actionClient, returnUserError } from '@/lib/safe-action';
+import type { PushSendSummary } from '@/lib/push/types';
 
-interface PushActionResult {
-  success: boolean;
-  error?: string;
-  summary?: PushSendSummary;
-}
+// The browser's PushSubscription as JSON (BrowserPushSubscription). Every field is optional, exactly like the type:
+// the data layer (normalizeBrowserSubscription) decides what a usable subscription is, and its refusal reaches the
+// customer as the fixed message below.
+const browserPushSubscriptionSchema = z.object({
+  endpoint: z.string().optional(),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({ p256dh: z.string().optional(), auth: z.string().optional() }).optional(),
+});
 
-export async function subscribePushAction(
-  subscription: BrowserPushSubscription,
-): Promise<PushActionResult> {
+export const subscribePushAction = actionClient
+  .inputSchema(browserPushSubscriptionSchema)
+  .action(async ({ parsedInput: subscription }) => {
+    try {
+      const requestHeaders = await headers();
+      await upsertCurrentUserPushSubscription(
+        subscription,
+        requestHeaders.get('user-agent'),
+      );
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שמירת ההתראה בדפדפן נכשלה. נסו שוב.');
+    }
+
+    revalidatePath('/app/settings');
+    return { success: true };
+  });
+
+export const unsubscribePushAction = actionClient
+  .inputSchema(z.string())
+  .action(async ({ parsedInput: endpoint }) => {
+    try {
+      await revokeCurrentUserPushSubscription(endpoint);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('ביטול ההתראה נכשל. נסו שוב.');
+    }
+
+    revalidatePath('/app/settings');
+    return { success: true };
+  });
+
+export const sendTestPushAction = actionClient.action(async () => {
+  let summary: PushSendSummary;
   try {
-    const requestHeaders = await headers();
-    await upsertCurrentUserPushSubscription(
-      subscription,
-      requestHeaders.get('user-agent'),
-    );
-  } catch (err) {
-    unstable_rethrow(err);
-    return {
-      success: false,
-      error: 'שמירת ההתראה בדפדפן נכשלה. נסו שוב.',
-    };
-  }
-
-  revalidatePath('/app/settings');
-  return { success: true };
-}
-
-export async function unsubscribePushAction(endpoint: string): Promise<PushActionResult> {
-  try {
-    await revokeCurrentUserPushSubscription(endpoint);
-  } catch (err) {
-    unstable_rethrow(err);
-    return {
-      success: false,
-      error: 'ביטול ההתראה נכשל. נסו שוב.',
-    };
-  }
-
-  revalidatePath('/app/settings');
-  return { success: true };
-}
-
-export async function sendTestPushAction(): Promise<PushActionResult> {
-  try {
-    const summary = await sendPushToCurrentUser({
+    summary = await sendPushToCurrentUser({
       title: 'KALFA',
       body: 'התראות הדחיפה פעילות במכשיר הזה.',
       url: '/app/settings#notifications',
       tag: 'kalfa-test-push',
       renotify: true,
     });
-
-    if (summary.sent === 0) {
-      return {
-        success: false,
-        summary,
-        error: 'לא נמצאה התראה פעילה לשליחה במכשיר הזה.',
-      };
-    }
-
-    return {
-      success: true,
-      summary,
-    };
   } catch (err) {
     unstable_rethrow(err);
-    return {
-      success: false,
-      error: 'שליחת התראת בדיקה נכשלה. נסו שוב.',
-    };
+    returnUserError('שליחת התראת בדיקה נכשלה. נסו שוב.');
   }
-}
+
+  // Outside the try: returnUserError throws, and the catch above would turn this message into its own.
+  if (summary.sent === 0) {
+    returnUserError('לא נמצאה התראה פעילה לשליחה במכשיר הזה.');
+  }
+
+  return {
+    success: true,
+    summary,
+  };
+});

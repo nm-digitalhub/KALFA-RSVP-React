@@ -1,57 +1,45 @@
 'use server';
 
-import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
+import { zfd } from 'zod-form-data';
 
 import { updateAgreement, approveAgreement } from '@/lib/data/admin/agreements';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import { agreementEditSchema, agreementApproveSchema } from '@/lib/validation/admin';
-import type { FormState } from '@/lib/validation/result';
 
-function safeMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+// The data layer throws its Hebrew messages as Errors, and the action client passes those through. A rejection that
+// is not an Error with a message keeps this action's own fallback text.
+function failWith(err: unknown, fallback: string): never {
+  unstable_rethrow(err);
+  if (err instanceof Error && err.message) throw err;
+  return returnUserError(fallback);
 }
 
-export async function saveAgreementAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = agreementEditSchema.safeParse({
-    version: formData.get('version'),
-    body_html: formData.get('body_html'),
+// The fields reach the schemas as posted (an empty version included), so the schemas' own Hebrew messages answer.
+export const saveAgreementAction = actionClient
+  .inputSchema(zfd.formData(agreementEditSchema))
+  .stateAction(async ({ parsedInput }) => {
+    try {
+      await updateAgreement({
+        version: parsedInput.version,
+        bodyHtml: parsedInput.body_html ?? null,
+      });
+    } catch (err) {
+      failWith(err, 'שמירת החוזה נכשלה');
+    }
+    revalidatePath('/admin/agreement');
+    return { notice: 'החוזה נשמר (כטיוטה — נדרש אישור מחדש)' };
   });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-  try {
-    await updateAgreement({
-      version: parsed.data.version,
-      bodyHtml: parsed.data.body_html ?? null,
-    });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'שמירת החוזה נכשלה') };
-  }
-  revalidatePath('/admin/agreement');
-  return { notice: 'החוזה נשמר (כטיוטה — נדרש אישור מחדש)' };
-}
 
-export async function approveAgreementAction(
-  _prev: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = agreementApproveSchema.safeParse({
-    version: formData.get('version'),
+export const approveAgreementAction = actionClient
+  .inputSchema(zfd.formData(agreementApproveSchema))
+  .stateAction(async ({ parsedInput }) => {
+    try {
+      await approveAgreement(parsedInput.version);
+    } catch (err) {
+      failWith(err, 'אישור החוזה נכשל');
+    }
+    revalidatePath('/admin/agreement');
+    return { notice: 'החוזה אושר — תג הטיוטה הוסר' };
   });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
-  try {
-    await approveAgreement(parsed.data.version);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: safeMessage(err, 'אישור החוזה נכשל') };
-  }
-  revalidatePath('/admin/agreement');
-  return { notice: 'החוזה אושר — תג הטיוטה הוסר' };
-}
