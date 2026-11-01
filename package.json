@@ -71,6 +71,7 @@
     "transcribe": "node scripts/transcribe-he.mjs",
     "voximplant": "tsx scripts/voximplant/cli.ts",
     "inspect:lifecycle": "tsx scripts/inspect-event-lifecycle.ts",
+    "pgboss:local-setup": "tsx scripts/pgboss-local-setup.ts",
     "relocate": "tsx scripts/relocate/cli.ts",
     "check:control-chars": "node scripts/check-control-characters.mjs",
     "meta:types": "node scripts/meta-types.mjs",

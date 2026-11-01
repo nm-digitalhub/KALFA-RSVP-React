@@ -42,7 +42,8 @@ describe.skipIf(!RUN)('web sender — one connection, no lost send', () => {
     await owner.start(); // creates the isolated schema, as the worker does in production
     await owner.createQueue(QUEUE);
 
-    // The production options, pointed at the disposable schema.
+    // The production options, pointed at the disposable schema. Their own `ssl` is kept: overriding it here
+    // hid that the sender asked the local database for SSL, which it does not speak (supabaseDbSsl).
     sender = await createWebJobSender({
       ...webSenderOptions({
         SUPABASE_DB_HOST: url.hostname,
@@ -52,7 +53,6 @@ describe.skipIf(!RUN)('web sender — one connection, no lost send', () => {
         SUPABASE_DB_NAME: url.pathname.slice(1),
       }),
       schema,
-      ssl,
     });
     sender.on('error', () => {});
   });

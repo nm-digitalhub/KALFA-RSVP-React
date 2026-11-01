@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { assertLocalTargets, resolveLocalTestDb, resolveTestDb } from './test-db-guard';
+import { assertLocalDbUrl, assertLocalTargets, resolveLocalTestDb, resolveTestDb } from './test-db-guard';
 
 // Regression tests for the integration-suite target guards. resolveTestDb() is the
 // existing prod guard (accepts a hosted test project); resolveLocalTestDb() is the
@@ -72,6 +72,23 @@ describe('assertLocalTargets', () => {
     ['an empty API URL', LOCAL_DB, ''],
   ])('refuses %s', (_label, db, api) => {
     expect(() => assertLocalTargets(db, api)).toThrow(/REFUSING integration run/);
+  });
+});
+
+describe('assertLocalDbUrl (the database half, for scripts/pgboss-local-setup.ts)', () => {
+  it('accepts Supabase local on loopback', () => {
+    expect(() => assertLocalDbUrl(LOCAL_DB)).not.toThrow();
+    expect(() => assertLocalDbUrl(LOCAL_DB.replace('127.0.0.1', 'localhost'))).not.toThrow();
+  });
+
+  it.each([
+    ['a hosted pooler DB', HOSTED_DB],
+    ['a remote host on the local DB port', 'postgresql://postgres:x@10.0.0.5:54322/postgres'],
+    ['a hostname that merely starts with 127', 'postgresql://postgres:x@127.0.0.1.evil.example:54322/postgres'],
+    ['loopback DB on the container port', 'postgresql://postgres:x@127.0.0.1:5432/postgres'],
+    ['an unparsable DB URL', 'not a url'],
+  ])('refuses %s', (_label, db) => {
+    expect(() => assertLocalDbUrl(db)).toThrow(/^REFUSING: /);
   });
 });
 

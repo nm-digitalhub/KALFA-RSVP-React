@@ -3,7 +3,7 @@ import 'server-only';
 import { PgBoss, type ConstructorOptions } from 'pg-boss';
 
 import { reportPgBossError } from '@/lib/alerts/pg-boss-alert';
-import { supabaseDbPort } from '@/lib/relocation/env-validation';
+import { supabaseDbPort, supabaseDbSsl } from '@/lib/relocation/env-validation';
 
 // The web tier's SEND-ONLY pg-boss connection.
 //
@@ -23,7 +23,7 @@ export function webSenderOptions(env: Record<string, string | undefined> = proce
     user: env.SUPABASE_DB_USER,
     password: env.SUPABASE_DB_PASSWORD,
     database: env.SUPABASE_DB_NAME || 'postgres',
-    ssl: { rejectUnauthorized: false },
+    ssl: supabaseDbSsl(env),
     schema: 'pgboss',
     application_name: 'kalfa-web-sender',
     // One connection, not two: this process only ever calls .send(), one INSERT

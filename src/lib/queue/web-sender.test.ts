@@ -77,6 +77,14 @@ describe('webSenderOptions', () => {
     const { webSenderOptions } = await load();
     expect(webSenderOptions({})).toMatchObject({ port: 5432, database: 'postgres' });
   });
+
+  it('keeps SSL for the pooler and connects to the local Supabase database without it', async () => {
+    const { webSenderOptions } = await load();
+    expect(webSenderOptions({ SUPABASE_DB_HOST: 'aws-1-ap-south-1.pooler.supabase.com' }).ssl).toEqual({
+      rejectUnauthorized: false,
+    });
+    expect(webSenderOptions({ SUPABASE_DB_HOST: '127.0.0.1', SUPABASE_DB_PORT: '54322' }).ssl).toBe(false);
+  });
 });
 
 describe('getWebJobSender', () => {

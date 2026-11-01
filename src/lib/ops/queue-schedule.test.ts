@@ -134,8 +134,9 @@ describe('completedRetentionSeconds', () => {
 
 // A retired queue must be gone everywhere: not in QUEUES (no work/schedule is
 // registered for it), not on the staleness catalog, and unscheduled + deleted
-// by the worker at startup — otherwise its surviving schedule row keeps filing
-// jobs that nothing drains.
+// at startup — otherwise its surviving schedule row keeps filing jobs that
+// nothing drains. The unschedule + delete itself is ensureQueues'
+// (src/lib/queue/queue-setup.test.ts); here, that the worker runs it.
 describe('retired queues', () => {
   const workerSrc = readFileSync(join(process.cwd(), 'worker', 'main.ts'), 'utf8');
 
@@ -147,7 +148,7 @@ describe('retired queues', () => {
     }
   });
 
-  it('are unscheduled and deleted by the worker at startup', () => {
-    expect(workerSrc).toMatch(/for \(const retired of RETIRED_QUEUES\)[\s\S]{0,200}boss\.unschedule\(retired\)[\s\S]{0,80}boss\.deleteQueue\(retired\)/);
+  it('are unscheduled and deleted at worker startup: the worker runs ensureQueues right after boss.start()', () => {
+    expect(workerSrc).toMatch(/await boss\.start\(\);[\s\S]{0,200}await ensureQueues\(boss\);/);
   });
 });

@@ -9,6 +9,8 @@
 //
 // Allowed environments: Supabase local (`supabase start`) or a dedicated test DB.
 
+import { supabaseDbSsl } from '@/lib/relocation/env-validation';
+
 const PROD_PROJECT_REF = 'cklpaxihpyjbhymqtduv';
 
 export interface TestDbConfig {
@@ -62,17 +64,28 @@ const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost']);
 export const LOCAL_DB_PORT = 54322;
 export const LOCAL_API_PORT = 54321;
 
-export function assertLocalTargets(dbUrl: string, supabaseUrl: string): void {
+// The database half of assertLocalTargets, for a tool that only needs the database (scripts/pgboss-local-setup.ts).
+export function assertLocalDbUrl(dbUrl: string): void {
   let db: URL;
-  let api: URL;
   try {
     db = new URL(dbUrl);
-    api = new URL(supabaseUrl);
   } catch {
-    throw new Error('REFUSING integration run: OUTREACH_TEST_DB_URL / OUTREACH_TEST_SUPABASE_URL is not a URL');
+    throw new Error('REFUSING: the database URL is not a URL');
   }
   if (!['postgres:', 'postgresql:'].includes(db.protocol) || !LOCAL_HOSTS.has(db.hostname) || db.port !== String(LOCAL_DB_PORT)) {
-    throw new Error(`REFUSING integration run: DB must be Supabase local 127.0.0.1:${LOCAL_DB_PORT} (got ${db.hostname}:${db.port || 'default'})`);
+    throw new Error(`REFUSING: DB must be Supabase local 127.0.0.1:${LOCAL_DB_PORT} (got ${db.hostname}:${db.port || 'default'})`);
+  }
+}
+
+export function assertLocalTargets(dbUrl: string, supabaseUrl: string): void {
+  if (!URL.canParse(dbUrl) || !URL.canParse(supabaseUrl)) {
+    throw new Error('REFUSING integration run: OUTREACH_TEST_DB_URL / OUTREACH_TEST_SUPABASE_URL is not a URL');
+  }
+  const api = new URL(supabaseUrl);
+  try {
+    assertLocalDbUrl(dbUrl);
+  } catch (err) {
+    throw new Error(`REFUSING integration run: ${(err as Error).message.replace(/^REFUSING: /, '')}`, { cause: err });
   }
   if (api.protocol !== 'http:' || !LOCAL_HOSTS.has(api.hostname) || api.port !== String(LOCAL_API_PORT) || api.pathname !== '/') {
     throw new Error(`REFUSING integration run: API must be http://127.0.0.1:${LOCAL_API_PORT} (got ${api.href})`);
@@ -89,8 +102,8 @@ export function resolveLocalTestDb(): TestDbConfig & { anonKey: string | null } 
 }
 
 // Supabase local (`supabase start`) does not speak SSL; a hosted test database
-// does. Call it only with a URL resolveTestDb() has already accepted.
+// does. The same rule as every app connection (supabaseDbSsl), applied to the
+// test URL's host. Call it only with a URL resolveTestDb() has already accepted.
 export function testDbSsl(dbUrl: string): false | { rejectUnauthorized: false } {
-  const host = new URL(dbUrl).hostname;
-  return ['localhost', '127.0.0.1', '[::1]'].includes(host) ? false : { rejectUnauthorized: false };
+  return supabaseDbSsl({ SUPABASE_DB_HOST: new URL(dbUrl).hostname });
 }

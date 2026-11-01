@@ -14,6 +14,7 @@ import {
   probeSupabaseDb,
   probeVapidLocal,
   supabaseDbPort,
+  supabaseDbSsl,
   validateFormat,
 } from "./env-validation";
 
@@ -263,9 +264,19 @@ describe("Supabase DB target — configuration check before any connection", () 
     expect(pg.clients).toBe(1);
   });
 
-  // Every connection built from SUPABASE_DB_HOST must take its port through the
-  // one rule. A new site that reads SUPABASE_DB_PORT itself fails here.
-  it("every source connection site takes its port through supabaseDbPort", () => {
+  it("supabaseDbSsl: the local Supabase database (loopback) without SSL, every other host with SSL as before", () => {
+    for (const host of ["127.0.0.1", "localhost", "::1", "[::1]", " LOCALHOST "]) {
+      expect(supabaseDbSsl({ SUPABASE_DB_HOST: host }), host).toBe(false);
+    }
+    for (const host of [POOLER, "db.example.com", "127.0.0.2", undefined]) {
+      expect(supabaseDbSsl({ SUPABASE_DB_HOST: host }), String(host)).toEqual({ rejectUnauthorized: false });
+    }
+  });
+
+  // Every connection built from SUPABASE_DB_HOST must take its port and its SSL
+  // through the one rule. A new site that reads SUPABASE_DB_PORT itself, or
+  // writes its own ssl, fails here.
+  it("every source connection site takes its port through supabaseDbPort and its ssl through supabaseDbSsl", () => {
     const ROOT = process.cwd();
     const walk = (dir: string): string[] =>
       readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
@@ -284,7 +295,15 @@ describe("Supabase DB target — configuration check before any connection", () 
     for (const { f, text } of sites) {
       const hosts = text.match(/host:\s*(?:process\.)?env\.SUPABASE_DB_HOST/g)?.length ?? 0;
       const ports = text.match(/port:\s*supabaseDbPort\((?:process\.)?env\)/g)?.length ?? 0;
-      expect({ f, hosts, ports, rawPort: /SUPABASE_DB_PORT/.test(text) }).toEqual({ f, hosts, ports: hosts, rawPort: false });
+      const ssl = text.match(/ssl:\s*supabaseDbSsl\((?:process\.)?env\)/g)?.length ?? 0;
+      expect({ f, hosts, ports, ssl, rawPort: /SUPABASE_DB_PORT/.test(text), rawSsl: /rejectUnauthorized/.test(text) }).toEqual({
+        f,
+        hosts,
+        ports: hosts,
+        ssl: hosts,
+        rawPort: false,
+        rawSsl: false,
+      });
       expect(hosts, f).toBeGreaterThan(0);
     }
   });

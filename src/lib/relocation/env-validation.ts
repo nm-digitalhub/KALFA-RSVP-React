@@ -378,6 +378,22 @@ export function supabaseDbPort(env: DbTargetEnv): number {
   return effectiveDbPort(env.SUPABASE_DB_PORT);
 }
 
+/** A loopback database is the local Supabase stack (`supabase start`), which does
+ * not speak SSL. `[::1]` is how `new URL()` writes the IPv6 loopback host. */
+const LOOPBACK_DB_HOSTS: readonly string[] = ["localhost", "127.0.0.1", "::1", "[::1]"];
+
+/** The `ssl` option every connection site passes to pg (pg-boss hands its options
+ * to pg.Pool unchanged). pg asks the server for SSL whenever `ssl` is truthy, and a
+ * server without SSL answers "N" — pg then fails with "The server does not support
+ * SSL connections" (pg/lib/connection.js). PGSSLMODE cannot turn that off here: pg
+ * reads it only when `ssl` is undefined (pg/lib/connection-parameters.js). So a
+ * loopback host connects without SSL; any other host (the Supabase pooler) keeps
+ * SSL without certificate verification, as it always has. */
+export function supabaseDbSsl(env: DbTargetEnv): false | { rejectUnauthorized: false } {
+  const host = (env.SUPABASE_DB_HOST ?? "").trim().toLowerCase();
+  return LOOPBACK_DB_HOSTS.includes(host) ? false : { rejectUnauthorized: false };
+}
+
 /** Supabase DB (session pooler): connect + SELECT 1. 28P01 = bad password
  * (auth class); connection-level errors = network. The configuration rule runs
  * first: a refused target is a format failure and nothing is connected.
@@ -395,7 +411,7 @@ export async function probeSupabaseDb(env: Record<string, string>): Promise<Prob
     user: env.SUPABASE_DB_USER,
     password: env.SUPABASE_DB_PASSWORD,
     connectionTimeoutMillis: 8000,
-    ssl: { rejectUnauthorized: false },
+    ssl: supabaseDbSsl(env),
   });
   try {
     await client.connect();

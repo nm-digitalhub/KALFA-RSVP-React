@@ -19,7 +19,7 @@ import { PgBoss, type Job } from 'pg-boss';
 
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
-import { DbConfigError, supabaseDbPort } from '@/lib/relocation/env-validation';
+import { DbConfigError, supabaseDbPort, supabaseDbSsl } from '@/lib/relocation/env-validation';
 import { REPORT_QUEUE_POLICY } from '@/lib/owner-agent/reports/budgets';
 import { buildReportContent } from '@/lib/owner-agent/reports/content';
 import { buildModelReportContent } from '@/lib/owner-agent/reports/model-content';
@@ -95,7 +95,7 @@ async function main(): Promise<void> {
     user: process.env.SUPABASE_DB_USER,
     password: process.env.SUPABASE_DB_PASSWORD,
     database: process.env.SUPABASE_DB_NAME || 'postgres',
-    ssl: { rejectUnauthorized: false },
+    ssl: supabaseDbSsl(process.env),
     schema: 'pgboss',
     application_name: 'kalfa-owner-agent',
     // Two, not more: see OWNER_AGENT_DB_POOL_MAX (the role's session-mode
