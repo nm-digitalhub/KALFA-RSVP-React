@@ -24,15 +24,13 @@ import {
   VoximplantMeetingConfirmToggle,
   VoximplantSalesCallToggle,
 } from './voximplant-personas';
-import { VoicePurposesPanel } from './voice-purposes-panel';
-import { VoximplantConsentToggle } from './voximplant-consent-toggle';
 import { VoximplantCredentialsForm } from './voximplant-credentials-form';
 import { VoximplantConnectionTest } from './voximplant-connection-test';
 
 export const metadata: Metadata = { title: 'Voximplant — אינטגרציות' };
 
 // Everything about the Voximplant connection in one place: the three call kill
-// switches, the §30א consent gate, account and dial credentials, budget limits, the
+// switches, account and dial credentials, budget limits, the
 // scenario base URLs, a live balance/wiring tile and an on-demand connection test.
 //
 // ⚠️ THE GATE IS manage_voice, AND THE MASTER SWITCH IS manage_settings.
@@ -173,15 +171,6 @@ export default async function VoximplantIntegrationPage() {
           enabled={voximplant.salesCallsEnabled}
           fullyConfigured={voximplant.salesCallFullyConfigured}
         />
-      </section>
-
-      <section className={sectionClass}>
-        <VoicePurposesPanel purposes={voicePurposes} />
-      </section>
-
-      <section className={sectionClass}>
-        <h2 className="text-lg font-semibold">דרישת הסכמה</h2>
-        <VoximplantConsentToggle consentRequired={voximplant.callConsentRequired} />
       </section>
 
       <section className={sectionClass}>

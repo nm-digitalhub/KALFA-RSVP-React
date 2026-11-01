@@ -339,47 +339,9 @@ export async function listContacts(eventId: string): Promise<EventContact[]> {
   return data ?? [];
 }
 
-// --- Outreach (B3) consent + send-eligibility -------------------------------
-// These run only behind getOutreachEnabled() (false until outreach is enabled).
+// --- Outreach (B3) send-eligibility -----------------------------------------
 
-// Record channel-specific WhatsApp consent for one contact (caller authorized).
-export async function recordWhatsAppConsent(
-  eventId: string,
-  contactId: string,
-): Promise<void> {
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('contacts')
-    .update({ whatsapp_consent_at: new Date().toISOString() })
-    .eq('id', contactId)
-    .eq('event_id', eventId);
-  if (error) throw new Error('שמירת ההסכמה לוואטסאפ נכשלה', { cause: error });
-}
-
-// Record channel-specific CALL consent for one contact (caller authorized). The
-// twin of recordWhatsAppConsent for the Voximplant AI-call channel (B1): a single
-// non-null timestamp IS the consent record. Service-role write — `contacts` has
-// only a SELECT RLS policy (contacts_org_select), so owners cannot
-// UPDATE it under RLS; callers MUST verify event access server-side first (the UI
-// action does requireEventAccess; the public-RSVP path stamps it inside the
-// token-bound submit_rsvp DEFINER RPC). Scoped by BOTH id AND event_id — consent
-// is per (event, contact) and never portable across events. Does NOT clear
-// removal_requested or touch the DNC list (independent suppressors).
-export async function recordCallConsent(
-  eventId: string,
-  contactId: string,
-): Promise<void> {
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('contacts')
-    .update({ call_consent_at: new Date().toISOString() })
-    .eq('id', contactId)
-    .eq('event_id', eventId);
-  if (error) throw new Error('שמירת ההסכמה לשיחה נכשלה', { cause: error });
-}
-
-// Contacts eligible for a WhatsApp send: not removal-requested AND, unless an admin
-// lifted app_settings.whatsapp_consent_required, with recorded WhatsApp consent.
+// Contacts eligible for a WhatsApp send: not removal-requested.
 // When a campaignId is given, membership is ADDITIONALLY bound
 // to that campaign's authorized set (campaign_authorized_contacts) via an
 // INNER JOIN — so the outreach path can never target a contact outside the set:

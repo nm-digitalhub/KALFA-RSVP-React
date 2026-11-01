@@ -31,7 +31,8 @@ import {
   claimStep,
   executeStep,
   writeReach,
-  hasCallConsent,
+  isContactOptedOut,
+  terminalReasonFor,
   getCampaignContext,
   isContactReached,
   setOutreachStatus,
@@ -358,7 +359,7 @@ const waConfig: WhatsAppConfig = {
 };
 
 // Sequence one executeStep run on the shared builder: await #1 is the
-// contacts read (eligible, consented), await #2 is claimStep's guarded
+// contacts read (eligible), await #2 is claimStep's guarded
 // update (the claim WINS). Any later await — the guest-name read, the
 // failure upsert, bumpCount — falls back to the builder's default result
 // unless the test chains more mockImplementationOnce calls onto the
@@ -375,7 +376,6 @@ const sequenceRun = (
           id: contactId,
           normalized_phone: '972500000001',
           removal_requested: false,
-          whatsapp_consent_at: '2026-01-01T00:00:00+00:00',
         },
         error: null,
       }),
@@ -612,66 +612,66 @@ describe('executeStep — send-time parameter binding', () => {
   });
 });
 
-// hasCallConsent is the ONLY gate that blocks an AI dial for a contact without
-// recorded prior consent, and call_compliance_settings.call_consent_required can lift that
-// check at runtime. Because turning it off has LEGAL weight, these tests pin the
-// exact truth table — especially that opt-out and fail-closed are NEVER lifted.
-describe('hasCallConsent — AI-call consent gate', () => {
-  type Row = Record<string, unknown> | null;
-
-  // Two tables, two results: contacts and call_compliance_settings. A thrown settings
-  // read simulates a flag-read failure (must fail SAFE = "consent required").
-  function mockAdmin(contacts: Row, settings: Row | 'throw') {
-    const contactsB = createMockSupabase({ data: contacts, error: null }).builder;
-    const settingsB = createMockSupabase({ data: settings === 'throw' ? null : settings, error: null }).builder;
-    if (settings === 'throw') {
-      settingsB.then = () => {
-        throw new Error('flag read failed');
+// isContactOptedOut is the per-contact gate of an AI dial: a guest who asked not
+// to be contacted is never called. No prior consent is required (owner,
+// 01.11.2026). It fails CLOSED — an unknown contact or a failed read is "opted out".
+describe('isContactOptedOut — AI-call opt-out gate', () => {
+  function mockContact(
+    result: { data: Record<string, unknown> | null; error: { message: string } | null } | 'throw',
+  ) {
+    const builder = createMockSupabase({
+      data: result === 'throw' ? null : result.data,
+      error: result === 'throw' ? null : result.error,
+    }).builder;
+    if (result === 'throw') {
+      builder.then = () => {
+        throw new Error('read failed');
       };
     }
     vi.mocked(createAdminClient).mockReturnValue({
-      from: (table: string) => (table === 'call_compliance_settings' ? settingsB : contactsB),
+      from: (table: string) => {
+        expect(table).toBe('contacts');
+        return builder;
+      },
       rpc: vi.fn(),
     } as unknown as ReturnType<typeof createAdminClient>);
   }
 
-  const consented = { removal_requested: false, call_consent_at: '2026-01-01T00:00:00Z' };
-  const noConsent = { removal_requested: false, call_consent_at: null };
-  const REQUIRED = { call_consent_required: true };
-  const LIFTED = { call_consent_required: false };
-
-  it('opt-out (removal_requested) → false even WITH a recorded consent', async () => {
-    mockAdmin({ removal_requested: true, call_consent_at: '2026-01-01T00:00:00Z' }, REQUIRED);
-    expect(await hasCallConsent('c1')).toBe(false);
+  it('a contact who asked to be removed → opted out', async () => {
+    mockContact({ data: { removal_requested: true }, error: null });
+    expect(await isContactOptedOut('c1')).toBe(true);
   });
 
-  it('consent required (default) + recorded consent → true', async () => {
-    mockAdmin(consented, REQUIRED);
-    expect(await hasCallConsent('c1')).toBe(true);
+  it('any other contact → not opted out (no consent record is needed)', async () => {
+    mockContact({ data: { removal_requested: false }, error: null });
+    expect(await isContactOptedOut('c1')).toBe(false);
   });
 
-  it('consent required (default) + NO recorded consent → false', async () => {
-    mockAdmin(noConsent, REQUIRED);
-    expect(await hasCallConsent('c1')).toBe(false);
+  it('unknown contact → opted out (fail-closed)', async () => {
+    mockContact({ data: null, error: null });
+    expect(await isContactOptedOut('c1')).toBe(true);
   });
 
-  it('admin LIFTED the requirement + NO recorded consent → true (the new behavior)', async () => {
-    mockAdmin(noConsent, LIFTED);
-    expect(await hasCallConsent('c1')).toBe(true);
+  it('read error → opted out (fail-closed)', async () => {
+    mockContact({ data: null, error: { message: 'boom' } });
+    expect(await isContactOptedOut('c1')).toBe(true);
   });
 
-  it('opt-out STILL wins when the requirement is lifted', async () => {
-    mockAdmin({ removal_requested: true, call_consent_at: null }, LIFTED);
-    expect(await hasCallConsent('c1')).toBe(false);
+  it('a thrown read → opted out (fail-closed)', async () => {
+    mockContact('throw');
+    expect(await isContactOptedOut('c1')).toBe(true);
+  });
+});
+
+// terminalReasonFor is the one opt-out rule shared by the engine step and its
+// crash-recovery re-check.
+describe('terminalReasonFor', () => {
+  it('a contact who asked to be removed is terminal', () => {
+    expect(terminalReasonFor({ removal_requested: true })).toBe('removal_requested');
   });
 
-  it('unknown contact → false', async () => {
-    mockAdmin(null, LIFTED);
-    expect(await hasCallConsent('c1')).toBe(false);
-  });
-
-  it('flag read throws → treated as REQUIRED (fail-safe); a no-consent contact → false', async () => {
-    mockAdmin(noConsent, 'throw');
-    expect(await hasCallConsent('c1')).toBe(false);
+  it('any other contact is not terminal', () => {
+    expect(terminalReasonFor({ removal_requested: false })).toBeNull();
+    expect(terminalReasonFor({ removal_requested: null })).toBeNull();
   });
 });

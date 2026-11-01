@@ -223,12 +223,12 @@ describe('runStepExecution — reservation + certainty taxonomy', () => {
   });
 
   // REGRESSION (terminal-recovery defect) — FULL same-J sequence. A prior TERMINAL
-  // resolve (opt-out / no-consent) that hit a transport error must NOT become a
+  // resolve (opt-out) that hit a transport error must NOT become a
   // blind advance when the SAME job re-runs. Run 1 reserves + sends (terminal) +
   // fails to resolve (throws). Run 2 (same jobId, alreadyReserved) re-checks the
   // terminal condition and RE-TERMINALIZES — no second reserve, no second send
   // (no WhatsApp / no call), and NEVER advance:true.
-  it.each(['removal_requested', 'no_whatsapp_consent'])(
+  it.each(['removal_requested'])(
     'full same-J recovery (%s): run1 throws, run2 re-terminalizes; reserve/send once, never advance:true',
     async (reason) => {
       const reserve = vi.fn(async () => 'reserved' as const);

@@ -17,7 +17,7 @@ import type { OutreachCallRequest } from '@/lib/queue/queues';
 //
 // The vocabulary here is a CONTRACT with the Android app and with the DB CHECK
 // constraints (migration 20260722170740; the reason list was last recreated by
-// 20261004081706). Extending either union is a
+// 20261101134148). Extending either union is a
 // deliberate contract change: update the migration, this file, and the app
 // mapping together — the corpus test (call-dispatch-status.test.ts) fails if
 // the TS unions and the SQL CHECK lists drift apart, and the exhaustive mapper
@@ -44,7 +44,7 @@ export const DISPATCH_STATUS_VALUES: readonly DispatchPublicStatus[] = [
 export type DispatchPublicReason =
   | 'already_reached'
   | 'outside_dial_window'
-  | 'no_call_consent'
+  | 'removal_requested'
   | 'dnc_listed'
   | 'campaign_not_active'
   | 'event_closed'
@@ -65,7 +65,7 @@ export type DispatchPublicReason =
 export const DISPATCH_REASON_VALUES: readonly DispatchPublicReason[] = [
   'already_reached',
   'outside_dial_window',
-  'no_call_consent',
+  'removal_requested',
   'dnc_listed',
   'campaign_not_active',
   'event_closed',

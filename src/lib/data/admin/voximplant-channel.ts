@@ -47,7 +47,6 @@ export type VoximplantChannelConfig = {
   fullyConfigured: boolean; // configured AND callback_secret — the full dial config
   liveCalls: boolean; // raw app_settings.voximplant_live_calls (the admin toggle's value)
   liveEnabled: boolean; // EFFECTIVE live gate: the DB toggle AND the env not force-off
-  callConsentRequired: boolean; // call_compliance_settings.call_consent_required — when false, AI dials skip the prior-consent check (opt-out + DNC still apply)
   // Per-persona kill switches — meeting-confirm and sales-closing
   // share this SAME service account / caller_id / callback_secret (one
   // Voximplant account), but each dials its OWN rule_id and has its OWN
@@ -80,13 +79,6 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
     .eq('id', SETTINGS_ID)
     .maybeSingle();
   if (error) throw new Error('טעינת הגדרות הערוץ נכשלה', { cause: error });
-  // The consent switch lives in call_compliance_settings (split out of app_settings 11.10.2026).
-  const { data: compliance, error: complianceError } = await supabase
-    .from('call_compliance_settings')
-    .select('call_consent_required')
-    .eq('id', SETTINGS_ID)
-    .maybeSingle();
-  if (complianceError) throw new Error('טעינת הגדרות הערוץ נכשלה', { cause: complianceError });
 
   const row = (data ?? {}) as Record<string, unknown>;
   const saConfigured = s(row.voximplant_service_account_json).trim() !== '';
@@ -116,8 +108,6 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
       s(row.voximplant_callback_secret).trim() !== '',
     liveCalls: row.voximplant_live_calls === true,
     liveEnabled: envAllowsLiveCalls() && row.voximplant_live_calls === true,
-    // Default SAFE: anything but an explicit false reads as "consent required".
-    callConsentRequired: compliance?.call_consent_required !== false,
     meetingConfirmRuleId,
     meetingConfirmEnabled: row.voximplant_meeting_confirm_enabled === true,
     meetingConfirmFullyConfigured: baseConfigured && !!meetingConfirmRuleId,
@@ -196,7 +186,7 @@ export async function updateVoximplantChannelConfig(
 }
 
 // Admin toggle for the live-dial gate (app_settings.voximplant_live_calls). This
-// PERMITS real outbound calls — enabling it still leaves consent/DNC/balance and
+// PERMITS real outbound calls — enabling it still leaves opt-out/DNC/balance and
 // the env kill switch in force. Admin-only (RLS + manage_voice). The action layer
 // is fail-closed (refuses to enable without a complete config) and audit-logs.
 export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void> {
@@ -251,22 +241,6 @@ export async function updateSalesCallChannel(
     })
     .eq('id', SETTINGS_ID);
   if (error) throw new Error('עדכון הגדרות סוכן סגירת המכירה נכשל', { cause: error });
-}
-
-// Admin toggle for the AI-call CONSENT gate (call_compliance_settings.call_consent_required).
-// When required (the default, SAFE), hasCallConsent() blocks a dial unless the
-// contact has a recorded call_consent_at. Setting it false lifts ONLY that check —
-// opt-out (removal_requested), the DNC list, and fail-closed reads still apply.
-// Turning it off carries legal (spam-law) exposure surfaced at the toggle; the
-// action layer audits every flip. Admin-only (RLS + manage_voice).
-export async function updateCallConsentRequired(required: boolean): Promise<void> {
-  await requirePlatformPermission('manage_voice');
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from('call_compliance_settings')
-    .update({ call_consent_required: required, updated_at: new Date().toISOString() })
-    .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מתג ההסכמה נכשל', { cause: error });
 }
 
 // ---------------------------------------------------------------------------

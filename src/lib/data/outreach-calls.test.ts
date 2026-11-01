@@ -24,7 +24,7 @@ vi.mock('@/lib/data/voximplant-concurrency', () => ({
 }));
 vi.mock('@/lib/data/outreach-engine', () => ({
   getCampaignContext: vi.fn(),
-  hasCallConsent: vi.fn(),
+  isContactOptedOut: vi.fn(),
   isContactReached: vi.fn(),
   isDncListed: vi.fn(),
 }));
@@ -81,7 +81,7 @@ import {
 import { countActiveCallsAllSurfaces } from '@/lib/data/voximplant-concurrency';
 import {
   getCampaignContext,
-  hasCallConsent,
+  isContactOptedOut,
   isContactReached,
   isDncListed,
 } from '@/lib/data/outreach-engine';
@@ -144,7 +144,7 @@ beforeEach(() => {
   vi.mocked(isWithinHumanCallWindow).mockReturnValue(true);
   vi.mocked(nextHumanCallWindowStart).mockReturnValue(NEXT_WINDOW_MS);
   vi.mocked(getVoximplantConfig).mockResolvedValue(CONFIG as never);
-  vi.mocked(hasCallConsent).mockResolvedValue(true);
+  vi.mocked(isContactOptedOut).mockResolvedValue(false);
   vi.mocked(isDncListed).mockResolvedValue(false);
   vi.mocked(isContactReached).mockResolvedValue(false);
   vi.mocked(checkContactSeat).mockResolvedValue({ allowed: true });
@@ -249,9 +249,9 @@ describe('gates (no dial)', () => {
     expect(getVoximplantConfig).toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
   });
-  it('3. no consent → skipped', async () => {
-    vi.mocked(hasCallConsent).mockResolvedValue(false);
-    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'no_call_consent' });
+  it('3. opted out (asked to be removed) → skipped', async () => {
+    vi.mocked(isContactOptedOut).mockResolvedValue(true);
+    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'removal_requested' });
     expect(startScenarios).not.toHaveBeenCalled();
   });
   it('4. DNC → skipped', async () => {

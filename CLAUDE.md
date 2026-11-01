@@ -81,7 +81,6 @@ Public RSVP handles personal data and must be treated as a security-sensitive su
 * Do not log raw personal data, tokens, credentials, authentication payloads, webhook payloads, or secrets.
 * Preserve auditability for RSVP submissions, guest edits, campaign actions, payment state changes, and administrator actions.
 * KALFA is a per-event B2C product. Do not introduce recurring subscription, trial, or entitlement assumptions unless explicitly requested.
-* Marketing WhatsApp or email requires explicit, recorded, channel-specific consent.
 * Transactional messages must be limited to the relevant event and guest.
 
 ## Validation And Errors

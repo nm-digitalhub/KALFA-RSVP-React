@@ -1,12 +1,10 @@
 import 'server-only';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { callConsentRequired } from '@/lib/data/call-compliance-settings';
 import {
   getOutreachEnabled,
   getWhatsAppConfig,
   getSendPolicy,
-  getWhatsAppConsentRequired,
 } from '@/lib/data/outreach-config';
 import { resolveWhatsAppSend } from '@/lib/data/whatsapp-template-send';
 import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
@@ -198,27 +196,22 @@ export async function isContactReached(
   return (count ?? 0) > 0;
 }
 
-// Call-consent gate for the AI-call channel (C2). True when the contact exists,
-// is not opted out (removal_requested), AND — WHEN the admin switch requires it
-// (the default) — has a recorded call_consent_at. An admin may lift the explicit
-// prior-consent requirement from the channels UI (call_compliance_settings.call_consent_required=false,
-// read by callConsentRequired, which fails safe to "required"),
-// which skips ONLY the call_consent_at check; opt-out and fail-closed are never
-// affected. Fail-CLOSED: any read error → false (no call).
-export async function hasCallConsent(contactId: string): Promise<boolean> {
+// Opt-out gate for the AI-call channel (C2): true when the contact asked not to be
+// contacted (removal_requested). No prior consent is required to call a guest
+// about their RSVP (owner, 01.11.2026). Fail-CLOSED: a missing contact or any
+// read error reads as opted out (no call).
+export async function isContactOptedOut(contactId: string): Promise<boolean> {
   try {
     const admin = createAdminClient();
     const { data, error } = await admin
       .from('contacts')
-      .select('removal_requested, call_consent_at')
+      .select('removal_requested')
       .eq('id', contactId)
       .maybeSingle();
-    if (error || !data) return false;
-    if (data.removal_requested) return false; // opt-out always wins
-    if (!(await callConsentRequired())) return true; // admin lifted the requirement
-    return data.call_consent_at != null;
+    if (error || !data) return true;
+    return data.removal_requested;
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -380,20 +373,10 @@ export async function executeStep(
 
   const { data: contact } = await admin
     .from('contacts')
-    .select('id, normalized_phone, removal_requested, whatsapp_consent_at')
+    .select('id, normalized_phone, removal_requested')
     .eq('id', contactId)
     .maybeSingle();
   if (!contact || contact.removal_requested) return { action: 'skipped' };
-  // Same admin switch the recipient query honours (whatsapp_consent_required).
-  // Read here too rather than trusted from upstream: a step re-entered after a
-  // restart must make the same decision as the first attempt.
-  if (
-    tp.channel === 'whatsapp' &&
-    !contact.whatsapp_consent_at &&
-    (await getWhatsAppConsentRequired())
-  ) {
-    return { action: 'skipped' };
-  }
   if (tp.channel === 'call' && !ctx.allowed_channels.includes('call')) {
     return { action: 'skipped' };
   }
@@ -623,30 +606,20 @@ export async function loadOutreachRow(
   return data ?? null;
 }
 
-// The terminal-precheck conditions for one step as a PURE function — the SINGLE
+// The terminal-precheck condition for one step as a PURE function — the SINGLE
 // source of truth shared by prepareAndSendStep (its first gate) and the
-// crash-recovery re-check. removal_requested terminates on ANY channel; missing
-// WhatsApp consent terminates only a WhatsApp step.
+// crash-recovery re-check. A contact who asked not to be
+// contacted (removal_requested) is terminal on ANY channel.
 export function terminalReasonFor(
-  contact: { removal_requested: boolean | null; whatsapp_consent_at: string | null },
-  channel: string,
-  // Whether the WhatsApp consent gate is currently ARMED
-  // (app_settings.whatsapp_consent_required). Defaults to true so every existing
-  // caller and test keeps the pre-switch behaviour, and so an omitted argument
-  // can never be the thing that lifts a consent requirement.
-  whatsAppConsentRequired = true,
+  contact: { removal_requested: boolean | null },
 ): string | null {
-  if (contact.removal_requested) return 'removal_requested';
-  if (channel === 'whatsapp' && !contact.whatsapp_consent_at && whatsAppConsentRequired) {
-    return 'no_whatsapp_consent';
-  }
-  return null;
+  return contact.removal_requested ? 'removal_requested' : null;
 }
 
 // Read-only terminal re-check for the crash-recovery path: NO send. Lets
-// runStepExecution re-terminalize an opt-out / no-consent
-// contact instead of blindly advancing a failed terminalize. null → not terminal
-// (a prior real send may have happened → advance once, at-most-once).
+// runStepExecution re-terminalize an opted-out contact instead of blindly
+// advancing a failed terminalize. null → not terminal (a prior real send may
+// have happened → advance once, at-most-once).
 export async function checkStepTerminal(
   ctx: CampaignContext,
   contactId: string,
@@ -657,15 +630,11 @@ export async function checkStepTerminal(
   const admin = createAdminClient();
   const { data: contact } = await admin
     .from('contacts')
-    .select('removal_requested, whatsapp_consent_at')
+    .select('removal_requested')
     .eq('id', contactId)
     .maybeSingle();
   if (!contact) return null;
-  const reason = terminalReasonFor(
-    contact,
-    tp.channel,
-    await getWhatsAppConsentRequired(),
-  );
+  const reason = terminalReasonFor(contact);
   return reason ? { reason } : null;
 }
 
@@ -674,7 +643,7 @@ export async function checkStepTerminal(
 // performs the external, non-idempotent side effect and reports the outcome:
 //   accepted/definitely_not_sent/unknown — the WhatsApp delivery classification.
 //   skip{reason}     — config/template integrity (advance-skip; schedule covers).
-//   terminal{reason} — opt-out / no consent (terminalize the contact).
+//   terminal{reason} — opt-out (terminalize the contact).
 //   advance{reason}  — a call request was dispatched (advance the cursor).
 // On accepted it bumps whatsapp_sent_count + op status adjacent to the send (a
 // resolve failure after accept ⇒ possible sent-count under-count, never resend).
@@ -692,15 +661,11 @@ export async function prepareAndSendStep(
 
   const { data: contact } = await admin
     .from('contacts')
-    .select('id, normalized_phone, removal_requested, whatsapp_consent_at')
+    .select('id, normalized_phone, removal_requested')
     .eq('id', contactId)
     .maybeSingle();
   if (!contact) return { kind: 'skip', reason: 'contact_missing' };
-  const terminal = terminalReasonFor(
-    contact,
-    tp.channel,
-    await getWhatsAppConsentRequired(),
-  );
+  const terminal = terminalReasonFor(contact);
   if (terminal) return { kind: 'terminal', reason: terminal };
 
   // P0-1 (A6): a contact PINNED in the authorized set (exposed/billed) but no

@@ -26,7 +26,6 @@ vi.mock('@/lib/data/admin/voximplant-channel', () => ({
   updateVoximplantChannelConfig: vi.fn(),
   testVoximplantConnection: vi.fn(),
   updateVoximplantLiveCalls: vi.fn(),
-  updateCallConsentRequired: vi.fn(),
 }));
 vi.mock('@/lib/data/admin/outreach-master', () => ({
   getOutreachMasterState: vi.fn(),
@@ -45,7 +44,6 @@ import { createVoicePurpose, updateVoicePurpose, listVoicePurposesForAdmin } fro
 import {
   getVoximplantChannelConfig,
   updateVoximplantLiveCalls,
-  updateCallConsentRequired,
 } from '@/lib/data/admin/voximplant-channel';
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
@@ -54,11 +52,8 @@ import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
 import {
   updateWhatsAppChannelAction,
   updateVoximplantLiveCallsAction,
-  updateCallConsentRequiredAction,
   updateChannelCatalogAction,
   updateSendPolicyAction,
-  createVoicePurposeAction,
-  updateVoicePurposeAction,
 } from './actions';
 
 type VoxChannelConfig = Awaited<ReturnType<typeof getVoximplantChannelConfig>>;
@@ -148,38 +143,6 @@ describe('updateVoximplantLiveCallsAction — fail-closed live-dial toggle', () 
     expect(getVoximplantChannelConfig).not.toHaveBeenCalled();
     expect(updateVoximplantLiveCalls).toHaveBeenCalledWith(false);
     expect(result?.data?.notice).toBeTruthy();
-  });
-});
-
-describe('updateCallConsentRequiredAction — the AI-call consent gate toggle', () => {
-  it('checkbox present → REQUIRES consent (true)', async () => {
-    const result = await updateCallConsentRequiredAction(
-      {},
-      fd({ call_consent_required: 'on' }),
-    );
-    expect(updateCallConsentRequired).toHaveBeenCalledWith(true);
-    expect(result?.data?.notice).toBeTruthy();
-  });
-
-  // The security-relevant direction: an absent checkbox LIFTS the requirement,
-  // permitting dials without prior consent. It must still write false (not refuse).
-  it('checkbox absent → LIFTS the requirement (false)', async () => {
-    const result = await updateCallConsentRequiredAction({}, fd({}));
-    expect(updateCallConsentRequired).toHaveBeenCalledWith(false);
-    expect(result?.data?.notice).toBeTruthy();
-  });
-
-  it('propagates a framework redirect instead of swallowing it', async () => {
-    vi.mocked(updateCallConsentRequired).mockRejectedValueOnce(NEXT_REDIRECT);
-    await expect(
-      updateCallConsentRequiredAction({}, fd({ call_consent_required: 'on' })),
-    ).rejects.toBe(NEXT_REDIRECT);
-  });
-
-  it('a genuine error becomes a friendly message, not a throw', async () => {
-    vi.mocked(updateCallConsentRequired).mockRejectedValueOnce(new Error('db down'));
-    const result = await updateCallConsentRequiredAction({}, fd({}));
-    expect(result?.serverError).toBe('עדכון מתג ההסכמה נכשל. נסו שוב.');
   });
 });
 

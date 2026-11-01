@@ -47,10 +47,6 @@ export const rsvpSubmitSchema = z
     // status <> attending (defense in depth) — this boundary only carries the
     // guest's checkbox state through.
     show_in_guest_list: z.boolean().optional(),
-    // Guest opt-in to receive an automated (AI) reminder phone call. Written
-    // to contacts.call_consent_at (monotonic) by submit_rsvp; only meaningful in
-    // the attending block (the form renders the checkbox there).
-    call_consent: z.boolean().optional(),
   })
   // When attending, at least one guest must be counted. declined/maybe force
   // the counts to 0 server-side, so this rule only binds on attending.

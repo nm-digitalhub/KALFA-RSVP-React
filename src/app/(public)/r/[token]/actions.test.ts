@@ -53,7 +53,6 @@ describe('submitRsvpAction', () => {
       meal_pref: 'צמחוני',
       answers: { 'diet.pref': 'ללא גלוטן', 'seat[1]': 'ליד הבמה' },
       show_in_guest_list: true,
-      call_consent: false,
     });
     expect(mirrorEq).toHaveBeenCalledWith('rsvp_token', TOKEN);
   });
@@ -105,7 +104,7 @@ describe('submitRsvpAction', () => {
     const result = await submitRsvpAction(TOKEN, {}, form);
 
     const old = rsvpSubmitSchema.safeParse({
-      status: 'maybe', adults: 0, kids: 0, answers: { q1: 'א'.repeat(501) }, show_in_guest_list: false, call_consent: false,
+      status: 'maybe', adults: 0, kids: 0, answers: { q1: 'א'.repeat(501) }, show_in_guest_list: false,
     });
     expect(result).toEqual({
       validationErrors: { formErrors: [CHECK_FIELDS], fieldErrors: z.flattenError(old.error!).fieldErrors },

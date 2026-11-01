@@ -8,7 +8,6 @@ import { zfd } from 'zod-form-data';
 
 import {
   updateWhatsAppChannelConfig,
-  updateWhatsAppConsentRequired,
   testWhatsAppConnection,
 } from '@/lib/data/admin/channels';
 import {
@@ -16,7 +15,6 @@ import {
   updateVoximplantChannelConfig,
   testVoximplantConnection,
   updateVoximplantLiveCalls,
-  updateCallConsentRequired,
   updateMeetingConfirmChannel,
   updateSalesCallChannel,
   listVoximplantRules,
@@ -281,58 +279,16 @@ export const updateVoximplantLiveCallsAction = actionClient
     revalidateAll(VOXIMPLANT, INDEX);
     return {
       notice: enabled
-        ? 'שיחות חיות מופעלות — שיחות בתשלום ייצאו לאנשי קשר שנתנו הסכמה'
+        ? 'שיחות חיות מופעלות — שיחות בתשלום ייצאו לאורחים'
         : 'שיחות חיות כובו',
     };
   });
 
-// Admin toggle for the AI-call CONSENT gate (call_compliance_settings.call_consent_required).
-// The checkbox is "require explicit consent"; DEFAULT is on (SAFE). Turning it OFF
-// permits AI dials to contacts with NO recorded prior consent — spam-law exposure,
-// an owner/legal decision. opt-out + DNC + fail-closed still apply. Emits a
-// SECURITY Slack audit on every flip. The manage_voice permission is enforced
-// inside updateCallConsentRequired.
-export const updateCallConsentRequiredAction = actionClient
-  .inputSchema(zfd.formData({ call_consent_required: zfd.checkbox() }))
-  .stateAction(async ({ parsedInput: { call_consent_required: required } }) => {
-    try {
-      await updateCallConsentRequired(required);
-    } catch (err) {
-      unstable_rethrow(err);
-      return returnUserError('עדכון מתג ההסכמה נכשל. נסו שוב.');
-    }
-    // Turning the requirement OFF is the security-relevant event — alert on both,
-    // but make the lifted-consent case unmistakable.
-    void sendSlackAlert({
-      level: required ? 'info' : 'warn',
-      category: 'security',
-      source: 'call-consent-toggle',
-      title: required
-        ? 'AI-call consent requirement RE-ENABLED'
-        : 'AI-call consent requirement LIFTED — dialing without prior consent permitted',
-      fields: { consent_required: String(required) },
-    });
-    revalidateAll(VOXIMPLANT);
-    return {
-      notice: required
-        ? 'דרישת ההסכמה הופעלה — שיחות AI רק לאנשי קשר עם הסכמה מתועדת'
-        : 'דרישת ההסכמה בוטלה — שיחות AI ייצאו גם ללא הסכמה מוקדמת (חשיפה משפטית — ראו האזהרה)',
-    };
-  });
-
 // Every rule id currently claimed anywhere, so a save can refuse to hand one
-// rule to a second purpose. Both reads gate on manage_voice internally, the same
+// rule to a second persona. The read gates on manage_voice internally, the same
 // permission every caller here already holds.
-//
-// Built-in purposes are skipped: voice-purpose-dispatch.ts blocks them before
-// they can dial (`if (purpose.isBuiltin) return blocked`) and the DAL never
-// writes their rule_id, so their column is inert and must not reserve an id from
-// a real purpose.
 async function readRuleIdClaims(): Promise<RuleIdClaim[]> {
-  const [cfg, purposes] = await Promise.all([
-    getVoximplantChannelConfig(),
-    listVoicePurposesForAdmin(),
-  ]);
+  const cfg = await getVoximplantChannelConfig();
   return [
     { field: 'voximplant_rule_id', label: 'שיחות RSVP', ruleId: cfg.voximplant_rule_id },
     {
@@ -518,46 +474,6 @@ export const updateChannelCatalogAction = actionClient
     // index is the one surface that has to be re-rendered.
     revalidatePath(INDEX);
     return { notice: `הערוץ "${parsedInput.display_name}" נשמר` };
-  });
-
-// Admin toggle for the WhatsApp CONSENT gate
-// (app_settings.whatsapp_consent_required). The exact twin of
-// updateCallConsentRequiredAction above, deliberately mirrored so the two
-// outreach channels cannot drift in behaviour, wording, or audit trail.
-//
-// The checkbox is "require explicit consent"; DEFAULT is on (SAFE). Turning it
-// OFF permits WhatsApp templates to contacts with NO recorded
-// contacts.whatsapp_consent_at — Israeli spam-law exposure, an owner/legal
-// decision, not a technical one. Opt-out (removal_requested), the
-// campaign_authorized_contacts set, and fail-closed reads still apply.
-// Emits a SECURITY Slack audit on every flip. The manage_settings permission is
-// enforced inside updateWhatsAppConsentRequired.
-export const updateWhatsAppConsentRequiredAction = actionClient
-  .inputSchema(zfd.formData({ whatsapp_consent_required: zfd.checkbox() }))
-  .stateAction(async ({ parsedInput: { whatsapp_consent_required: required } }) => {
-    try {
-      await updateWhatsAppConsentRequired(required);
-    } catch (err) {
-      unstable_rethrow(err);
-      return returnUserError('עדכון מתג ההסכמה לוואטסאפ נכשל. נסו שוב.');
-    }
-    // Turning the requirement OFF is the security-relevant event — alert on both,
-    // but make the lifted-consent case unmistakable.
-    void sendSlackAlert({
-      level: required ? 'info' : 'warn',
-      category: 'security',
-      source: 'whatsapp-consent-toggle',
-      title: required
-        ? 'WhatsApp consent requirement RE-ENABLED'
-        : 'WhatsApp consent requirement LIFTED — sending without prior consent permitted',
-      fields: { consent_required: String(required) },
-    });
-    revalidateAll(META_WHATSAPP);
-    return {
-      notice: required
-        ? 'דרישת ההסכמה הופעלה — הודעות וואטסאפ רק לאנשי קשר עם הסכמה מתועדת'
-        : 'דרישת ההסכמה בוטלה — הודעות וואטסאפ ייצאו גם ללא הסכמה מוקדמת (חשיפה משפטית — ראו האזהרה)',
-    };
   });
 
 // ─── SEND POLICY ─────────────────────────────────────────────────────────────

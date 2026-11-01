@@ -1,11 +1,9 @@
 // The regression this file exists for is a SILENT DELETION, not a broken render.
 //
 // This branch has already lost a component in a move once — b09240b, "restore the
-// auto-save that replacing the TopBar silently removed" — and the consolidation plan's
-// own readiness review found that the WhatsApp consent toggle fell outside every copy
-// range in Task 0.3 and would have vanished with it. The Voximplant panel carries the
-// same class of surface: a §30א consent gate and three kill switches that permit real,
-// paid dialing. A test is the difference between a move and a deletion.
+// auto-save that replacing the TopBar silently removed". The Voximplant panel carries
+// three kill switches that permit real, paid dialing. A test is the difference between
+// a move and a deletion.
 //
 // It also pins the two things this page must NEVER do:
 //   1. call getOutreachMasterState() for a viewer without manage_settings — that
@@ -104,7 +102,6 @@ async function render({ manageSettings = true }: { manageSettings?: boolean } = 
     fullyConfigured: true,
     liveCalls: true,
     liveEnabled: true,
-    callConsentRequired: true,
     meetingConfirmRuleId: '1523903',
     meetingConfirmEnabled: false,
     meetingConfirmFullyConfigured: true,
@@ -148,8 +145,6 @@ describe('/admin/integrations/voximplant', () => {
     expect(names).toContain('VoximplantLiveCallsToggle');
     expect(names).toContain('VoximplantMeetingConfirmToggle');
     expect(names).toContain('VoximplantSalesCallToggle');
-    // The §30א gate. Its WhatsApp twin is the component the plan's copy ranges missed.
-    expect(names).toContain('VoximplantConsentToggle');
     expect(names).toContain('VoximplantCredentialsForm');
     expect(names).toContain('VoximplantConnectionTest');
   });

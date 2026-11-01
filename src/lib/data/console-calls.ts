@@ -140,9 +140,8 @@ export const LIVE_CUSTOMER_CALL_KINDS: ReadonlySet<ConsoleCallKind> = new Set(['
 // Human-call quiet-hours window (decide-consent GO/NO-GO table, final
 // numbers). Deliberately NOT src/lib/outreach/send-policy.ts's
 // DEFAULT_SEND_POLICY (09:00–20:30 / Fri 09:00–12:00) — that policy encodes
-// the WhatsApp channel's owner-set numbers under a different legal basis
-// (decide-consent explicitly rejects reusing call_consent_required for this
-// reason). The Shabbat/Yom-Tov block IS reused, from jewish-calendar.ts.
+// the WhatsApp channel's owner-set numbers under a different legal basis.
+// The Shabbat/Yom-Tov block IS reused, from jewish-calendar.ts.
 // ─────────────────────────────────────────────────────────────────────────
 
 const IL_DATE_FMT = new Intl.DateTimeFormat('en-CA', {

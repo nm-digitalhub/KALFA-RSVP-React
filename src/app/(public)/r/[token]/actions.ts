@@ -80,7 +80,6 @@ export const submitRsvpAction = actionClient
       note: trimmedOrUndefined(formData.get('note')),
       answers: Object.keys(answers).length > 0 ? answers : undefined,
       show_in_guest_list: formData.get('show_in_guest_list') === 'on',
-      call_consent: formData.get('call_consent') === 'on',
     });
     if (!parsed.success) {
       // Grouped by top-level field exactly as before (z.flattenError), so a

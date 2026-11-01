@@ -213,65 +213,8 @@ describe('pruneOrphanContact', () => {
   });
 });
 
-describe('recordWhatsAppConsent', () => {
-  it('stamps whatsapp_consent_at scoped by id + event', async () => {
-    const { client, builder } = createMockSupabase<{ id: string }>({
-      data: null,
-      error: null,
-    });
-    vi.mocked(createAdminClient).mockReturnValue(
-      client as unknown as ReturnType<typeof createAdminClient>,
-    );
-
-    await recordWhatsAppConsent('e1', 'c1');
-
-    const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
-      string,
-      unknown
-    >;
-    expect(payload.whatsapp_consent_at).toBeTruthy();
-    expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
-    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
-  });
-});
-
-describe('recordCallConsent', () => {
-  it('stamps call_consent_at scoped by id + event', async () => {
-    const { client, builder } = createMockSupabase<{ id: string }>({
-      data: null,
-      error: null,
-    });
-    vi.mocked(createAdminClient).mockReturnValue(
-      client as unknown as ReturnType<typeof createAdminClient>,
-    );
-
-    await recordCallConsent('e1', 'c1');
-
-    const payload = vi.mocked(builder.update).mock.calls[0][0] as Record<
-      string,
-      unknown
-    >;
-    expect(payload.call_consent_at).toBeTruthy();
-    expect(builder.eq).toHaveBeenCalledWith('id', 'c1');
-    expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
-  });
-
-  it('throws a Hebrew error when the update fails', async () => {
-    const { client } = createMockSupabase<{ id: string }>({
-      data: null,
-      error: { message: 'update failed' },
-    });
-    vi.mocked(createAdminClient).mockReturnValue(
-      client as unknown as ReturnType<typeof createAdminClient>,
-    );
-    await expect(recordCallConsent('e1', 'c1')).rejects.toThrow(
-      'שמירת ההסכמה לשיחה נכשלה',
-    );
-  });
-});
-
 describe('listSendableContacts', () => {
-  it('returns non-removed, consented contacts for the event', async () => {
+  it('returns the non-removed contacts for the event — no consent record is required', async () => {
     const { client, builder } = createMockSupabase<
       Array<{ id: string; normalized_phone: string }>
     >({
@@ -286,7 +229,7 @@ describe('listSendableContacts', () => {
 
     expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
     expect(builder.eq).toHaveBeenCalledWith('removal_requested', false);
-    expect(builder.not).toHaveBeenCalledWith('whatsapp_consent_at', 'is', null);
+    expect(builder.not).not.toHaveBeenCalled();
     expect(r).toEqual([{ id: 'c1', normalized_phone: '+972501234567' }]);
   });
 
@@ -311,10 +254,10 @@ describe('listSendableContacts', () => {
       'campaign_authorized_contacts.campaign_id',
       'camp1',
     );
-    // Still gated on event scope + consent + not-removed.
+    // Still gated on event scope + not-removed.
     expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
     expect(builder.eq).toHaveBeenCalledWith('removal_requested', false);
-    expect(builder.not).toHaveBeenCalledWith('whatsapp_consent_at', 'is', null);
+    expect(builder.not).not.toHaveBeenCalled();
     // The embedded join column is stripped from the returned shape.
     expect(r).toEqual([{ id: 'c1', normalized_phone: '+972501234567' }]);
   });

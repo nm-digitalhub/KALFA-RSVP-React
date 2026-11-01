@@ -200,7 +200,7 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
   // rate limit → Zod → submit_rsvp → headcount mirror), the same code a browser runs.
   const WEB_ANSWER = {
     status: 'attending', adults: '2', kids: '1', meal_pref: 'veg', note: 'allergic to nuts',
-    show_in_guest_list: 'on', call_consent: 'on',
+    show_in_guest_list: 'on',
   } as const;
   const webSubmit = async (f: Fixture, fields: Record<string, string> = WEB_ANSWER) => {
     const fd = new FormData();
@@ -214,18 +214,15 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
   };
   const pressAt = (f: Fixture, payload: string, tsSeconds: number, messageId?: string) =>
     inbox(f, { ...button(f, payload), timestamp: String(tsSeconds) }, messageId);
-  const consent = async (f: Fixture) =>
-    (await pool.query(`select call_consent_at from public.contacts where id = $1`, [f.contactId])).rows[0].call_consent_at;
   const responses = async (f: Fixture) =>
     (await pool.query(`select count(*)::int n from public.rsvp_responses where guest_id = $1`, [f.guestId])).rows[0].n as number;
 
-  it('baseline: the real page action stores counts, meal, note, opt-in, consent and mirrors the headcount', async () => {
+  it('baseline: the real page action stores counts, meal, note, opt-in and mirrors the headcount', async () => {
     const f = await fixture();
     await webSubmit(f);
     const g = await guest(f);
     expect(g).toMatchObject(WEB_STATE);
     expect(g.headcount_answered_at).not.toBeNull();
-    expect(await consent(f)).not.toBeNull();
   });
 
   it.fails('KNOWN BUG #1 (page action → WhatsApp press): the press keeps every detail of the web answer', async () => {
@@ -235,7 +232,7 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
     expect(await guest(f)).toMatchObject(WEB_STATE);
   });
 
-  it('characterization #1 (page action → press): counts → 1+0, meal/note → null, opt-in → false, headcount reset; consent survives', async () => {
+  it('characterization #1 (page action → press): counts → 1+0, meal/note → null, opt-in → false, headcount reset', async () => {
     const f = await fixture();
     await webSubmit(f);
     await processRow(await inbox(f, button(f, 'rsvp_attending')));
@@ -244,8 +241,6 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
       status: 'attending', confirmed_adults: 1, confirmed_kids: 0, meal_pref: null, rsvp_note: null,
       show_in_guest_list: false, confirmed_headcount: 0, headcount_answered_at: null, headcount_requested_at: null,
     });
-    // call_consent is monotonic in submit_rsvp (coalesce(call_consent_at, now())) — not wiped.
-    expect(await consent(f)).not.toBeNull();
     expect(await responses(f)).toBe(2); // web + bot: the overwrite is an audited second answer
   });
 

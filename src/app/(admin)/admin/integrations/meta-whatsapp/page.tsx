@@ -12,7 +12,6 @@ import { getAppUrl } from '@/lib/url';
 import { PageHeading } from '../../_components';
 import { OutreachMasterSwitch } from '../_components/outreach-master-switch';
 import { WhatsAppCredentialsForm } from './whatsapp-credentials-form';
-import { WhatsAppConsentToggle } from './whatsapp-consent-toggle';
 import { WhatsAppConnectionTest } from './whatsapp-connection-test';
 import { MetaStatusCard } from './meta-status-card';
 import { SendPolicyForm } from './send-policy-form';
@@ -20,7 +19,7 @@ import { SendPolicyForm } from './send-policy-form';
 export const metadata: Metadata = { title: 'Meta / WhatsApp — אינטגרציות' };
 
 // Everything about the WhatsApp connection in one place: credentials, the webhook
-// wiring to paste into Meta, the §30א consent gate, and an on-demand connection test.
+// wiring to paste into Meta, the send timing, and an on-demand connection test.
 //
 // Gated on manage_settings, which is what the DAL behind every one of these enforces
 // for itself — the page gate is defence in depth, not the boundary (see
@@ -101,11 +100,6 @@ export default async function MetaWhatsAppPage() {
           </Link>
         </section>
       ) : null}
-
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">דרישת הסכמה</h2>
-        <WhatsAppConsentToggle consentRequired={whatsapp.consentRequired} />
-      </section>
 
       {/* Send timing sits on THIS page because the column is whatsapp_send_policy
           and WhatsApp is the only channel sending against it today. It is not

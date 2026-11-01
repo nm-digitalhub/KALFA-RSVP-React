@@ -2,8 +2,7 @@
 //
 // A component dropped in a move or swap leaves every other one rendering — b09240b,
 // "restore the auto-save that replacing the TopBar silently removed", is the
-// precedent. The WhatsApp consent toggle is a §30א legal exposure surface, which is
-// why its presence is pinned. A test is the difference between a move and a deletion.
+// precedent. A test is the difference between a move and a deletion.
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
@@ -109,11 +108,9 @@ describe('/admin/integrations/meta-whatsapp', () => {
     expect(requirePlatformPermission).toHaveBeenCalledWith('manage_settings');
   });
 
-  it('renders all THREE moved components — none silently dropped', async () => {
+  it('renders both moved components — none silently dropped', async () => {
     const names = componentNames(await render());
     expect(names).toContain('WhatsAppCredentialsForm');
-    // A §30א gate.
-    expect(names).toContain('WhatsAppConsentToggle');
     expect(names).toContain('WhatsAppConnectionTest');
   });
 
@@ -139,10 +136,6 @@ describe('/admin/integrations/meta-whatsapp', () => {
 
   it('keeps the sentence that stops "configured" reading as "ready to send"', async () => {
     expect(textOf(await render())).toContain('שליחות חיות בתשלום');
-  });
-
-  it('names the consent section, so it is findable without opening a form', async () => {
-    expect(textOf(await render())).toContain('דרישת הסכמה');
   });
 
   it('distinguishes the on-demand test from the scheduled health check', async () => {
