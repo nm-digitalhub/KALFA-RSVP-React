@@ -12,7 +12,6 @@ import {
   deliveryStatusLabel,
   deliveryStatusVariant,
   webhookKindLabel,
-  webhookProcessState,
 } from '@/lib/data/admin/labels';
 import { Badge } from '../_components';
 import {
@@ -87,7 +86,7 @@ function Technical({ value }: { value: string }) {
 
 export function WebhookDetail({ detail }: { detail: AdminWebhookDetailView }) {
   const { item, delivery, outcome, businessNumber } = detail;
-  const state = webhookProcessState(item);
+  const state = item.state;
   const payload = (item.payload ?? {}) as Record<string, unknown>;
   const identity = extractWebhookIdentity(item.event_kind, item.payload);
   const content = summarizeWebhookContent(item.payload);

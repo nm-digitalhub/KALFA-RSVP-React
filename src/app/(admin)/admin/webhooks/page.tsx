@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { requirePlatformAction } from '@/lib/auth/platform-ability';
 
 import {
   getWebhookHealth,
@@ -15,7 +15,6 @@ import {
   deliveryStatusLabel,
   deliveryStatusVariant,
   webhookKindLabel,
-  webhookProcessState,
   webhookProviderLabel,
 } from '@/lib/data/admin/labels';
 import {
@@ -260,7 +259,7 @@ export default async function AdminWebhooksPage({
 }) {
   // Optimistic gate (Next.js term): redirects early so the operator does not
   // land on an empty page. The real enforcement is per-function in the DAL.
-  await requirePlatformPermission('view_webhooks');
+  await requirePlatformAction('read', 'WebhookInbox');
   const sp = await searchParams;
   const page = parsePageParam(sp.page);
   const current: CurrentFilters = {
@@ -338,7 +337,7 @@ export default async function AdminWebhooksPage({
       ) : (
         <ul className="space-y-3">
           {result.items.map((row) => {
-            const state = webhookProcessState(row);
+            const state = row.state;
             const assoc = associations.get(row.id);
             const stripe =
               state === 'error'

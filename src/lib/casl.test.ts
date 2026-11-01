@@ -8,6 +8,8 @@ import {
 import {
   PLATFORM_ACTIONS,
   PLATFORM_ACTION_PAIRS,
+  PLATFORM_MAP_KEYS,
+  PLATFORM_READ_FIELDS,
   buildPlatformAbility,
   type PlatformAbility,
 } from './casl';
@@ -18,9 +20,7 @@ import {
 
 // Every key the map uses, plus view_billing: a key a viewer may hold that the map does NOT bind, so the
 // matrix also proves that holding an unrelated key grants no package action.
-const KEYS: PlatformPermissionKey[] = [
-  ...new Set<PlatformPermissionKey>([...PLATFORM_ACTION_PAIRS.map((p) => p.key), 'view_billing']),
-];
+const KEYS: PlatformPermissionKey[] = [...new Set<PlatformPermissionKey>([...PLATFORM_MAP_KEYS, 'view_billing'])];
 
 function subsets<T>(items: readonly T[]): T[][] {
   return items.reduce<T[][]>((acc, item) => acc.concat(acc.map((s) => [...s, item])), [[]]);
@@ -54,6 +54,26 @@ describe('PLATFORM_ACTIONS', () => {
     expect(PLATFORM_ACTIONS.Campaign).toEqual({ runstate: 'campaigns.runstate' });
   });
 
+  // Moving the webhook inspector onto the map changes no access: reading stays on view_webhooks, the page's and the
+  // data layer's key, and reprocessing on manage_settings, the key its action checked.
+  it('binds the webhook inspector to view_webhooks and reprocessing to manage_settings', () => {
+    expect(PLATFORM_ACTIONS.WebhookInbox).toEqual({ read: 'view_webhooks' });
+    expect(PLATFORM_ACTIONS.Webhook).toEqual({ replay: 'manage_settings' });
+  });
+
+  // last_error is diagnostic (the Supabase/Postgres cause); view_webhooks is the inspector's diagnostic key
+  // (owner, 30.10.2026).
+  it('binds the read of a webhook row last_error to view_webhooks', () => {
+    expect(PLATFORM_READ_FIELDS).toEqual({ WebhookInbox: { last_error: 'view_webhooks' } });
+  });
+
+  it('builds the ability from every key the map reads, the field rules included', () => {
+    for (const fields of Object.values(PLATFORM_READ_FIELDS)) {
+      for (const key of Object.values(fields)) expect(PLATFORM_MAP_KEYS).toContain(key);
+    }
+    for (const { key } of PLATFORM_ACTION_PAIRS) expect(PLATFORM_MAP_KEYS).toContain(key);
+  });
+
   it('lists every (subject, action) of the map exactly once', () => {
     const fromMap = Object.entries(PLATFORM_ACTIONS).flatMap(([subject, actions]) =>
       Object.keys(actions).map((action) => `${action} ${subject}`),
@@ -81,6 +101,53 @@ describe('buildPlatformAbility', () => {
         expect(rebuilt.can(action, subject)).toBe(ability.can(action, subject));
       }
     }
+  });
+
+  it('lets a field be read only with its own key, for every combination of held keys', () => {
+    for (const held of subsets(KEYS)) {
+      const heldSet = new Set<string>(held);
+      const ability = buildPlatformAbility(heldSet);
+      for (const subject of Object.keys(PLATFORM_READ_FIELDS) as (keyof typeof PLATFORM_READ_FIELDS)[]) {
+        const readKey = PLATFORM_ACTIONS[subject].read;
+        for (const [field, key] of Object.entries(PLATFORM_READ_FIELDS[subject])) {
+          expect(ability.can('read', subject, field), `${subject}.${field}`).toBe(
+            heldSet.has(readKey) && heldSet.has(key),
+          );
+        }
+      }
+    }
+  });
+
+  // The mechanism, with a field bound to a key other than its subject's read (as a later split would do): the
+  // subject stays readable, the field is withheld, and holding both keys reads it.
+  describe('a field bound to a key of its own', () => {
+    const split = { WebhookInbox: { last_error: 'manage_settings' } } as const;
+
+    it('withholds the field from a reader without its key, without hiding the subject', () => {
+      const ability = buildPlatformAbility(new Set(['view_webhooks']), split);
+      expect(ability.can('read', 'WebhookInbox')).toBe(true);
+      expect(ability.can('read', 'WebhookInbox', 'last_error')).toBe(false);
+      expect(ability.can('read', 'WebhookInbox', 'received_at')).toBe(true);
+    });
+
+    it('lets a reader who holds both keys read it', () => {
+      const ability = buildPlatformAbility(new Set(['view_webhooks', 'manage_settings']), split);
+      expect(ability.can('read', 'WebhookInbox', 'last_error')).toBe(true);
+    });
+
+    it('adds no rule for a caller who cannot read the subject at all', () => {
+      expect(buildPlatformAbility(new Set(['manage_settings']), split).can('read', 'WebhookInbox', 'last_error')).toBe(
+        false,
+      );
+      expect(buildPlatformAbility(new Set(), split).rules).toEqual([]);
+    });
+
+    it('survives the JSON round trip that carries the rules to the browser', () => {
+      const ability = buildPlatformAbility(new Set(['view_webhooks']), split);
+      const rebuilt = createMongoAbility<PlatformAbility>(JSON.parse(JSON.stringify(ability.rules)));
+      expect(rebuilt.can('read', 'WebhookInbox')).toBe(true);
+      expect(rebuilt.can('read', 'WebhookInbox', 'last_error')).toBe(false);
+    });
   });
 
   it('holds no rule of its own: an unknown or empty set of keys grants nothing', () => {

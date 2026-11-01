@@ -2,11 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
-vi.mock('@/lib/auth/dal', () => ({ requirePlatformPermission: vi.fn() }));
+// The gate and the ability, through the action map (src/lib/casl.ts): a real ability built from held keys, so the
+// field rule under test is CASL's own, not a stub's.
+vi.mock('@/lib/auth/platform-ability', () => ({
+  requirePlatformAction: vi.fn(),
+  getPlatformAbility: vi.fn(),
+}));
 
 import { createMockSupabase } from '@/test/supabase-mock';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { getPlatformAbility, requirePlatformAction } from '@/lib/auth/platform-ability';
+import { buildPlatformAbility } from '@/lib/casl';
 import {
   getWebhookInboxDetail,
   listWebhookInbox,
@@ -20,7 +26,10 @@ import {
   WEBHOOK_KIND_VARIANTS,
 } from '@/lib/data/admin/labels';
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getPlatformAbility).mockResolvedValue(buildPlatformAbility(new Set(['view_webhooks'])));
+});
 
 describe('webhookProcessState', () => {
   it('processed_at wins (terminal) even with a stale last_error', () => {
@@ -110,7 +119,7 @@ describe('listWebhookInbox', () => {
     return { client, builder };
   }
 
-  it('gates on requirePlatformPermission and applies server filters, returning a PageResult', async () => {
+  it('gates on WebhookInbox.read and applies server filters, returning a PageResult', async () => {
     const { builder } = mock([{ id: 'a1' }], 1);
 
     const res = await listWebhookInbox({
@@ -119,7 +128,8 @@ describe('listWebhookInbox', () => {
       q: 'wamid_1',
     });
 
-    expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
+    expect(requirePlatformAction).toHaveBeenCalledTimes(1);
+    expect(requirePlatformAction).toHaveBeenCalledWith('read', 'WebhookInbox');
     expect(builder.eq).toHaveBeenCalledWith('event_kind', 'status');
     // state=error → processed_at IS NULL AND last_error IS NOT NULL
     expect(builder.is).toHaveBeenCalledWith('processed_at', null);
@@ -187,15 +197,44 @@ describe('listWebhookInbox', () => {
   });
 });
 
+// last_error carries the Supabase/Postgres cause (src/lib/error-detail.ts): CASL's field rule decides who receives
+// it, and the server drops it before anything reaches the browser — while the row's state, derived from it, stays.
+describe('the diagnostic field last_error', () => {
+  const FAILED = { id: 'f1', processed_at: null, last_error: 'שליחת אישור ההגעה נכשלה — [57014] timeout' };
+
+  function list(rows: unknown[]) {
+    const { client } = createMockSupabase<unknown>({ data: rows as unknown, error: null, count: rows.length });
+    vi.mocked(createAdminClient).mockReturnValue(client as unknown as ReturnType<typeof createAdminClient>);
+    return listWebhookInbox({});
+  }
+
+  it('reaches a reader whose ability grants it (view_webhooks — the inspector diagnostic key)', async () => {
+    const res = await list([FAILED]);
+    expect(res.items[0]).toMatchObject({ state: 'error', last_error: FAILED.last_error });
+  });
+
+  it('is withheld from a reader without its key, who still sees that the row failed', async () => {
+    // A field bound to a key of its own (as a later split would do), held without it.
+    vi.mocked(getPlatformAbility).mockResolvedValue(
+      buildPlatformAbility(new Set(['view_webhooks']), { WebhookInbox: { last_error: 'manage_settings' } }),
+    );
+
+    const res = await list([FAILED]);
+
+    expect(res.items[0]).toMatchObject({ state: 'error', last_error: null });
+    expect(JSON.stringify(res)).not.toContain('57014');
+  });
+});
+
 describe('resolveWebhookAssociations', () => {
   // Regression guard: this function queries contact_interactions/events via the
   // service-role (RLS-bypassing) client. It was previously missing its own
-  // requirePlatformPermission() gate, relying entirely on its one caller (an admin-layout
+  // gate, relying entirely on its one caller (an admin-layout
   // page) already having checked -- a latent risk for any future caller that
   // doesn't go through that page first.
-  it('gates on requirePlatformPermission even when there is nothing to resolve', async () => {
+  it('gates on WebhookInbox.read even when there is nothing to resolve', async () => {
     const result = await resolveWebhookAssociations([]);
-    expect(requirePlatformPermission).toHaveBeenCalledTimes(1);
+    expect(requirePlatformAction).toHaveBeenCalledWith('read', 'WebhookInbox');
     expect(result.size).toBe(0);
   });
 });
@@ -234,7 +273,7 @@ describe('getWebhookInboxDetail — the business number', () => {
   };
 
   beforeEach(() => {
-    vi.mocked(requirePlatformPermission).mockResolvedValue({ id: 'u1' } as never);
+    vi.mocked(requirePlatformAction).mockResolvedValue({ id: 'u1' } as never);
   });
 
   it('reads provider_numbers, NOT app_settings', async () => {

@@ -1,6 +1,7 @@
 import 'server-only';
 
-import { requirePlatformPermission } from '@/lib/auth/dal';
+import { getPlatformAbility, requirePlatformAction } from '@/lib/auth/platform-ability';
+import { webhookProcessState, type WebhookState } from '@/lib/data/admin/labels';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { resolvePage, type PageParams, type PageResult } from '@/lib/data/admin/shared';
 import type { Json, Tables } from '@/lib/supabase/types';
@@ -17,8 +18,12 @@ import {
   type NumberRole,
 } from '@/lib/validation/provider-numbers';
 // Admin Webhook Inspector data layer. Reads the durable `webhook_inbox` intake
-// table behind requirePlatformPermission('view_webhooks') with the service-role client (the table is
+// table behind the WebhookInbox.read action (src/lib/casl.ts) with the service-role client (the table is
 // admin-only RLS; service-role bypasses it — the policy is defence-in-depth).
+//
+// last_error is diagnostic — it carries the Supabase/Postgres cause (src/lib/error-detail.ts) — and has its own
+// read rule (PLATFORM_READ_FIELDS). withReadableFields drops it for a caller who may not read it, AFTER deriving the
+// row's processing state from it, so every reader still sees which rows failed.
 //
 // PII: the raw `payload` holds phones/names. It is projected OFF the list (detail
 // only), and NOTHING here ever logs a payload, dedupe_key, message_id, or phone.
@@ -41,9 +46,23 @@ export type AdminWebhookRow = Pick<
   | 'processed_at'
   | 'attempts'
   | 'last_error'
->;
+> & { state: WebhookState };
 
-export type AdminWebhookDetail = WebhookInboxRow;
+export type AdminWebhookDetail = WebhookInboxRow & { state: WebhookState };
+
+// The rows as the caller may see them: the processing state for every reader, last_error only for one whose ability
+// grants reading that field (CASL field-level rule). Checked once per call, never per row.
+async function withReadableFields<T extends Pick<WebhookInboxRow, 'processed_at' | 'last_error'>>(
+  rows: T[],
+): Promise<Array<T & { state: WebhookState }>> {
+  const ability = await getPlatformAbility();
+  const mayReadLastError = ability.can('read', 'WebhookInbox', 'last_error');
+  return rows.map((row) => ({
+    ...row,
+    state: webhookProcessState(row),
+    last_error: mayReadLastError ? row.last_error : null,
+  }));
+}
 
 // What the worker DID with the event — the inspector's "תוצאה" section.
 // Inbound message: the interaction it became (event / campaign / billable +
@@ -108,15 +127,16 @@ async function loadEventNames(
 export async function getWebhookInboxDetail(
   id: string,
 ): Promise<AdminWebhookDetailView | null> {
-  await requirePlatformPermission('view_webhooks');
+  await requirePlatformAction('read', 'WebhookInbox');
   const admin = createAdminClient();
-  const { data: item, error } = await admin
+  const { data: row, error } = await admin
     .from('webhook_inbox')
     .select('*')
     .eq('id', id)
     .maybeSingle();
-  if (error) throw new Error('טעינת אירוע הוובהוק נכשלה');
-  if (!item) return null;
+  if (error) throw new Error('טעינת אירוע הוובהוק נכשלה', { cause: error });
+  if (!row) return null;
+  const [item] = await withReadableFields([row]);
 
   const messageId = item.message_id;
   const [deliveryRes, inboundRes, outboundRes, stagingRes, billedRes, settingsRes] =
@@ -292,7 +312,7 @@ const LIST_COLUMNS =
 export async function listWebhookInbox(
   filter: WebhookFilter = {},
 ): Promise<PageResult<AdminWebhookRow>> {
-  await requirePlatformPermission('view_webhooks');
+  await requirePlatformAction('read', 'WebhookInbox');
   const { page, pageSize, from, to } = resolvePage(filter.page);
   const admin = createAdminClient();
 
@@ -327,10 +347,10 @@ export async function listWebhookInbox(
   const { data, error, count } = await query
     .order('received_at', { ascending: false })
     .range(from, to);
-  if (error) throw new Error('טעינת אירועי הוובהוק נכשלה');
+  if (error) throw new Error('טעינת אירועי הוובהוק נכשלה', { cause: error });
 
   return {
-    items: (data ?? []) as unknown as AdminWebhookRow[],
+    items: await withReadableFields((data ?? []) as unknown as Omit<AdminWebhookRow, 'state'>[]),
     total: count ?? 0,
     page,
     pageSize,
@@ -341,15 +361,17 @@ export async function listWebhookInbox(
 export async function getWebhookInboxItem(
   id: string,
 ): Promise<AdminWebhookDetail | null> {
-  await requirePlatformPermission('view_webhooks');
+  await requirePlatformAction('read', 'WebhookInbox');
   const admin = createAdminClient();
   const { data, error } = await admin
     .from('webhook_inbox')
     .select('*')
     .eq('id', id)
     .maybeSingle();
-  if (error) throw new Error('טעינת אירוע הוובהוק נכשלה');
-  return data ?? null;
+  if (error) throw new Error('טעינת אירוע הוובהוק נכשלה', { cause: error });
+  if (!data) return null;
+  const [item] = await withReadableFields([data]);
+  return item;
 }
 
 export interface WebhookHealth {
@@ -374,7 +396,7 @@ async function orFallback<T>(read: Promise<T>, fallback: T): Promise<T> {
 // (src/lib/owner-agent/cores/system-health.ts), so the page and the agent
 // count with the same predicates.
 export async function getWebhookHealth(): Promise<WebhookHealth> {
-  await requirePlatformPermission('view_webhooks');
+  await requirePlatformAction('read', 'WebhookInbox');
   const admin = createAdminClient();
 
   const [receivedLast, unprocessedCount, failedCount] = await Promise.all([
@@ -401,7 +423,7 @@ export interface WebhookAssociation {
 export async function resolveWebhookAssociations(
   rows: AdminWebhookRow[],
 ): Promise<Map<string, WebhookAssociation>> {
-  await requirePlatformPermission('view_webhooks');
+  await requirePlatformAction('read', 'WebhookInbox');
 
   const wamidByRow = new Map<string, string>();
   const wamids = new Set<string>();

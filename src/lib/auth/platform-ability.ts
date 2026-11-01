@@ -8,7 +8,7 @@ import {
   buildPlatformAbility,
   platformActionKey,
   PLATFORM_ACTIONS,
-  PLATFORM_ACTION_PAIRS,
+  PLATFORM_MAP_KEYS,
   type PlatformAbility,
   type PlatformSubject,
   type PlatformAction,
@@ -22,10 +22,9 @@ import {
 export const getPlatformAbility = cache(async (): Promise<PlatformAbility> => {
   const heldKeys = new Set<string>();
 
-  const distinctKeys = Array.from(new Set(PLATFORM_ACTION_PAIRS.map((p) => p.key)));
-
+  // Every key the map reads, the field rules' included (PLATFORM_MAP_KEYS).
   const checks = await Promise.all(
-    distinctKeys.map(async (key) => ({
+    PLATFORM_MAP_KEYS.map(async (key) => ({
       key,
       hasIt: await hasPlatformPermission(key),
     }))

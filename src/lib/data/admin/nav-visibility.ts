@@ -27,7 +27,7 @@ import type { PlatformPermissionKey } from '@/lib/auth/platform-permission-keys.
 // Deliberately NOT imported from that module: it is `'use client'`, and having a
 // server module reach into it would drag lucide-react across the boundary to
 // read a string. The cost of stating them twice is that a nav item naming a
-// NINTH key would silently vanish — fail-closed, which is the right direction,
+// key not listed here would silently vanish — fail-closed, which is the right direction,
 // but silent. src/components/admin-nav-coverage.test.ts closes that: it asserts
 // every `permission` in NAV_GROUPS appears here, so the mistake fails CI instead
 // of quietly emptying someone's sidebar.
@@ -39,7 +39,6 @@ export const NAV_PERMISSION_KEYS = [
   'manage_staff',
   'view_recordings',
   'view_activity_log',
-  'view_webhooks',
   'rdp.request',
 ] as const satisfies readonly PlatformPermissionKey[];
 
@@ -55,7 +54,7 @@ export interface AdminNavGrants {
  *
  * `requirePlatformStaff()` here is the floor on purpose and is recorded as such
  * in COARSE_GATE_ALLOWED: this function writes nothing and returns no customer
- * data — nine booleans about the caller's own role. Naming a finer permission
+ * data — one boolean per key above, about the caller's own role. Naming a finer permission
  * would be circular, since its whole job is to answer which permissions the
  * caller has.
  *

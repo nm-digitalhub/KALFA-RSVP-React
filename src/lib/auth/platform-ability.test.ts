@@ -27,6 +27,7 @@ vi.mock('@/lib/auth/dal', () => ({
 
 import { hasPlatformPermission, requirePlatformPermission, requireUser } from '@/lib/auth/dal';
 import { getPlatformAbility, requireAnyPlatformAction, requirePlatformAction } from './platform-ability';
+import { PLATFORM_MAP_KEYS } from '@/lib/casl';
 
 const USER = { id: 'staff-1' } as unknown as User;
 
@@ -105,13 +106,15 @@ describe('requireAnyPlatformAction', () => {
 });
 
 describe('getPlatformAbility', () => {
-  it('asks the database once per distinct key of the map', async () => {
+  it('asks the database once per distinct key of the map, the field rules included', async () => {
     vi.mocked(hasPlatformPermission).mockResolvedValue(true);
     await getPlatformAbility();
-    // manage_billing (every Package action) and campaigns.runstate (Campaign.runstate): one call each, never per action.
-    expect(hasPlatformPermission).toHaveBeenCalledTimes(2);
-    expect(hasPlatformPermission).toHaveBeenCalledWith('manage_billing');
-    expect(hasPlatformPermission).toHaveBeenCalledWith('campaigns.runstate');
+    // One call per key (manage_billing serves every Package action), never per action.
+    expect(hasPlatformPermission).toHaveBeenCalledTimes(PLATFORM_MAP_KEYS.length);
+    for (const key of PLATFORM_MAP_KEYS) expect(hasPlatformPermission).toHaveBeenCalledWith(key);
+    expect(PLATFORM_MAP_KEYS).toEqual(
+      expect.arrayContaining(['manage_billing', 'campaigns.runstate', 'view_webhooks', 'manage_settings']),
+    );
   });
 
   it('builds an ability that allows what the database grants', async () => {

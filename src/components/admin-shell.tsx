@@ -213,7 +213,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // Read-only progress view of the relocation wizard (npm run relocate).
       // Owner-gated exactly like Debug Mode above.
       { href: '/admin/relocation', label: 'העברת דומיין', icon: Globe, permission: 'OWNER' },
-      { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook, permission: 'view_webhooks' },
+      { href: '/admin/webhooks', label: 'בדיקת Webhooks', icon: Webhook, can: ['read', 'WebhookInbox'] },
       // Internal same-origin link: the pg-boss dashboard is reverse-proxied at
       // /admin/jobs behind manage_settings (dashboard-proxy.ts) — no separate
       // login. See that route.
