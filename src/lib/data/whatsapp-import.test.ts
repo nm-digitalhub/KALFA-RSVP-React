@@ -32,6 +32,24 @@ import {
   stageWhatsAppImport,
 } from './whatsapp-import';
 
+// Supabase Auth as readVerifiedPhone reads it (auth.admin.getUserById). By
+// default user-1 has proved +972501234567 by OTP — the number every double below
+// puts on user-1's profile. Auth stores the number as bare digits.
+function verifiedAuth(byUser: Record<string, string | null> = { 'user-1': '972501234567' }) {
+  return {
+    admin: {
+      getUserById: vi.fn(async (id: string) => {
+        if (!(id in byUser)) return { data: { user: null }, error: { status: 404, code: 'user_not_found' } };
+        const phone = byUser[id];
+        return {
+          data: { user: { phone, phone_confirmed_at: phone ? '2026-01-01T00:00:00Z' : null } },
+          error: null,
+        };
+      }),
+    },
+  };
+}
+
 // The channel as the router resolves it. LEGACY is how this ships: the
 // `whatsapp_import_sender` role is unassigned, so importPhoneNumberId is null
 // and the RSVP number both stages lists and answers them — today's behaviour.
@@ -249,7 +267,7 @@ describe('resolveOwnerActiveEvents — per-org composite key (Phase 2 regression
       throw new Error(`unexpected table in resolveOwnerActiveEvents test: ${table}`);
     });
     vi.mocked(createAdminClient).mockReturnValue(
-      { from, rpc: vi.fn() } as unknown as ReturnType<typeof createAdminClient>,
+      { from, rpc: vi.fn(), auth: verifiedAuth() } as unknown as ReturnType<typeof createAdminClient>,
     );
   }
 
@@ -448,7 +466,7 @@ function wireOneOwner(stagingInsert = vi.fn(async () => ({ error: null }))) {
     throw new Error(`unexpected table in split test: ${table}`);
   });
   vi.mocked(createAdminClient).mockReturnValue(
-    { from, rpc: vi.fn() } as unknown as ReturnType<typeof createAdminClient>,
+    { from, rpc: vi.fn(), auth: verifiedAuth() } as unknown as ReturnType<typeof createAdminClient>,
   );
   return stagingInsert;
 }
@@ -752,4 +770,98 @@ describe('contactsToStagedRows — the phone on a shared contact card', () => {
 it('returns an actionable error for malformed CSV instead of throwing', () => {
   const out = parseCsvToStagedRows(new TextEncoder().encode('full_name,phone\n"unfinished,0501234567'));
   expect('error' in out && out.error).toContain('CSV UTF-8');
+});
+
+// The sender is the user who PROVED the number by OTP — never merely the first
+// profile that carries it. profiles.phone is copied from the signup form
+// unchecked, and a user can write any number into it.
+describe('resolveOwnerActiveEvents — the sender is identified by the proved phone', () => {
+  const SENDER = '+972501234567';
+
+  function wireProfiles(
+    profiles: { id: string; phone: string }[],
+    auth: ReturnType<typeof verifiedAuth>,
+    profilesError: { message: string } | null = null,
+  ) {
+    const from = vi.fn((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          not: vi.fn().mockReturnThis(),
+          then: (ok: (v: unknown) => unknown) => ok({ data: profilesError ? null : profiles, error: profilesError }),
+        };
+      }
+      if (table === 'events') {
+        const state: { ownerId: string | null } = { ownerId: null };
+        const builder: Record<string, unknown> = {
+          select: vi.fn(() => builder),
+          eq: vi.fn((col: string, val: string) => {
+            if (col === 'owner_id') state.ownerId = val;
+            return builder;
+          }),
+          in: vi.fn(() => builder),
+          then: (ok: (v: unknown) => unknown) =>
+            ok({
+              data: state.ownerId
+                ? [{ id: `evt-of-${state.ownerId}`, name: 'E', event_type: 'wedding', created_at: '2026-01-01T00:00:00Z' }]
+                : [],
+              error: null,
+            }),
+        };
+        return builder;
+      }
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        then: (ok: (v: unknown) => unknown) => ok({ data: [], error: null }),
+      };
+    });
+    vi.mocked(createAdminClient).mockReturnValue(
+      { from, rpc: vi.fn(), auth } as unknown as ReturnType<typeof createAdminClient>,
+    );
+  }
+
+  it("a profile that only CARRIES the number (typed at signup, never proved) gets nothing; the account that proved it gets the list", async () => {
+    wireProfiles(
+      [
+        { id: 'impostor', phone: '0501234567' },
+        { id: 'owner', phone: '0501234567' },
+      ],
+      verifiedAuth({ impostor: null, owner: '972501234567' }),
+    );
+
+    const events = await resolveOwnerActiveEvents(SENDER);
+
+    expect(events.map((e) => e.id)).toEqual(['evt-of-owner']);
+  });
+
+  it('nobody proved the number: not an import', async () => {
+    wireProfiles([{ id: 'user-1', phone: '0501234567' }], verifiedAuth({ 'user-1': null }));
+
+    expect(await resolveOwnerActiveEvents(SENDER)).toEqual([]);
+  });
+
+  it('a proved number that is not the sender does not match on the profile copy alone', async () => {
+    wireProfiles([{ id: 'user-1', phone: '0501234567' }], verifiedAuth({ 'user-1': '972509999999' }));
+
+    expect(await resolveOwnerActiveEvents(SENDER)).toEqual([]);
+  });
+
+  it('an Auth failure throws, so the row is retried instead of reading as a stranger', async () => {
+    const auth = verifiedAuth();
+    auth.admin.getUserById.mockResolvedValueOnce({
+      data: { user: null },
+      error: { status: 500, code: 'unexpected_failure' },
+    } as never);
+    wireProfiles([{ id: 'user-1', phone: '0501234567' }], auth);
+
+    await expect(resolveOwnerActiveEvents(SENDER)).rejects.toThrow('whatsapp_import_sender_check_failed');
+  });
+
+  it('a failed profiles read throws too', async () => {
+    wireProfiles([], verifiedAuth(), { message: 'down' });
+
+    await expect(resolveOwnerActiveEvents(SENDER)).rejects.toThrow('whatsapp_import_profiles_read_failed');
+  });
 });

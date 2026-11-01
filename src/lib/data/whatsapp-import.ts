@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { components as IncomingWebhook } from '@/lib/whatsapp/generated/incoming-webhook';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { readVerifiedPhone } from '@/lib/auth/verified-phone';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getWhatsAppConfig, type WhatsAppChannel } from '@/lib/data/outreach-config';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
@@ -98,7 +99,41 @@ type EventRow = {
   created_at: string;
 };
 
-// profiles.phone (verified) → user → EVERY ACTIVE event that user may MANAGE:
+// The ONE user who proved the sender's number, or null.
+//
+// profiles.phone only narrows the candidates. It is the display copy — copied
+// from the signup form by handle_new_user without any check, replaced by the
+// proved number when a phone change passes its OTP (settings/actions.ts) — and
+// a user can write any number into it. So it is never the proof: each candidate
+// is checked against the number Supabase Auth verified by OTP
+// (src/lib/auth/verified-phone.ts). Auth keeps a verified phone unique
+// (auth.users_phone_key), so at most one candidate passes.
+//
+// MEASURED 2026-10-30: 14 staged imports had gone to an account whose profile
+// carried the sender's number but had never proved it, while a different
+// account had.
+//
+// A failed read throws, so the webhook row is retried: answering "stranger"
+// would send an owner's list down the RSVP path instead.
+async function resolveVerifiedSender(
+  admin: ReturnType<typeof createAdminClient>,
+  senderE164: string,
+): Promise<string | null> {
+  const { data: profiles, error } = await admin
+    .from('profiles')
+    .select('id, phone')
+    .not('phone', 'is', null);
+  if (error) throw new Error('whatsapp_import_profiles_read_failed');
+  for (const profile of profiles ?? []) {
+    if (normalizePhone(profile.phone) !== senderE164) continue;
+    const verified = await readVerifiedPhone(admin, profile.id);
+    if (verified.error) throw new Error('whatsapp_import_sender_check_failed');
+    if (verified.phone === senderE164) return profile.id;
+  }
+  return null;
+}
+
+// The sender's PROVED phone → user (resolveVerifiedSender) → EVERY ACTIVE event that user may MANAGE:
 // their own, or a shared-org event where their role holds guests.create
 // (phase-3 model — so an org member like a co-managing brother can send lists
 // too). Returned newest-first, de-duplicated by id.
@@ -115,25 +150,19 @@ export async function resolveOwnerActiveEvents(
   senderE164: string,
 ): Promise<ImportEvent[]> {
   const admin = createAdminClient();
-  const { data: profiles } = await admin
-    .from('profiles')
-    .select('id, phone')
-    .not('phone', 'is', null);
-  const sender = (profiles ?? []).find(
-    (p) => normalizePhone(p.phone) === senderE164,
-  );
-  if (!sender) return [];
+  const senderId = await resolveVerifiedSender(admin, senderE164);
+  if (!senderId) return [];
 
   const { data: owned } = await admin
     .from('events')
     .select('id, name, event_type, created_at')
-    .eq('owner_id', sender.id)
+    .eq('owner_id', senderId)
     .eq('status', 'active');
 
   const { data: memberships } = await admin
     .from('organization_members')
     .select('organization_id, role_id')
-    .eq('user_id', sender.id);
+    .eq('user_id', senderId);
   let shared: EventRow[] = [];
   if (memberships && memberships.length > 0) {
     // Permissions are now per-(organization_id, role_id) — a role name/id no

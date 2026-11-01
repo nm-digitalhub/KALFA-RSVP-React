@@ -53,7 +53,7 @@ export async function getProfile(): Promise<ProfileDTO | null> {
     .maybeSingle();
 
   if (error) {
-    throw new Error('טעינת הפרופיל נכשלה');
+    throw new Error('טעינת הפרופיל נכשלה', { cause: error });
   }
 
   return data;
@@ -61,12 +61,15 @@ export async function getProfile(): Promise<ProfileDTO | null> {
 
 export interface UpdateProfileFields {
   full_name: string | null;
-  phone: string | null;
 }
 
 // Upsert the current user's profile. `upsert({ id: user.id, ... })` handles the
 // missing-row case (no profile yet) and the update case in one statement. The id
 // is the verified user id, set server-side — it is never taken from the form.
+// It writes the display name only. profiles.phone is the display copy of the
+// phone — set from the signup form by handle_new_user, replaced by the proved
+// number when a phone change passes its OTP (settings syncDisplayPhone) — and an
+// upsert updates only the columns it sends, so it is left as it is.
 export async function updateProfile(fields: UpdateProfileFields): Promise<ProfileDTO> {
   const user = await requireUser();
   const supabase = await createClient();
@@ -76,7 +79,6 @@ export async function updateProfile(fields: UpdateProfileFields): Promise<Profil
     .upsert({
       id: user.id,
       full_name: fields.full_name,
-      phone: fields.phone,
     })
     .select(PROFILE_COLUMNS)
     .single();

@@ -1,9 +1,11 @@
 'use server';
 
 import { z } from 'zod';
+import { zfd } from 'zod-form-data';
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
+import { returnValidationErrors } from 'next-safe-action';
 
 import { requireUser } from '@/lib/auth/dal';
 import { verifiedPhoneOf } from '@/lib/auth/verified-phone';
@@ -16,12 +18,12 @@ import { updateProfile } from '@/lib/data/profiles';
 import { updateUserSettings } from '@/lib/data/user-settings';
 import { createClient } from '@/lib/supabase/server';
 import { getAppUrl } from '@/lib/url';
+import { actionClient, returnUserError } from '@/lib/safe-action';
 import {
   emailChangeSchema,
   updateProfileSchema,
   updateSettingsSchema,
 } from '@/lib/validation/schemas';
-import type { FormState } from '@/lib/validation/result';
 
 // Phone-number ownership, proved by Supabase Auth itself.
 //
@@ -32,13 +34,30 @@ import type { FormState } from '@/lib/validation/result';
 //
 // The proof lives in auth.users.phone / phone_confirmed_at, read through
 // src/lib/auth/verified-phone.ts. profiles.phone is only the display value the
-// owner sees and edits; nothing reads it as proof.
+// owner sees — copied from the signup form unchecked, then replaced by each
+// proved number below — and nothing reads it as proof: even the WhatsApp import,
+// which finds candidates by it, checks the proved phone (whatsapp-import.ts
+// resolveVerifiedSender).
+
+// The number as typed, normalized to E.164 (normalizePhone). One the normalizer cannot read is refused under the
+// field, before anything else runs.
+const phoneField = z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    const phone = normalizePhone(value ?? '');
+    if (!phone) {
+      ctx.addIssue({ code: 'custom', message: 'מספר טלפון לא תקין' });
+      return z.NEVER;
+    }
+    return phone;
+  });
 
 // Show the proved number in the profile's display field, so the screen and
 // every place that prints profiles.phone show the number that was proved.
 //
-// A direct column write, NOT updateProfile(): that helper upserts the whole row
-// and would blank full_name, which these actions never receive.
+// A direct column write, NOT updateProfile(): that helper writes the display
+// name only (the profile form), never the phone.
 async function syncDisplayPhone(
   supabase: Awaited<ReturnType<typeof createClient>>,
   phone: string,
@@ -60,218 +79,195 @@ async function syncDisplayPhone(
 // updateUser (not signInWithOtp) because this is an ALREADY-AUTHENTICATED user
 // proving a number, never a login: the cookie client carries their session and
 // Auth refuses the call without one.
-export async function requestPhoneChangeAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const phone = normalizePhone(String(formData.get('phone') ?? ''));
-  if (!phone) return { fieldErrors: { phone: ['מספר טלפון לא תקין'] } };
+export const requestPhoneChangeAction = actionClient
+  .inputSchema(zfd.formData({ phone: phoneField }))
+  .stateAction(async ({ parsedInput: { phone } }) => {
+    const supabase = await createClient();
 
-  const supabase = await createClient();
+    // Asking Auth to "change" the phone to the one it already holds is a NO-OP:
+    // GoTrue starts a phone change only when the number differs. It returns
+    // success and sends nothing, so the old code answered "a code was sent" for
+    // an SMS that was never dispatched — a promise the user cannot act on.
+    // Measured 2026-09-02: phone_change_sent_at never moved and no SMS arrived.
+    const { data: authData } = await supabase.auth.getUser();
+    if (verifiedPhoneOf(authData.user) === phone) {
+      // Also brings back a display field that drifted from the proved number.
+      await syncDisplayPhone(supabase, phone);
+      revalidatePath('/app/settings');
+      return { notice: 'המספר הזה כבר מאומת. לא נשלח קוד.' };
+    }
 
-  // Asking Auth to "change" the phone to the one it already holds is a NO-OP:
-  // GoTrue starts a phone change only when the number differs. It returns
-  // success and sends nothing, so the old code answered "a code was sent" for
-  // an SMS that was never dispatched — a promise the user cannot act on.
-  // Measured 2026-09-02: phone_change_sent_at never moved and no SMS arrived.
-  const { data: authData } = await supabase.auth.getUser();
-  if (verifiedPhoneOf(authData.user) === phone) {
-    // Also brings back a display field that drifted from the proved number.
-    await syncDisplayPhone(supabase, phone);
-    revalidatePath('/app/settings');
-    return { notice: 'המספר הזה כבר מאומת. לא נשלח קוד.' };
-  }
-
-  const { error } = await supabase.auth.updateUser({ phone });
-  if (error) {
-    // Generic message to the user, FULL detail to the server log — the same
-    // split the SMS and SUMIT layers already use. Without the log a failure
-    // here is undiagnosable (measured: the first live attempt returned only
-    // the generic string and the cause had to be found in the Auth config).
-    // No phone number: it is PII and the log is not the place for it.
-    console.error('[settings] phone change rejected by Auth', {
-      status: error.status,
-      code: error.code,
-      message: error.message,
-    });
-    return { error: 'שליחת קוד האימות נכשלה. בדקו את המספר ונסו שוב.' };
-  }
-  return { notice: 'קוד אימות נשלח בהודעת SMS למספר שהוזן.' };
-}
+    const { error } = await supabase.auth.updateUser({ phone });
+    if (error) {
+      // Generic message to the user, FULL detail to the server log — the same
+      // split the SMS and SUMIT layers already use. Without the log a failure
+      // here is undiagnosable (measured: the first live attempt returned only
+      // the generic string and the cause had to be found in the Auth config).
+      // No phone number: it is PII and the log is not the place for it.
+      console.error('[settings] phone change rejected by Auth', {
+        status: error.status,
+        code: error.code,
+        message: error.message,
+      });
+      returnUserError('שליחת קוד האימות נכשלה. בדקו את המספר ונסו שוב.');
+    }
+    return { notice: 'קוד אימות נשלח בהודעת SMS למספר שהוזן.' };
+  });
 
 // Step 2 — verify. type MUST be 'phone_change', never 'sms': 'sms' is the
 // LOGIN flow, and using it here would both fail (no pending login challenge)
 // and, if it ever succeeded, mint a session from a profile edit.
-export async function verifyPhoneChangeAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const phone = normalizePhone(String(formData.get('phone') ?? ''));
-  if (!phone) return { fieldErrors: { phone: ['מספר טלפון לא תקין'] } };
+const verifyPhoneChangeSchema = zfd.formData({
+  phone: phoneField,
+  otp_code: z
+    .string()
+    .optional()
+    .transform((value) => (value ?? '').trim())
+    .pipe(z.string().regex(/^\d{6}$/, { error: 'יש להזין קוד בן 6 ספרות' })),
+});
 
-  const token = String(formData.get('otp_code') ?? '').trim();
-  if (!/^\d{6}$/.test(token)) {
-    return { fieldErrors: { otp_code: ['יש להזין קוד בן 6 ספרות'] } };
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.verifyOtp({
-    phone,
-    token,
-    type: 'phone_change',
-  });
-  if (error) {
-    console.error('[settings] phone OTP verification failed', {
-      status: error.status,
-      code: error.code,
-      message: error.message,
+export const verifyPhoneChangeAction = actionClient
+  .inputSchema(verifyPhoneChangeSchema)
+  .stateAction(async ({ parsedInput: { phone, otp_code: token } }) => {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.verifyOtp({
+      phone,
+      token,
+      type: 'phone_change',
     });
-    return { fieldErrors: { otp_code: ['הקוד שגוי או פג תוקפו'] } };
-  }
+    if (error) {
+      console.error('[settings] phone OTP verification failed', {
+        status: error.status,
+        code: error.code,
+        message: error.message,
+      });
+      returnValidationErrors(verifyPhoneChangeSchema, { otp_code: { _errors: ['הקוד שגוי או פג תוקפו'] } });
+    }
 
-  await syncDisplayPhone(supabase, phone);
+    await syncDisplayPhone(supabase, phone);
 
-  await logActivity({ action: 'profile.phone_verified' });
-  revalidatePath('/app/settings');
-  return { notice: 'הטלפון אומת.' };
-}
-
-export async function updateProfileAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = updateProfileSchema.safeParse({
-    full_name: formData.get('full_name'),
-    phone: formData.get('phone'),
+    await logActivity({ action: 'profile.phone_verified' });
+    revalidatePath('/app/settings');
+    return { notice: 'הטלפון אומת.' };
   });
 
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
+// The profile form posts the display name only. The phone is proved through Supabase Auth and written to
+// profiles.phone by syncDisplayPhone above; this action never touches it.
+export const updateProfileAction = actionClient
+  .inputSchema(zfd.formData(updateProfileSchema))
+  .stateAction(async ({ parsedInput: { full_name } }) => {
+    try {
+      await updateProfile({ full_name: full_name ? full_name : null });
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שמירת הפרטים נכשלה. נסו שוב.');
+    }
 
-  const { full_name, phone } = parsed.data;
-
-  try {
-    await updateProfile({
-      full_name: full_name ? full_name : null,
-      phone: phone ? phone : null,
-    });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שמירת הפרטים נכשלה. נסו שוב.' };
-  }
-
-  revalidatePath('/app/settings');
-  return { notice: 'הפרטים נשמרו' };
-}
-
-export async function updateSettingsAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = updateSettingsSchema.safeParse({
-    event_updates: formData.get('event_updates'),
-    reminder_updates: formData.get('reminder_updates'),
-    billing_updates: formData.get('billing_updates'),
+    revalidatePath('/app/settings');
+    return { notice: 'הפרטים נשמרו' };
   });
 
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
-  }
+export const updateSettingsAction = actionClient
+  .inputSchema(zfd.formData(updateSettingsSchema))
+  .stateAction(async ({ parsedInput }) => {
+    try {
+      await updateUserSettings(parsedInput);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שמירת ההעדפות נכשלה. נסו שוב.');
+    }
 
-  try {
-    await updateUserSettings(parsed.data);
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שמירת ההעדפות נכשלה. נסו שוב.' };
-  }
-
-  revalidatePath('/app/settings');
-  return { notice: 'ההעדפות נשמרו' };
-}
+    revalidatePath('/app/settings');
+    return { notice: 'ההעדפות נשמרו' };
+  });
 
 // Request an email-address change. Double opt-in: Supabase sends a confirmation
 // link to the NEW address (and, with secure email change, the old one too); the
 // address only changes AFTER the user clicks it. We never change it directly.
-export async function requestEmailChangeAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const parsed = emailChangeSchema.safeParse({
-    email: formData.get('new_email'),
-  });
-  if (!parsed.success) {
-    return { fieldErrors: z.flattenError(parsed.error).fieldErrors };
+//
+// The request itself; a refusal comes back as its message. It stays out of the action's try because returnUserError
+// throws, and that catch would replace the refusal with its own message.
+async function requestEmailChange(email: string): Promise<string | undefined> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user?.email && user.email.toLowerCase() === email.toLowerCase()) {
+    return 'הכתובת החדשה זהה לכתובת הנוכחית.';
   }
 
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (user?.email && user.email.toLowerCase() === parsed.data.email.toLowerCase()) {
-      return { error: 'הכתובת החדשה זהה לכתובת הנוכחית.' };
-    }
+  // Route the confirmation through OUR /auth/confirm interstitial (the same
+  // token_hash flow as recovery/magic-link). {{ .RedirectTo }} becomes our
+  // trusted /auth/confirm URL; the email_change template appends
+  // token_hash+type=email_change+next=/app/settings.
+  const { error } = await supabase.auth.updateUser(
+    { email },
+    { emailRedirectTo: await getAppUrl('/auth/confirm') },
+  );
+  if (error) {
+    return 'שליחת אישור המייל נכשלה. נסו שוב מאוחר יותר.';
+  }
+}
 
-    // Route the confirmation through OUR /auth/confirm interstitial (the same
-    // token_hash flow as recovery/magic-link). {{ .RedirectTo }} becomes our
-    // trusted /auth/confirm URL; the email_change template appends
-    // token_hash+type=email_change+next=/app/settings.
-    const { error } = await supabase.auth.updateUser(
-      { email: parsed.data.email },
-      { emailRedirectTo: await getAppUrl('/auth/confirm') },
-    );
-    if (error) {
-      return { error: 'שליחת אישור המייל נכשלה. נסו שוב מאוחר יותר.' };
+export const requestEmailChangeAction = actionClient
+  .inputSchema(zfd.formData({ new_email: emailChangeSchema.shape.email }))
+  .stateAction(async ({ parsedInput: { new_email } }) => {
+    let refusal: string | undefined;
+    try {
+      refusal = await requestEmailChange(new_email);
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שליחת אישור המייל נכשלה. נסו שוב.');
     }
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שליחת אישור המייל נכשלה. נסו שוב.' };
+    if (refusal) returnUserError(refusal);
+
+    await logActivity({
+      action: 'profile.email_change_requested',
+      meta: { source: 'settings.account' },
+    });
+
+    return {
+      notice:
+        'נשלח קישור אישור לכתובת החדשה. כתובת המייל תתחלף רק לאחר שתאשרו דרך הקישור (וגם תאשרו בכתובת הנוכחית אם נדרש).',
+    };
+  });
+
+// The reset request; a refusal comes back as its message (kept out of the action's try, as above).
+async function requestPasswordReset(): Promise<string | undefined> {
+  const user = await requireUser();
+  if (!user.email) {
+    return 'לא נמצאה כתובת אימייל לחשבון.';
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(user.email);
+  if (error) {
+    return 'שליחת קישור איפוס הסיסמה נכשלה. נסו שוב.';
   }
 
   await logActivity({
-    action: 'profile.email_change_requested',
-    meta: { source: 'settings.account' },
+    action: 'password.reset_requested',
+    meta: {
+      source: 'settings.security',
+    },
   });
-
-  return {
-    notice:
-      'נשלח קישור אישור לכתובת החדשה. כתובת המייל תתחלף רק לאחר שתאשרו דרך הקישור (וגם תאשרו בכתובת הנוכחית אם נדרש).',
-  };
 }
 
-export async function sendPasswordResetAction(
-  _prevState: FormState,
-  _formData: FormData,
-): Promise<FormState> {
-  void _prevState;
-  void _formData;
-
-  try {
-    const user = await requireUser();
-    if (!user.email) {
-      return { error: 'לא נמצאה כתובת אימייל לחשבון.' };
+// The form posts no fields; its (empty) FormData is the input.
+export const sendPasswordResetAction = actionClient
+  .inputSchema(zfd.formData({}))
+  .stateAction(async () => {
+    let refusal: string | undefined;
+    try {
+      refusal = await requestPasswordReset();
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שליחת קישור איפוס הסיסמה נכשלה. נסו שוב.');
     }
+    if (refusal) returnUserError(refusal);
 
-    const supabase = await createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(user.email);
-    if (error) {
-      return { error: 'שליחת קישור איפוס הסיסמה נכשלה. נסו שוב.' };
-    }
-
-    await logActivity({
-      action: 'password.reset_requested',
-      meta: {
-        source: 'settings.security',
-      },
-    });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שליחת קישור איפוס הסיסמה נכשלה. נסו שוב.' };
-  }
-
-  return { notice: 'נשלח קישור איפוס סיסמה לאימייל שלכם.' };
-}
+    return { notice: 'נשלח קישור איפוס סיסמה לאימייל שלכם.' };
+  });
 
 // Marketing-email consent from settings (openspec change marketing-email-consent, spec marketing-consent).
 //
@@ -279,42 +275,45 @@ export async function sendPasswordResetAction(
 // is the server's (recordConsent). Saving without a change writes nothing. The Resend contact follows through a
 // queued job, so a Resend outage never fails this action; a grant carries `resubscribe`, the only job allowed to turn
 // a contact Resend holds as unsubscribed back on.
-export async function updateMarketingConsentAction(
-  _prevState: FormState,
-  formData: FormData,
-): Promise<FormState> {
-  const user = await requireUser();
-  if (!(await isMarketingConsentEnabled())) return { error: 'האפשרות אינה זמינה כרגע.' };
-  if (!user.email) return { error: 'לחשבון אין כתובת אימייל.' };
-
-  const wantsMarketing = formData.get('marketing_opt_in') === 'on';
-  const requestHeaders = await headers();
-  let result;
-  try {
-    result = await recordConsent({
-      userId: user.id,
-      email: user.email,
-      action: wantsMarketing ? 'grant' : 'withdraw',
-      source: 'settings',
-      ip: socketClientIp((name) => requestHeaders.get(name)),
-      userAgent: requestHeaders.get('user-agent'),
-    });
-  } catch (err) {
-    unstable_rethrow(err);
-    return { error: 'שמירת ההעדפה נכשלה. נסו שוב.' };
-  }
-
-  if (result === 'recorded') {
+//
+// The session user, the feature switch and the account's email are checked BEFORE the choice is read, as they always
+// were: a pre-validation middleware (`use()` runs ahead of the input schema) hands the user to the body.
+export const updateMarketingConsentAction = actionClient
+  .use(async ({ next }) => {
+    const user = await requireUser();
+    if (!(await isMarketingConsentEnabled())) returnUserError('האפשרות אינה זמינה כרגע.');
+    if (!user.email) returnUserError('לחשבון אין כתובת אימייל.');
+    return next({ ctx: { userId: user.id, email: user.email } });
+  })
+  .inputSchema(zfd.formData({ marketing_opt_in: zfd.checkbox() }))
+  .stateAction(async ({ parsedInput: { marketing_opt_in: wantsMarketing }, ctx: { userId, email } }) => {
+    const requestHeaders = await headers();
+    let result;
     try {
-      await enqueueMarketingContactSync({ userId: user.id, ...(wantsMarketing ? { resubscribe: true } : {}) });
-    } catch (err) {
-      // Recorded; the daily reconcile brings Resend in line.
-      console.error('[settings] marketing contact sync was not queued', {
-        message: err instanceof Error ? err.message : 'unknown',
+      result = await recordConsent({
+        userId,
+        email,
+        action: wantsMarketing ? 'grant' : 'withdraw',
+        source: 'settings',
+        ip: socketClientIp((name) => requestHeaders.get(name)),
+        userAgent: requestHeaders.get('user-agent'),
       });
+    } catch (err) {
+      unstable_rethrow(err);
+      returnUserError('שמירת ההעדפה נכשלה. נסו שוב.');
     }
-  }
 
-  revalidatePath('/app/settings');
-  return { notice: wantsMarketing ? 'נרשמתם לעדכונים בדוא״ל.' : 'הוסרתם מעדכונים בדוא״ל.' };
-}
+    if (result === 'recorded') {
+      try {
+        await enqueueMarketingContactSync({ userId, ...(wantsMarketing ? { resubscribe: true } : {}) });
+      } catch (err) {
+        // Recorded; the daily reconcile brings Resend in line.
+        console.error('[settings] marketing contact sync was not queued', {
+          message: err instanceof Error ? err.message : 'unknown',
+        });
+      }
+    }
+
+    revalidatePath('/app/settings');
+    return { notice: wantsMarketing ? 'נרשמתם לעדכונים בדוא״ל.' : 'הוסרתם מעדכונים בדוא״ל.' };
+  });

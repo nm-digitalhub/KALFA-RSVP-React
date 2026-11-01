@@ -97,11 +97,11 @@ describe('getProfile', () => {
 });
 
 describe('updateProfile', () => {
-  const fields = { full_name: 'יוסי לוי', phone: '052-987-6543' };
+  const fields = { full_name: 'יוסי לוי' };
 
   it('upserts with the id derived server-side from the verified user', async () => {
     const { client, builder } = createMockSupabase<ProfileDTO>({
-      data: sampleRow({ full_name: fields.full_name, phone: fields.phone }),
+      data: sampleRow({ full_name: fields.full_name }),
       error: null,
     });
     vi.mocked(createClient).mockResolvedValue(
@@ -116,6 +116,8 @@ describe('updateProfile', () => {
     expect(builder.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ id: USER_ID, ...fields }),
     );
+    // profiles.phone belongs to the phone proof: the profile save never sends it, so the upsert leaves it as it is.
+    expect(builder.upsert.mock.calls[0][0]).not.toHaveProperty('phone');
     expect(logActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'profile.updated',
@@ -138,7 +140,7 @@ describe('updateProfile', () => {
   });
 
   it('returns the upserted row', async () => {
-    const row = sampleRow({ full_name: fields.full_name, phone: fields.phone });
+    const row = sampleRow({ full_name: fields.full_name });
     const { client } = createMockSupabase<ProfileDTO>({ data: row, error: null });
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
@@ -159,19 +161,19 @@ describe('updateProfile', () => {
     await expect(updateProfile(fields)).rejects.toThrow('שמירת הפרופיל נכשלה');
   });
 
-  it('clears values when null is passed (stored as NULL)', async () => {
+  it('clears the name when null is passed (stored as NULL)', async () => {
     const { client, builder } = createMockSupabase<ProfileDTO>({
-      data: sampleRow({ full_name: null, phone: null }),
+      data: sampleRow({ full_name: null }),
       error: null,
     });
     vi.mocked(createClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof createClient>>,
     );
 
-    await updateProfile({ full_name: null, phone: null });
+    await updateProfile({ full_name: null });
 
     expect(builder.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ id: USER_ID, full_name: null, phone: null }),
+      expect.objectContaining({ id: USER_ID, full_name: null }),
     );
   });
 });
