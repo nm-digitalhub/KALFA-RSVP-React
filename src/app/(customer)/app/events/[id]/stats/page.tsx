@@ -9,7 +9,7 @@ import { getEventStats, type EventStatsResult } from '@/lib/data/event-stats';
 import { requireEventAccess } from '@/lib/data/events';
 import { redirectOwnerInSetup } from '@/lib/data/event-mode';
 import {
-  CAMPAIGN_STAGE_LABELS,
+  CUSTOMER_STAGE_LABELS,
   EVENT_STATUS_LABELS,
   campaignStage,
 } from '@/lib/data/event-labels';
@@ -197,7 +197,7 @@ export default async function EventStatsPage({
       </SectionCard>
 
       {/* Campaign operational + delivery + billing */}
-      <SectionCard title="קמפיין יצירת הקשר" state={stats.campaign.state}>
+      <SectionCard title="אישורי הגעה" state={stats.campaign.state}>
         {stats.campaign.id ? (
           <div className="space-y-4">
             {/* Two or three items depending on whether reachedCount is
@@ -207,7 +207,7 @@ export default async function EventStatsPage({
               <div>
                 <dt className="text-muted-foreground">סטטוס</dt>
                 <dd className="font-medium">
-                  {campaignDisplayStage ? CAMPAIGN_STAGE_LABELS[campaignDisplayStage] : '—'}
+                  {campaignDisplayStage ? CUSTOMER_STAGE_LABELS[campaignDisplayStage] : '—'}
                 </dd>
               </div>
               {/* Each figure only when the campaign's record holds it: a package

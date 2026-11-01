@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CAMPAIGN_STAGE_LABELS,
   CAMPAIGN_STATUS_LABELS,
+  CUSTOMER_STAGE_LABELS,
   EVENT_STATUS_LABELS,
   campaignStage,
   eventStatusLabel,
@@ -99,3 +100,21 @@ describe('campaignStage — a campaign is funded by its package payment', () => 
   });
 });
 
+// The customer's stage labels (design D8, D4): the staff map but for the one stage that names an activation, which
+// the customer never sees.
+describe('CUSTOMER_STAGE_LABELS', () => {
+  it('reads like the service starting where staff read "awaiting activation", and like staff everywhere else', () => {
+    expect(CUSTOMER_STAGE_LABELS.awaiting_activation).toBe('השירות מופעל');
+    expect(CAMPAIGN_STAGE_LABELS.awaiting_activation).toBe('ממתין להפעלה');
+    const { awaiting_activation: _customer, ...customerRest } = CUSTOMER_STAGE_LABELS;
+    const { awaiting_activation: _staff, ...staffRest } = CAMPAIGN_STAGE_LABELS;
+    expect(customerRest).toEqual(staffRest);
+  });
+
+  it('has no "קמפיין" and no waiting-for-activation wording', () => {
+    for (const label of Object.values(CUSTOMER_STAGE_LABELS)) {
+      expect(label).not.toContain('קמפיין');
+      expect(label).not.toContain('להפעלה');
+    }
+  });
+});

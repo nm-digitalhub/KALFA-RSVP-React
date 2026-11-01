@@ -50,7 +50,7 @@ export const SETUP_STEP_LABELS: Record<SetupStepKey, string> = {
   sign: 'אישור תנאי החבילה',
   // A single purchase of the package.
   pay: 'תשלום החבילה',
-  live: 'הקמפיין פעיל',
+  live: 'אישורי ההגעה פעילים',
 };
 
 export const PAST_EVENT_HINT = 'מועד האירוע חלף — לא ניתן להמשיך בהקמה';
@@ -167,7 +167,7 @@ export function computeSetupSteps(input: SetupInput): {
     {
       key: 'live',
       state: live ? 'done' : held ? 'current' : 'pending',
-      hint: stage === 'paused' ? 'הקמפיין מושהה' : undefined,
+      hint: stage === 'paused' ? 'השירות מושהה' : undefined,
     },
   ];
 

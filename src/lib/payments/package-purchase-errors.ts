@@ -30,8 +30,8 @@ export type PurchaseErrorCode = (typeof PURCHASE_ERROR)[keyof typeof PURCHASE_ER
 export const PURCHASE_ERROR_MESSAGES: Record<PurchaseErrorCode, string> = {
   token_missing: 'לא התקבלו פרטי אשראי. נסו שוב.',
   purchase_disabled: 'שלב התשלום אינו פעיל כעת.',
-  bad_state: 'לא ניתן לרכוש חבילה במצב הנוכחי של הקמפיין.',
-  purchase_in_progress: 'תשלום כבר מתבצע עבור הקמפיין הזה. המתינו מספר שניות ורעננו את העמוד — אין לשלם שוב.',
+  bad_state: 'לא ניתן לרכוש את החבילה במצב הנוכחי.',
+  purchase_in_progress: 'תשלום כבר מתבצע עבור החבילה. המתינו מספר שניות ורעננו את העמוד — אין לשלם שוב.',
   purchase_review: 'לא התקבל אישור חד-משמעי על התשלום. אין לשלם שוב — נבדוק את הנושא ונחזור אליכם.',
   purchase_declined: 'התשלום נדחה על ידי חברת האשראי. בדקו את פרטי הכרטיס ונסו שוב.',
   three_ds_timeout: 'אימות הכרטיס מול הבנק (3D Secure) לא הושלם בזמן. נסו שוב. אם זה חוזר, נסו מכשיר או רשת אחרים, או כרטיס אחר.',

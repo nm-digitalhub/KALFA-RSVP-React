@@ -39,7 +39,7 @@ import {
 } from '../campaign-actions';
 import { ManageClient } from './manage-client';
 
-export const metadata: Metadata = { title: 'ניהול קמפיין' };
+export const metadata: Metadata = { title: 'אישורי הגעה ותוצאות' };
 
 export default async function CampaignManagePage({
   params,
@@ -174,7 +174,7 @@ export default async function CampaignManagePage({
           חזרה לאירוע
         </Link>
         <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
-          ניהול קמפיין
+          אישורי הגעה ותוצאות
         </h1>
       </header>
 

@@ -37,7 +37,7 @@ export default async function ApproveCampaignPage({
       <p className="rounded-md bg-success/10 px-3 py-2 text-sm text-success">
         {campaign.status === 'approved'
           ? 'תנאי החבילה אושרו. כעת יש לשלם עבור החבילה.'
-          : 'הקמפיין אינו ממתין לאישור ולכן לא ניתן לאשר את התנאים כעת.'}
+          : 'אין כרגע תנאים שממתינים לאישור.'}
       </p>
       {campaign.status === 'approved' ? (
         <Link

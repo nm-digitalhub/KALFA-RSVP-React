@@ -137,7 +137,7 @@ describe('computeSetupSteps', () => {
 
   it('paused → live is current with the paused hint', () => {
     const r = computeSetupSteps({ event: active, campaign: pkg('paused', { status: 'collected' }), isPast: false });
-    expect(r.steps.find((s) => s.key === 'live')).toMatchObject({ state: 'current', hint: 'הקמפיין מושהה' });
+    expect(r.steps.find((s) => s.key === 'live')).toMatchObject({ state: 'current', hint: 'השירות מושהה' });
   });
 
   it('past event → the current step becomes blocked with the past-event hint', () => {
@@ -166,6 +166,12 @@ describe('SETUP_STEP_LABELS', () => {
     expect(SETUP_STEP_LABELS.package).toBe('בחירת חבילה');
     expect(SETUP_STEP_LABELS.sign).toBe('אישור תנאי החבילה');
     expect(SETUP_STEP_LABELS.pay).toBe('תשלום החבילה');
+  });
+
+  // Customer vocabulary (design D8): the service is "אישורי הגעה", never "קמפיין".
+  it('names the running service in the customer’s words, with no "קמפיין" in any step', () => {
+    expect(SETUP_STEP_LABELS.live).toBe('אישורי ההגעה פעילים');
+    for (const label of Object.values(SETUP_STEP_LABELS)) expect(label).not.toContain('קמפיין');
   });
 });
 

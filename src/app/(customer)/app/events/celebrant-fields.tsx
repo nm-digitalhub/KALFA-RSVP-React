@@ -42,7 +42,7 @@ export function CelebrantFields({
       <legend className="mb-2 text-sm font-medium">בעלי השמחה</legend>
       <p className="text-xs text-muted-foreground">
         {required.size > 0
-          ? 'כל עוד קיים קמפיין אישורי הגעה בתהליך — הפרטים מופיעים בהזמנות ובתזכורות ולכן חייבים להישאר מלאים.'
+          ? 'כל עוד שירות אישורי ההגעה בתהליך — הפרטים מופיעים בהזמנות ובתזכורות ולכן חייבים להישאר מלאים.'
           : 'יש למלא לפני הפעלת אישורי הגעה'}
       </p>
       {Object.entries(CELEBRANT_FIELD_LABELS[eventType]).map(([field, label]) => (

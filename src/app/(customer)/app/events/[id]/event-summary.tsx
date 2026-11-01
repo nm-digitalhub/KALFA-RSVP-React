@@ -191,7 +191,7 @@ export function EventSummary({
       {/* 2 — billing still open. Verbatim §6 copy. */}
       {billingInProcessing ? (
         <p className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
-          האירוע הסתיים. הסיכום הכספי נמצא בעיבוד ויעודכן לאחר סגירת הקמפיין.
+          האירוע הסתיים. הסיכום הכספי נמצא בעיבוד ויעודכן לאחר סגירת השירות.
         </p>
       ) : null}
 
@@ -249,7 +249,7 @@ export function EventSummary({
           line rather than showing partial numbers. */}
       {campaign.state === 'error' ? (
         <p className="text-sm text-muted-foreground">
-          לא ניתן לטעון את נתוני הקמפיין כרגע.
+          לא ניתן לטעון כרגע את נתוני השירות.
         </p>
       ) : null}
 

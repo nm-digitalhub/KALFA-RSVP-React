@@ -25,7 +25,7 @@ export function AgreementSheet({ html }: { html: string }) {
       </SheetTrigger>
       <SheetContent side="right" className="w-full p-0 sm:max-w-2xl">
         <SheetHeader className="border-b border-border">
-          <SheetTitle>הסכם אישור קמפיין ושירות</SheetTitle>
+          <SheetTitle>תנאי החבילה המלאים</SheetTitle>
         </SheetHeader>
         <div
           className="agreement-doc flex-1 overflow-y-auto px-5 pb-8 pt-2"

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
-  CAMPAIGN_STAGE_LABELS,
+  CUSTOMER_STAGE_LABELS,
   CAMPAIGN_STAGE_VARIANTS,
   type CampaignStage,
 } from '@/lib/data/event-labels';
@@ -109,7 +109,7 @@ export function AddGuestsOnboarding({
             sent yet. Same derived stage the manage and stats pages show. */}
         {stage ? (
           <Badge variant={CAMPAIGN_STAGE_VARIANTS[stage]}>
-            {stage === 'active' ? 'הקמפיין פעיל' : CAMPAIGN_STAGE_LABELS[stage]}
+            {stage === 'active' ? 'אישורי ההגעה פעילים' : CUSTOMER_STAGE_LABELS[stage]}
           </Badge>
         ) : null}
       </div>

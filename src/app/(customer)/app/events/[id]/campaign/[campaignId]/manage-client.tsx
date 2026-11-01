@@ -11,7 +11,8 @@ import {
 } from '@/app/(customer)/app/events/[id]/guests/labels';
 import { sendBusinessEvent } from '@/components/consent/send-ga-event';
 import { DateSelectIL } from '@/components/date-select-il';
-import { FormError, FormNotice } from '@/components/forms';
+import { FieldError, FormError, FormNotice } from '@/components/forms';
+import { actionErrorMessage, actionFormError } from '@/lib/action-result';
 import { TimeSelect24 } from '@/components/time-select-24';
 import {
   AlertDialog,
@@ -31,16 +32,25 @@ import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
 import {
   CAMPAIGN_STAGE_LABELS,
   CAMPAIGN_STAGE_VARIANTS,
+  CUSTOMER_STAGE_LABELS,
   campaignStage,
 } from '@/lib/data/event-labels';
 import { formatIsraelDateTime } from '@/lib/date';
 import { SERVICE_STARTING } from '@/lib/payments/package-payment-screen';
-import type { FormState } from '@/lib/validation/result';
 
-type BoundAction = (
-  prevState: FormState,
-  formData: FormData,
-) => Promise<FormState>;
+import type {
+  pauseCampaignAction,
+  rescheduleEventAction,
+  updateThankyouScheduleAction,
+} from '../campaign-actions';
+
+// A bound action as useActionState takes it, typed by the action's own result.
+type BoundAction<R> = (prevState: R, formData: FormData) => Promise<R>;
+// The six one-button actions (pause, close, cancel and the three sends) share one result type: no fields, the two
+// bound ids, a notice on success.
+type ButtonResult = Awaited<ReturnType<typeof pauseCampaignAction>>;
+type ThankyouScheduleResult = Awaited<ReturnType<typeof updateThankyouScheduleAction>>;
+type RescheduleEventResult = Awaited<ReturnType<typeof rescheduleEventAction>>;
 
 type Campaign = {
   id: string;
@@ -92,14 +102,14 @@ type ThankyouSchedule = {
 } | null;
 
 type Actions = {
-  pause: BoundAction;
-  close: BoundAction;
-  cancel: BoundAction;
-  sendGift: BoundAction;
-  sendEventDay: BoundAction;
-  sendThankyou: BoundAction;
-  updateThankyouSchedule: BoundAction;
-  rescheduleEvent: BoundAction;
+  pause: BoundAction<ButtonResult>;
+  close: BoundAction<ButtonResult>;
+  cancel: BoundAction<ButtonResult>;
+  sendGift: BoundAction<ButtonResult>;
+  sendEventDay: BoundAction<ButtonResult>;
+  sendThankyou: BoundAction<ButtonResult>;
+  updateThankyouSchedule: BoundAction<ThankyouScheduleResult>;
+  rescheduleEvent: BoundAction<RescheduleEventResult>;
 };
 
 function useGaFromState(state: unknown) {
@@ -108,7 +118,7 @@ function useGaFromState(state: unknown) {
   useEffect(() => {
     if (!state || fired.current === state) return;
 
-    const ga = (state as { ga?: GaActionEvent }).ga;
+    const ga = (state as { data?: { ga?: GaActionEvent } }).data?.ga;
     if (!ga?.name) return;
 
     fired.current = state;
@@ -185,19 +195,19 @@ function ActionButton({
   confirm,
   variant = 'default',
 }: {
-  action: BoundAction;
+  action: BoundAction<ButtonResult>;
   label: string;
   confirm?: string;
   variant?: 'default' | 'primary' | 'danger';
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
   useGaFromState(state);
 
   return (
     <form action={formAction} className="w-full space-y-2">
       <SubmitButton label={label} confirm={confirm} variant={variant} />
-      <FormError message={state?.error} />
-      <FormNotice message={state?.notice} />
+      <FormError message={actionErrorMessage(state)} />
+      <FormNotice message={state.data?.notice} />
     </form>
   );
 }
@@ -252,10 +262,13 @@ function CampaignStatusCard({
   campaign,
   status,
   authorizedCount,
+  viewerIsAdmin,
 }: {
   campaign: Campaign;
   status: CampaignStatus;
   authorizedCount: number | null;
+  /** Staff read the stage in staff words; the customer in the customer's (CUSTOMER_STAGE_LABELS, design D8). */
+  viewerIsAdmin: boolean;
 }) {
   const stage = campaignStage({
     status,
@@ -271,13 +284,13 @@ function CampaignStatusCard({
     >
       <div className="flex items-center gap-3 border-b border-border p-5 sm:p-6">
         <h2 id="campaign-summary-title" className="text-sm text-muted-foreground">
-          מצב הקמפיין
+          מצב השירות
         </h2>
         <Badge
           variant={CAMPAIGN_STAGE_VARIANTS[stage]}
           className="h-8 px-3 text-sm font-semibold"
         >
-          {CAMPAIGN_STAGE_LABELS[stage]}
+          {(viewerIsAdmin ? CAMPAIGN_STAGE_LABELS : CUSTOMER_STAGE_LABELS)[stage]}
         </Badge>
       </div>
 
@@ -307,7 +320,7 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 id="delivery-title" className="text-lg font-bold">
-            ביצועי הקמפיין
+            תוצאות אישורי ההגעה
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             מסירת הודעות ותוצאות אנשי הקשר לפי הנתונים שהתקבלו מ-Meta.
@@ -454,9 +467,9 @@ function ThankyouScheduleForm({
   action,
 }: {
   thankyou: NonNullable<ThankyouSchedule>;
-  action: BoundAction;
+  action: BoundAction<ThankyouScheduleResult>;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
   const alreadySent = thankyou.sentAt != null;
 
   return (
@@ -496,6 +509,7 @@ function ThankyouScheduleForm({
                 labelPrefix="תאריך"
                 defaultValue={ilDateInputValue(thankyou.sendAt)}
               />
+              <FieldError id="send_date-error" errors={state.validationErrors?.fieldErrors?.send_date} />
             </div>
             <div role="group" aria-labelledby="send_time-label" className="text-sm">
               <span id="send_time-label" className="mb-1.5 block text-muted-foreground">
@@ -507,6 +521,7 @@ function ThankyouScheduleForm({
                 labelPrefix="שעה"
                 defaultValue={ilTimeInputValue(thankyou.sendAt)}
               />
+              <FieldError id="send_time-error" errors={state.validationErrors?.fieldErrors?.send_time} />
             </div>
           </div>
 
@@ -520,8 +535,8 @@ function ThankyouScheduleForm({
       )}
 
       <div className="mt-3 space-y-2">
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
       </div>
     </form>
   );
@@ -543,12 +558,13 @@ function RescheduleEventForm({
   eventDate,
   alreadyNotified,
 }: {
-  action: BoundAction;
+  action: BoundAction<RescheduleEventResult>;
   eventDate: string | null;
   /** Guests already sent a message carrying the OLD date. */
   alreadyNotified: number;
 }) {
-  const [state, formAction] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, {});
+  const fieldErrors = state.validationErrors?.fieldErrors;
 
   return (
     <details className="group mt-3 rounded-xl border border-border px-4 py-3">
@@ -581,7 +597,7 @@ function RescheduleEventForm({
           </span>
           <DateSelectIL id="new_event_date" name="new_event_date" labelPrefix="מועד חדש" />
         </div>
-        <FieldErrors errors={state?.fieldErrors?.event_date} />
+        <FieldErrors errors={fieldErrors?.event_date} />
 
         <div role="group" aria-labelledby="new_event_time-label" className="block text-sm">
           <span id="new_event_time-label" className="mb-1.5 block text-muted-foreground">
@@ -589,7 +605,7 @@ function RescheduleEventForm({
           </span>
           <TimeSelect24 id="new_event_time" name="new_event_time" labelPrefix="שעה" />
         </div>
-        <FieldErrors errors={state?.fieldErrors?.event_time} />
+        <FieldErrors errors={fieldErrors?.event_time} />
 
         <label className="block text-sm">
           <span className="mb-1.5 block text-muted-foreground">
@@ -604,7 +620,7 @@ function RescheduleEventForm({
             className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
           />
         </label>
-        <FieldErrors errors={state?.fieldErrors?.reason} />
+        <FieldErrors errors={fieldErrors?.reason} />
 
         <SubmitButton
           label="עדכון מועד האירוע"
@@ -612,8 +628,8 @@ function RescheduleEventForm({
           confirm="לשנות את מועד האירוע? חלון החיוב של הקמפיין יזוז איתו, ומוזמנים שכבר קיבלו הודעה לא יעודכנו אוטומטית."
         />
 
-        <FormError message={state?.error} />
-        <FormNotice message={state?.notice} />
+        <FormError message={actionFormError(state)} />
+        <FormNotice message={state.data?.notice} />
       </form>
     </details>
   );
@@ -669,7 +685,7 @@ function ActionsPanel({
   thankyouRelevant: boolean;
   thankyouFailed: boolean;
   canEditThankyou: boolean;
-  updateThankyouSchedule: BoundAction;
+  updateThankyouSchedule: BoundAction<ThankyouScheduleResult>;
   /** Staff only, and only while the EVENT is active — a draft uses the owner form. */
   canReschedule: boolean;
   eventDate: string | null;
@@ -876,21 +892,26 @@ export function ManageClient({
 
   return (
     <div className="space-y-6 pb-6">
-      <CampaignStatusCard campaign={campaign} status={status} authorizedCount={authorizedCount} />
+      <CampaignStatusCard
+        campaign={campaign}
+        status={status}
+        authorizedCount={authorizedCount}
+        viewerIsAdmin={viewerIsAdmin}
+      />
 
       {showLifecycleWarning ? (
         <p
           role="status"
           className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm leading-6 text-warning"
         >
-          מועד האירוע חלף ולכן לא ניתן להפעיל את הקמפיין. מנהל המערכת עדיין יכול
-          לסגור אותו.
+          מועד האירוע חלף, ולכן לא יישלחו פניות לאורחים. צוות התמיכה יכול
+          לסגור את השירות.
         </p>
       ) : null}
 
       {showEmptyState ? (
         <section className="rounded-2xl border border-primary/30 bg-primary/5 p-5 sm:p-6">
-          <h2 className="text-lg font-bold">הקמפיין מוכן, אבל עדיין אין בו מוזמנים</h2>
+          <h2 className="text-lg font-bold">השירות מוכן, אבל עדיין אין מוזמנים</h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             הפניות יישלחו רק לאנשי הקשר שנוספו לרשימת המוזמנים.
           </p>
@@ -922,8 +943,8 @@ export function ManageClient({
           role="status"
           className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm leading-6 text-warning"
         >
-          {excluded.toLocaleString('he-IL')} אנשי קשר ברשימה אינם כלולים בקמפיין
-          משום שמכסת הקמפיין, הכוללת{' '}
+          {excluded.toLocaleString('he-IL')} אנשי קשר ברשימה אינם כלולים בפניות,
+          משום שמכסת החבילה, הכוללת{' '}
           {(authorizedCount ?? 0).toLocaleString('he-IL')} אנשי קשר, מלאה. להגדלת
           המכסה יש לפנות לתמיכה.
         </p>
@@ -944,19 +965,19 @@ export function ManageClient({
 
           {deliveryFailed ? (
             <LoadFailureNotice
-              title="ביצועי הקמפיין"
+              title="תוצאות אישורי ההגעה"
               what="נתוני המסירה והתוצאות"
             />
           ) : delivery && delivery.totalContacts > 0 ? (
             <DeliveryBreakdown delivery={delivery} />
           ) : (
             <section className="rounded-2xl border border-dashed border-border bg-card p-5 text-center sm:p-6">
-              <h2 className="text-base font-bold">ביצועי הקמפיין</h2>
+              <h2 className="text-base font-bold">תוצאות אישורי ההגעה</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 {/* The page already knows how many contacts are in the campaign,
                     so it should not ask for contacts that are already there. */}
                 {authorizedCount != null && authorizedCount > 0
-                  ? 'נתוני המסירה והתוצאות יוצגו כאן ברגע שהקמפיין יתחיל לפעול.'
+                  ? 'נתוני המסירה והתוצאות יוצגו כאן ברגע שהפניות לאורחים יתחילו.'
                   : 'נתוני המסירה והתוצאות יוצגו לאחר הוספת אנשי קשר ותחילת הפעילות.'}
               </p>
             </section>

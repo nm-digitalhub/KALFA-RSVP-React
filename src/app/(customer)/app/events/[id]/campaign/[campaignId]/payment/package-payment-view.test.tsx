@@ -148,7 +148,7 @@ describe('PackagePaymentView — paid: never a start control (D23)', () => {
 
   it('active: says the campaign is running, and offers no start', () => {
     const { container } = render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'active' }} errorMessage={null} />);
-    expect(container.textContent).toContain('הקמפיין פעיל');
+    expect(container.textContent).toContain('השירות פעיל');
     expect(container.textContent).not.toContain(SERVICE_STARTING);
     expect(screen.queryByRole('button')).toBeNull();
   });

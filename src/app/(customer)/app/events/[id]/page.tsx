@@ -27,7 +27,7 @@ import { closeControlOf, eventMode, resolveEventLifecycle, unavailableNoticeOf }
 import { packagePaymentOf } from '@/lib/payments/package-paid';
 import { getEventStats } from '@/lib/data/event-stats';
 import {
-  CAMPAIGN_STAGE_LABELS,
+  CUSTOMER_STAGE_LABELS,
   CAMPAIGN_STAGE_VARIANTS,
   EVENT_TYPE_LABELS,
   campaignStage,
@@ -202,7 +202,7 @@ export default async function EventPage({
           {closureReason && closureReason !== 'owner' ? (
             <p className="text-sm text-muted-foreground">
               {closureReason === 'settlement'
-                ? 'האירוע נסגר אוטומטית עם השלמת גמר החשבון של הקמפיין — לא ניתן עוד לאורחים לאשר הגעה דרך הקישור.'
+                ? 'האירוע נסגר אוטומטית עם השלמת גמר החשבון של השירות — לא ניתן עוד לאורחים לאשר הגעה דרך הקישור.'
                 : 'האירוע נסגר בעקבות הטיפול בבקשת הביטול — לא ניתן עוד לאורחים לאשר הגעה דרך הקישור.'}
             </p>
           ) : null}
@@ -436,14 +436,14 @@ export default async function EventPage({
         // Management: the service by its stage, and the way to its own page.
         <section className="space-y-4 rounded-lg border border-border bg-card p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold">הקמפיין</h2>
-            <Badge variant={CAMPAIGN_STAGE_VARIANTS[stage]}>{CAMPAIGN_STAGE_LABELS[stage]}</Badge>
+            <h2 className="text-lg font-semibold">אישורי הגעה</h2>
+            <Badge variant={CAMPAIGN_STAGE_VARIANTS[stage]}>{CUSTOMER_STAGE_LABELS[stage]}</Badge>
           </div>
           <Link
             href={`/app/events/${event.id}/campaign/${campaign.id}`}
             className={buttonVariants()}
           >
-            ניהול הקמפיין
+            אישורי הגעה ותוצאות
           </Link>
         </section>
       ) : null}

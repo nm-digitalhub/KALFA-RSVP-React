@@ -114,26 +114,44 @@
     - `setup-confirm-form.test.tsx`.
   - 43 tests pass. Putting back the original frames fails 4 of them.
   - The `paid` success screen (a green frame) was left as it is. It can no longer be reached from the page (see 3.3).
-- [ ] 4.4 Follow the `building-rtl-ui` skill for RTL, focus and mobile width. Verify with eslint and `tsc --noEmit` on touched files.
+- [x] 4.4 Follow the `building-rtl-ui` skill for RTL, focus and mobile width. Verify with eslint and `tsc --noEmit` on touched files.
   - Done 29.10.2026: eslint on the 29 touched `src` files exited 0, and `npx tsc --noEmit` on the project exited 0.
   - Code review against the skill:
     - no physical-direction classes in the shell or the flattened steps (`ml-`/`mr-`/`pl-`/`pr-`/`left`/`right`);
     - links and controls keep the global focus outline (`outline-ring/50` in `globals.css`);
     - the shell keeps `/setup`'s `max-w-2xl` column, and its header row wraps through `gap-4`;
     - no new UI primitive.
-  - Still open, and so not ticked: a visual check in the browser at phone width, in both themes, which the skill requires. The local session cookie in the browser helper has expired.
+  - Visual check done 30.10.2026 against the local E2E server (`127.0.0.1:3998`, local DB), with a fresh local account per run, at phone width (390×844, touch). It covered the confirm, package, terms, payment and `?step=details` screens.
+    - Every screen: `dir="rtl"`, no horizontal overflow (`scrollWidth − clientWidth = 0`), one step list, the close control below the surface.
+    - Keyboard focus is visible: Tab on the confirm step lands on "עריכת פרטי האירוע" with its outline; on the terms step it lands on "סגירת האירוע" with its focus ring.
+    - Both themes: the customer area has only the light theme. `globals.css` defines `.dark`, but nothing applies it (no toggle, no `prefers-color-scheme`), so a dark run renders the light theme. Measured the same way in both runs.
+    - The payment screen showed the "הרכישה לא הושלמה בגלל תקלה" notice instead of the card form: outside the tests' CardCom mock, CardCom refuses `127.0.0.1` as the return address (code 5170, measured earlier). Its sections ("פרטי התשלום", "פרטי כרטיס אשראי") render flat, as in 4.3.
+    - Left for 5.2: the word "קמפיין" still shows in step 6 ("הקמפיין פעיל") and in the details form's lock hints.
 
 ## 5. Customer vocabulary
 
 - [x] 5.1 Draft the replacement wording with `hebrew-content-writer`: step labels, a customer stage-label map, `metadata` titles, buttons and notices. Verify that the draft is listed in the diff for the owner's review.
   - Done 29.10.2026: `vocabulary-draft.md` in this change. It is new in the diff and covers every non-comment occurrence in `src/app/(customer)/**`, the shared label maps and the server errors that reach the owner, as current text → proposed text with file and line. It also proposes a customer stage map in which `awaiting_activation` reads "השירות מופעל". That is a proposal for the open item from 3.7; the item stays open until 5.2 applies it. Section 5 lists the staff-only strings that stay, for 5.3's allowlist. Task 5.2 waits for the owner's review of this draft.
-- [ ] 5.2 Replace "קמפיין" in the customer route files (17 today, some in comments only) and in owner-facing error strings in `campaigns.ts`, `agreements.ts` and the activation path. Staff strings stay. Verify that the existing tests for those messages are updated, not weakened.
-- [ ] 5.3 Add the vocabulary scan test over `src/app/(customer)/**/*.tsx` (comments stripped, allowlist with a reason per entry). Verify that it fails on a planted "קמפיין" and passes on the tree.
+- [x] 5.2 Replace "קמפיין" in the customer route files (17 today, some in comments only) and in owner-facing error strings in `campaigns.ts`, `agreements.ts` and the activation path. Staff strings stay. Verify that the existing tests for those messages are updated, not weakened.
+  - Done 30.10.2026, with the wording the owner approved that day (`vocabulary-draft.md`, pass 3).
+    - Customer routes: 16 files. Left in `src/app/(customer)/**/*.tsx`: the 5 staff-only strings of `manage-client.tsx` (the admin block and the reschedule confirmation, all behind `viewerIsAdmin`), which 5.3 allows. In `campaign-actions.ts` the pause, close, cancel and reschedule results stay: those actions are staff-only.
+    - Shared: `SETUP_STEP_LABELS.live` and the paused hint (`setup-steps.ts`), the lock errors (`events.ts`), the owner reads and the package choice (`campaigns.ts`: 10 strings; the staff and Slack ones stay), `agreements.ts` (6), `package-purchase-errors.ts` (2). The activation path had none (`startPaidPackageNow` never shows the customer an error).
+    - The customer stage map: `CUSTOMER_STAGE_LABELS` (`event-labels.ts`), the staff map but for `awaiting_activation` → "השירות מופעל". This closes the open item from 3.7. The event page, the statistics page and the guests badge use it; the results page picks it for the customer and keeps `CAMPAIGN_STAGE_LABELS` for staff (`viewerIsAdmin`).
+    - No comment in these files quoted an old string. No Playwright spec looks for one.
+  - Tests updated to the new exact strings, none loosened: `campaign-actions.test.ts`, `actions.test.ts` (the lock constants), `package-payment-view.test.tsx`, `campaigns.test.ts`, `setup-steps.test.ts`, `agreements.test.ts`. New: the step labels and the lock messages have no "קמפיין"; `PURCHASE_ERROR_MESSAGES` has none; `CUSTOMER_STAGE_LABELS` equals the staff map but for `awaiting_activation`; the results page shows "השירות מופעל" to the customer and "ממתין להפעלה" to staff. The touched modules: 1,390 + 143 passing; eslint and `tsc --noEmit` clean.
+- [x] 5.3 Add the vocabulary scan test over `src/app/(customer)/**/*.tsx` (comments stripped, allowlist with a reason per entry). Verify that it fails on a planted "קמפיין" and passes on the tree.
+  - Done 30.10.2026: `src/app/(customer)/customer-vocabulary.test.ts`. It reads string literals, template pieces, JSX attributes and JSX text through the TypeScript parser, so comments and identifiers never match. The allowlist holds the 5 staff-only strings of `manage-client.tsx`, each with its reason, and an entry that matches nothing fails.
+  - Passes on the tree (5 tests). Planting "קמפיין יצירת הקשר" back as the statistics section title fails it, naming `app/events/[id]/stats/page.tsx:200`; the file was then restored byte for byte. Its own cases show that a literal, a template piece, a JSX attribute and JSX text are found, and comments and identifiers are not.
 
 ## 6. Integration verification
 
-- [ ] 6.1 Run focused vitest for every touched module, plus `npx tsc --noEmit`, `npm run lint` and `openspec validate separate-event-setup-from-management`. Verify that all pass.
-- [ ] 6.2 Run `npm run build` and the full vitest suite only when the owner says so. Verify that both pass, and fix any red test whatever its cause.
+- [x] 6.1 Run focused vitest for every touched module, plus `npx tsc --noEmit`, `npm run lint` and `openspec validate separate-event-setup-from-management`. Verify that all pass.
+  - Done 30.10.2026, after 5.2 and 5.3: vitest over `src/app/(customer)`, `src/app/api/campaigns`, `src/lib/data`, `src/lib/payments` and `permission-separation.test.ts`: 239 files, 4,663 passing (14 skipped files are the local-DB suites). `npx tsc --noEmit` exit 0, `npm run lint` exit 0, `openspec validate` valid.
+- [x] 6.2 Run `npm run build` and the full vitest suite only when the owner says so. Verify that both pass, and fix any red test whatever its cause.
+  - Done 30.10.2026 by the owner: a deploy (the build) and `npm test`, both reported passing. Checked afterwards:
+    - the build: `.next/BUILD_ID` of 30.10.2026 04:34, `kalfa-beta` up since 02:35:01 UTC and `kalfa-worker` since 02:35:06, `https://beta.kalfa.me/` answers 200;
+    - the customer bundles carry the new wording ("אישורי הגעה ותוצאות"); the old phrases remain only in `/admin/campaigns` and the staff status route, both staff surfaces;
+    - the full vitest suite, re-run: 800 files, 14,233 passing, no failure.
 - [ ] 6.3 Owner runtime pass after deploy:
   - new signup → email verify → create event → every setup step → test payment → management page;
   - on a second event, close during setup;

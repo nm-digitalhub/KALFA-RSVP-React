@@ -117,6 +117,14 @@ export const CAMPAIGN_STAGE_LABELS: Record<CampaignStage, string> = {
   cancelled: 'בוטל',
 };
 
+// The same stages in the customer's words (design D8): identical but for `awaiting_activation`. The customer never
+// sees an activation (D4) — a recorded purchase starts the service — so that stage, which the event page shows when a
+// paid start is still pending, reads like SERVICE_STARTING. Staff screens keep CAMPAIGN_STAGE_LABELS.
+export const CUSTOMER_STAGE_LABELS: Record<CampaignStage, string> = {
+  ...CAMPAIGN_STAGE_LABELS,
+  awaiting_activation: 'השירות מופעל',
+};
+
 export const CAMPAIGN_STAGE_VARIANTS: Record<CampaignStage, BadgeVariant> = {
   not_set: 'neutral',
   awaiting_terms: 'warning',

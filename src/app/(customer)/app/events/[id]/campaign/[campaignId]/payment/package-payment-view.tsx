@@ -67,7 +67,7 @@ export function PackagePaymentView({
             </p>
           ) : null}
           {screen.activation === 'active' ? (
-            <p className="text-sm">הקמפיין פעיל. הפניות לאורחים יישלחו לפי לוח הזמנים.</p>
+            <p className="text-sm">השירות פעיל. הפניות לאורחים יישלחו לפי לוח הזמנים.</p>
           ) : null}
           {screen.activation === 'starting' ? (
             <p role="status" className="text-sm">

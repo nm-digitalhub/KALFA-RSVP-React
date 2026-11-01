@@ -16,6 +16,8 @@ describe('package purchase error codes', () => {
       expect(text, code).toMatch(/[א-ת]/);
       expect(text, code).not.toMatch(/sumit/i);
       expect(text, code).not.toContain('תפיסה');
+      // Customer vocabulary (design D8): what was bought is the package, never a "קמפיין".
+      expect(text, code).not.toContain('קמפיין');
     }
   });
 
