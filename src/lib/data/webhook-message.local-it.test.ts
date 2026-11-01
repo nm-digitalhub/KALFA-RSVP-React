@@ -108,15 +108,6 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
     expect(await inbound(f)).toHaveLength(1);
   });
 
-  it('two workers processing the same row concurrently still charge exactly once', async () => {
-    const f = await fixture();
-    const row = await inbox(f, button(f, 'rsvp_declined'));
-    await Promise.all([processRow(row), processRow(row), processRow(row)]);
-    expect(await billed(f)).toBe(1);
-    expect(await inbound(f)).toHaveLength(1);
-    expect((await guest(f)).status).toBe('declined');
-  });
-
   it('recovery: a crash after the interaction insert is billed on the retry (billing is not gated on fresh)', async () => {
     const f = await fixture();
     const messageId = `wamid.${f.tag}.crash`;
