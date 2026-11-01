@@ -90,7 +90,7 @@ export async function getEventForSupportView(
     .eq('id', eventId)
     .maybeSingle();
   if (error) {
-    throw new Error('טעינת האירוע נכשלה');
+    throw new Error('טעינת האירוע נכשלה', { cause: error });
   }
   if (!event) {
     throw new Error('האירוע לא נמצא');
@@ -194,7 +194,7 @@ export async function listGuestsForSupportView(
     .eq('event_id', eventId)
     .order('full_name', { ascending: true });
   if (error) {
-    throw new Error('טעינת רשימת האורחים נכשלה');
+    throw new Error('טעינת רשימת האורחים נכשלה', { cause: error });
   }
 
   return (data ?? []).map((g) => ({

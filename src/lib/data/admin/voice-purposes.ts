@@ -38,7 +38,7 @@ export async function listVoicePurposesForAdmin(): Promise<VoicePurposeAdminRow[
     .select(COLUMNS)
     .order('sort_order', { ascending: true });
 
-  if (error) throw new Error('טעינת ייעודי השיחה נכשלה');
+  if (error) throw new Error('טעינת ייעודי השיחה נכשלה', { cause: error });
   return (data ?? []).map((r) => ({
     key: r.key,
     displayName: r.display_name,
@@ -129,5 +129,5 @@ export async function updateVoicePurpose(input: UpdateVoicePurposeInput): Promis
       };
 
   const { error } = await supabase.from('voice_purposes').update(patch).eq('key', input.key);
-  if (error) throw new Error('עדכון הייעוד נכשל');
+  if (error) throw new Error('עדכון הייעוד נכשל', { cause: error });
 }

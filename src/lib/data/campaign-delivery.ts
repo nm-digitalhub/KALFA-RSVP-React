@@ -151,7 +151,7 @@ export async function fetchDeliveryBreakdown(
     .select('contact_id, delivery_status, created_at')
     .eq('campaign_id', campaignId)
     .eq('direction', 'out');
-  if (iErr) throw new Error('טעינת נתוני המסירה נכשלה');
+  if (iErr) throw new Error('טעינת נתוני המסירה נכשלה', { cause: iErr });
 
   // The engine tracks every targeted contact in outreach_state, including those
   // not yet messaged — union it with the messaged contacts for the full set.
@@ -159,7 +159,7 @@ export async function fetchDeliveryBreakdown(
     .from('outreach_state')
     .select('contact_id')
     .eq('campaign_id', campaignId);
-  if (sErr) throw new Error('טעינת מצב הפנייה נכשלה');
+  if (sErr) throw new Error('טעינת מצב הפנייה נכשלה', { cause: sErr });
 
   const contactIds = Array.from(
     new Set(
@@ -176,7 +176,7 @@ export async function fetchDeliveryBreakdown(
       .from('contacts')
       .select('op_status, removal_requested')
       .in('id', contactIds);
-    if (error) throw new Error('טעינת אנשי הקשר נכשלה');
+    if (error) throw new Error('טעינת אנשי הקשר נכשלה', { cause: error });
     contacts = data ?? [];
   }
 
@@ -201,7 +201,7 @@ export async function getCampaignDeliveryBreakdown(
     .select('event_id')
     .eq('id', campaignId)
     .maybeSingle();
-  if (cErr) throw new Error('טעינת הקמפיין נכשלה');
+  if (cErr) throw new Error('טעינת הקמפיין נכשלה', { cause: cErr });
   if (!campaign?.event_id) return null;
   await requireEventAccess(campaign.event_id, 'campaigns', 'view'); // org-aware, not owner-only
 

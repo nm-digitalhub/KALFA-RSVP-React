@@ -155,7 +155,7 @@ export async function createCampaign(
     _close_at: event.event_date, // window closes at the event date
     _outreach_schedule: offer.outreach_schedule as unknown as Json,
   });
-  if (error || typeof data !== 'string') throw new Error('יצירת הקמפיין נכשלה');
+  if (error || typeof data !== 'string') throw new Error('בחירת החבילה נכשלה');
 
   // The binding applied at package choice (personal-coupons task 5.2): once the campaign and its
   // round exist, the account's best eligible benefit for the chosen package is bound (D18 picks
@@ -192,7 +192,7 @@ export async function changeCampaignPackage(
     throw new Error(EVENT_NOT_CONFIRMED_ERROR);
   }
   const campaign = await getCampaignForEvent(eventId);
-  if (!campaign) throw new Error('אין קמפיין לאירוע — יש לבחור חבילה תחילה');
+  if (!campaign) throw new Error('יש לבחור תחילה חבילה לאירוע.');
   if (campaign.status !== 'pending_approval') {
     throw new Error('לא ניתן להחליף חבילה אחרי אישור התנאים');
   }
@@ -251,7 +251,7 @@ export async function acceptCampaignBenefit(
     .select('id, event_id, status, template_id')
     .eq('id', campaignId)
     .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (error) throw new Error('טעינת נתוני השירות נכשלה', { cause: error });
   if (!data || data.event_id !== eventId) {
     const { notFound } = await import('next/navigation');
     notFound();
@@ -260,7 +260,7 @@ export async function acceptCampaignBenefit(
   if (campaign.status !== 'approved') {
     throw new Error('ההטבה מתקבלת רק אחרי אישור תנאים וכשטרם שולם');
   }
-  if (!campaign.template_id) throw new Error('לקמפיין אין חבילה');
+  if (!campaign.template_id) throw new Error('לא נבחרה חבילה');
 
   const user = await requireUser();
   return acceptBenefitForCampaign({
@@ -278,7 +278,7 @@ export async function getCampaign(campaignId: string): Promise<OwnerCampaign> {
     .select(CAMPAIGN_COLUMNS)
     .eq('id', campaignId)
     .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (error) throw new Error('טעינת נתוני השירות נכשלה', { cause: error });
   if (!data) {
     const { notFound } = await import('next/navigation');
     notFound();
@@ -298,7 +298,7 @@ export async function listCampaignsForEvent(
     .select(CAMPAIGN_COLUMNS)
     .eq('event_id', eventId)
     .order('created_at', { ascending: false });
-  if (error) throw new Error('טעינת הקמפיינים נכשלה');
+  if (error) throw new Error('טעינת הקמפיינים נכשלה', { cause: error });
   const rows = data ?? [];
   // ONE batch read for every campaign's current round — no per-row query.
   const pricing = await getCurrentPricingByCampaign(rows.map((c) => c.id));
@@ -326,7 +326,7 @@ export async function getCampaignForEvent(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (error) throw new Error('טעינת נתוני השירות נכשלה', { cause: error });
   if (!data) return null;
   return { ...data, price: (await getCurrentPricing(data.id))?.price ?? null } as OwnerCampaign;
 }
@@ -342,7 +342,7 @@ export async function getCampaignRef(campaignId: string): Promise<CampaignRef | 
     .select('id, event_id, status')
     .eq('id', campaignId)
     .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (error) throw new Error('טעינת נתוני השירות נכשלה', { cause: error });
   return data;
 }
 
@@ -366,7 +366,7 @@ export async function getCampaignForPurchase(
     .select('id, event_id, status, package:packages(name)')
     .eq('id', campaignId)
     .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (error) throw new Error('טעינת נתוני השירות נכשלה', { cause: error });
   if (!data) return null;
   const { package: pkg, ...campaign } = data;
   const price = (await getCurrentPricing(campaignId))?.price ?? null;
@@ -531,7 +531,7 @@ export async function viewerOwnsCampaignEvent(campaignId: string): Promise<boole
     .select('events!inner(owner_id)')
     .eq('id', campaignId)
     .maybeSingle<{ events: { owner_id: string } }>();
-  if (error) throw new Error('בדיקת הבעלות על הקמפיין נכשלה');
+  if (error) throw new Error('בדיקת הבעלות על האירוע נכשלה', { cause: error });
   return data?.events.owner_id === user.id;
 }
 
@@ -581,7 +581,7 @@ export async function updateThankyouSchedule(
     .select('id, event_id, events!inner(owner_id)')
     .eq('id', campaignId)
     .maybeSingle<{ id: string; event_id: string; events: { owner_id: string } }>();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (error) throw new Error('טעינת נתוני השירות נכשלה', { cause: error });
   if (!campaign) {
     const { notFound } = await import('next/navigation');
     return notFound();
@@ -619,7 +619,7 @@ export async function updateThankyouSchedule(
     .is('thankyou_sent_at', null)
     .select('id')
     .maybeSingle();
-  if (upErr) throw new Error('עדכון לוח הזמנים נכשל');
+  if (upErr) throw new Error('עדכון לוח הזמנים נכשל', { cause: upErr });
   if (!updated) {
     throw new Error('הודעת התודה כבר נשלחה — לא ניתן לשנות את התזמון');
   }
@@ -662,7 +662,7 @@ export async function cancelCampaign(campaignId: string): Promise<void> {
     p_campaign: campaignId,
     p_actor: staff.id,
   });
-  if (error) throw new Error('ביטול הקמפיין נכשל');
+  if (error) throw new Error('ביטול הקמפיין נכשל', { cause: error });
   if (data === 'no_campaign' || data === 'not_cancellable') {
     throw new Error('לא ניתן לבטל קמפיין זה');
   }

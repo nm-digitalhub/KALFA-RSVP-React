@@ -377,7 +377,7 @@ export async function runAgreementArchiveSweep(nowMs: number = Date.now()): Prom
     .is('sharepoint_exported_at', null)
     .order('signed_at', { ascending: true })
     .limit(BATCH_SIZE);
-  if (error) throw new Error('קריאת ההסכמים לארכיון נכשלה');
+  if (error) throw new Error('קריאת ההסכמים לארכיון נכשלה', { cause: error });
   const pending = ((rows ?? []) as Record<string, unknown>[])
     .map(narrowRow)
     .filter((r): r is ArchiveRow => r !== null);
@@ -483,7 +483,7 @@ export async function runAgreementArchiveSweep(nowMs: number = Date.now()): Prom
         })
         .eq('id', row.id)
         .is('sharepoint_exported_at', null);
-      if (markErr) throw new Error('סימון הייצוא נכשל');
+      if (markErr) throw new Error('סימון הייצוא נכשל', { cause: markErr });
       result.exported++;
     } catch (err) {
       result.failed++;

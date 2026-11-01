@@ -49,7 +49,7 @@ export async function listMessageTemplates(): Promise<MessageTemplate[]> {
     .select(TEMPLATE_COLUMNS)
     .order('channel', { ascending: true })
     .order('message_key', { ascending: true });
-  if (error) throw new Error('טעינת התבניות נכשלה');
+  if (error) throw new Error('טעינת התבניות נכשלה', { cause: error });
   return (data ?? []) as MessageTemplate[];
 }
 
@@ -77,7 +77,7 @@ export async function updateMessageTemplate(
       active: input.active,
     })
     .eq('id', id);
-  if (error) throw new Error('עדכון התבנית נכשל');
+  if (error) throw new Error('עדכון התבנית נכשל', { cause: error });
 }
 
 /**
@@ -113,7 +113,7 @@ export async function acknowledgeTemplateCategory(
     .select('id, message_key, category, requested_category')
     .eq('id', id)
     .maybeSingle();
-  if (readError) throw new Error('טעינת התבנית נכשלה');
+  if (readError) throw new Error('טעינת התבנית נכשלה', { cause: readError });
   if (!row) return { ok: false, reason: 'התבנית לא נמצאה' };
   if (!row.category) return { ok: false, reason: 'התבנית טרם סונכרנה מול Meta' };
   if (row.category === row.requested_category) {
@@ -132,7 +132,7 @@ export async function acknowledgeTemplateCategory(
     .eq('id', id)
     .eq('category', observedCategory)
     .select('id');
-  if (error) throw new Error('אישור הקטגוריה נכשל');
+  if (error) throw new Error('אישור הקטגוריה נכשל', { cause: error });
   if (!updated || updated.length === 0) {
     return {
       ok: false,

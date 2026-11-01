@@ -198,7 +198,7 @@ export async function listEligibleBenefits(user: SessionUser): Promise<EligibleB
     .select(ASSIGNMENT_COLUMNS)
     .eq('user_id', user.id)
     .in('state', ['assigned', 'bound']);
-  if (ownError) throw new Error('טעינת ההטבות נכשלה');
+  if (ownError) throw new Error('טעינת ההטבות נכשלה', { cause: ownError });
 
   const verifiedPhone = verifiedPhoneOf(user);
   let phoneRows: AssignmentRow[] = [];
@@ -209,7 +209,7 @@ export async function listEligibleBenefits(user: SessionUser): Promise<EligibleB
       .eq('phone_e164', verifiedPhone)
       .is('user_id', null)
       .in('state', ['assigned', 'bound']);
-    if (error) throw new Error('טעינת ההטבות נכשלה');
+    if (error) throw new Error('טעינת ההטבות נכשלה', { cause: error });
     phoneRows = (data ?? []) as AssignmentRow[];
   }
 

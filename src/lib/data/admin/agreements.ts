@@ -79,7 +79,7 @@ export async function updateAgreement(input: { version: string; bodyHtml: string
       approved_at: null,
     })
     .match(PACKAGE_ROW);
-  if (error) throw new Error('שמירת החוזה נכשלה');
+  if (error) throw new Error('שמירת החוזה נכשלה', { cause: error });
   await logActivity({
     action: 'admin.agreement.updated',
     meta: { model: PACKAGE_ROW.model, version: input.version },
@@ -144,6 +144,6 @@ export async function approveAgreement(version: string): Promise<void> {
       approved_at: new Date().toISOString(),
     })
     .match(PACKAGE_ROW);
-  if (error) throw new Error('אישור החוזה נכשל');
+  if (error) throw new Error('אישור החוזה נכשל', { cause: error });
   await logActivity({ action: 'admin.agreement.approved', meta: { model: PACKAGE_ROW.model, version } });
 }

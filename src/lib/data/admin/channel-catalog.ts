@@ -31,7 +31,7 @@ export async function listAllChannels(): Promise<AdminChannel[]> {
     .from('channels')
     .select('key, display_name, is_built, active, sort_order')
     .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת קטלוג הערוצים נכשלה');
+  if (error) throw new Error('טעינת קטלוג הערוצים נכשלה', { cause: error });
   return (data ?? []) as AdminChannel[];
 }
 
@@ -59,5 +59,5 @@ export async function updateChannelMetadata(
     .from('channels')
     .update(patch)
     .eq('key', input.key);
-  if (error) throw new Error('עדכון הערוץ נכשל');
+  if (error) throw new Error('עדכון הערוץ נכשל', { cause: error });
 }

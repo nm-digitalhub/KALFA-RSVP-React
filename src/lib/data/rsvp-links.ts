@@ -38,7 +38,7 @@ export async function getRsvpLinkInfo(
     .eq('id', guestId)
     .maybeSingle();
   if (error) {
-    throw new Error('טעינת קישור ההזמנה נכשלה');
+    throw new Error('טעינת קישור ההזמנה נכשלה', { cause: error });
   }
   if (!data) return null;
   return { token: data.rsvp_token, revokedAt: data.rsvp_token_revoked_at };
@@ -57,7 +57,7 @@ export async function revokeRsvpToken(
     .eq('event_id', eventId)
     .eq('id', guestId);
   if (error) {
-    throw new Error('ביטול קישור ההזמנה נכשל');
+    throw new Error('ביטול קישור ההזמנה נכשל', { cause: error });
   }
 }
 
@@ -81,6 +81,6 @@ export async function regenerateRsvpToken(
     .eq('event_id', eventId)
     .eq('id', guestId);
   if (error) {
-    throw new Error('יצירת קישור הזמנה חדש נכשלה');
+    throw new Error('יצירת קישור הזמנה חדש נכשלה', { cause: error });
   }
 }

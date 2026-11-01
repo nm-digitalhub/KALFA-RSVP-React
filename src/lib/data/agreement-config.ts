@@ -69,7 +69,7 @@ async function readAgreementConfigRow(
     .eq('id', SETTINGS_ID)
     .maybeSingle();
   if (error) {
-    throw new Error('טעינת הגדרות ההסכם נכשלה');
+    throw new Error('טעינת הגדרות ההסכם נכשלה', { cause: error });
   }
   return (data ?? null) as AgreementConfigRow | null;
 }

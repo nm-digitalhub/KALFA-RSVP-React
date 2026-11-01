@@ -146,7 +146,7 @@ describe('recordPackageApproval — the customer approves the package terms (no 
   it('a campaign without a package is refused: there are no terms to approve', async () => {
     wire({ package_price: null, contact_quota: null });
     const result = await recordPackageApproval(approvalInput);
-    expect(result).toEqual({ ok: false, error: 'תנאי הקמפיין חסרים' });
+    expect(result).toEqual({ ok: false, error: 'תנאי החבילה חסרים' });
     expect(uploadLegalDoc).not.toHaveBeenCalled();
   });
 
@@ -164,8 +164,8 @@ describe('recordPackageApproval — the customer approves the package terms (no 
   });
 
   it.each([
-    ['a campaign that is no longer waiting for approval', { status: 'approved' }, 'ניתן לאשר רק קמפיין הממתין לאישור'],
-    ['a campaign without a quota', { contact_quota: null }, 'תנאי הקמפיין חסרים'],
+    ['a campaign that is no longer waiting for approval', { status: 'approved' }, 'אין כרגע תנאים שממתינים לאישור.'],
+    ['a campaign without a quota', { contact_quota: null }, 'תנאי החבילה חסרים'],
   ])('%s is refused', async (_label, over, error) => {
     const { rpc } = wire(over);
     expect(await recordPackageApproval(approvalInput)).toEqual({ ok: false, error });

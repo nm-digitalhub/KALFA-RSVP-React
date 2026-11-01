@@ -80,7 +80,7 @@ export async function createCancellationRequest(
     .eq('status', 'pending')
     .limit(1)
     .maybeSingle();
-  if (openError) throw new Error('פתיחת בקשת הביטול נכשלה');
+  if (openError) throw new Error('פתיחת בקשת הביטול נכשלה', { cause: openError });
   if (open) throw new Error(CANCELLATION_REQUEST_ALREADY_OPEN);
 
   // The database draws request_code at random; two equal codes (about one in a trillion) are refused by its unique
@@ -243,7 +243,7 @@ export async function listCancellationRequestsForAdmin(
   let rows: unknown[];
   if (!search) {
     const { data, error } = await base();
-    if (error) throw new Error('טעינת בקשות הביטול נכשלה');
+    if (error) throw new Error('טעינת בקשות הביטול נכשלה', { cause: error });
     rows = data ?? [];
   } else {
     const { data: events, error: eventsError } = await admin
@@ -251,7 +251,7 @@ export async function listCancellationRequestsForAdmin(
       .select('id')
       .ilike('name', `%${search.likeText}%`)
       .limit(200);
-    if (eventsError) throw new Error('טעינת בקשות הביטול נכשלה');
+    if (eventsError) throw new Error('טעינת בקשות הביטול נכשלה', { cause: eventsError });
     const eventIds = (events ?? []).map((e) => e.id);
     const [byCode, byEvent] = await Promise.all([
       base().ilike('request_code', `%${search.likeCode}%`),
@@ -286,7 +286,7 @@ export async function countCancellationRequestsForAdmin(): Promise<Record<Cancel
       .from('event_cancellation_requests')
       .select('id', { count: 'exact', head: true })
       .eq('status', status);
-    if (error) throw new Error('ספירת בקשות הביטול נכשלה');
+    if (error) throw new Error('ספירת בקשות הביטול נכשלה', { cause: error });
     return n ?? 0;
   };
   const [pending, resolved] = await Promise.all([count('pending'), count('resolved')]);
@@ -299,7 +299,7 @@ export async function getCancellationRequesterNameForAdmin(ownerId: string): Pro
   await requirePlatformPermission('manage_billing');
   const admin = createAdminClient();
   const { data, error } = await admin.from('profiles').select('full_name').eq('id', ownerId).maybeSingle();
-  if (error) throw new Error('טעינת פרטי הלקוח נכשלה');
+  if (error) throw new Error('טעינת פרטי הלקוח נכשלה', { cause: error });
   return data?.full_name?.trim() || null;
 }
 
@@ -315,7 +315,7 @@ export async function getCancellationRequestForAdmin(
     .maybeSingle();
 
   // A failed read is an error (the admin area's error boundary offers a retry), never a "no such request" 404.
-  if (error) throw new Error('טעינת בקשת הביטול נכשלה');
+  if (error) throw new Error('טעינת בקשת הביטול נכשלה', { cause: error });
   if (!data) return null;
   return mapAdminRow(data as unknown as Parameters<typeof mapAdminRow>[0]);
 }
@@ -372,7 +372,7 @@ export async function getCampaignForEventAdmin(
     .maybeSingle();
 
   // A failed read is an error, never "the event has no live campaign": the screen would then promise that no money moves.
-  if (error) throw new Error('טעינת נתוני הקמפיין נכשלה');
+  if (error) throw new Error('טעינת נתוני הקמפיין נכשלה', { cause: error });
   if (!data) return null;
 
   // A package: the current pricing round says whether it IS one (the pricing module); the ledger decides what was
@@ -433,7 +433,7 @@ export async function adminCloseEvent(eventId: string): Promise<void> {
   if (current?.status === 'closed') return;
   const { error } = await admin.from('events').update({ status: 'closed' }).eq('id', eventId);
   if (error) {
-    throw new Error('סגירת האירוע נכשלה — ייתכן שיש קמפיין פעיל שיש לסגור קודם');
+    throw new Error('סגירת האירוע נכשלה — ייתכן שיש קמפיין פעיל שיש לסגור קודם', { cause: error });
   }
   await logActivity({ eventId, action: 'event.closed_by_admin', meta: {} });
 }
@@ -636,7 +636,7 @@ export async function resolveCancellationRequest(
     });
 
     if (runStateError) {
-      throw new Error('סגירת הקמפיין נכשלה — לא בוצע ההחזר');
+      throw new Error('סגירת הקמפיין נכשלה — לא בוצע ההחזר', { cause: runStateError });
     }
 
     if (runState !== 'done' && runState !== 'already_closed') {

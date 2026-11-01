@@ -149,7 +149,7 @@ async function loadTemplateForWrite(admin: ReturnType<typeof createAdminClient>,
     .select('id, name, status, category, components, whatsapp_template_parameters(id, type, sub_type, index, position, source_path)')
     .eq('id', templateId)
     .maybeSingle();
-  if (error) throw new Error('טעינת התבנית נכשלה');
+  if (error) throw new Error('טעינת התבנית נכשלה', { cause: error });
   return data;
 }
 
@@ -171,7 +171,7 @@ export async function setTemplateRoute(input: {
     .select('message_key, channel')
     .eq('message_key', input.messageKey)
     .maybeSingle();
-  if (stepError) throw new Error('טעינת השלב נכשלה');
+  if (stepError) throw new Error('טעינת השלב נכשלה', { cause: stepError });
   if (!step || step.channel !== 'whatsapp') return { ok: false, problems: ['השלב לא נמצא או שאינו שלב WhatsApp'] };
 
   const template = await loadTemplateForWrite(admin, input.templateId);
@@ -198,7 +198,7 @@ export async function setTemplateRoute(input: {
     .eq('with_media', input.withMedia);
   existingQuery = input.eventType === null ? existingQuery.is('event_type', null) : existingQuery.eq('event_type', input.eventType);
   const { data: existing, error: existingError } = await existingQuery.maybeSingle();
-  if (existingError) throw new Error('טעינת המסלול נכשלה');
+  if (existingError) throw new Error('טעינת המסלול נכשלה', { cause: existingError });
   if (existing?.whatsapp_template_id === input.templateId) return { ok: true };
 
   const write = existing
@@ -210,7 +210,7 @@ export async function setTemplateRoute(input: {
         whatsapp_template_id: input.templateId,
       });
   const { error: writeError } = await write;
-  if (writeError) throw new Error('שמירת המסלול נכשלה');
+  if (writeError) throw new Error('שמירת המסלול נכשלה', { cause: writeError });
 
   // A template first used here gets its settings row, so the category-downgrade
   // alert (template-health) watches it too. Requested = what Meta approved now.
@@ -220,7 +220,7 @@ export async function setTemplateRoute(input: {
       { whatsapp_template_id: input.templateId, requested_category: template.category },
       { onConflict: 'whatsapp_template_id', ignoreDuplicates: true },
     );
-  if (settingsError) throw new Error('שמירת הגדרות התבנית נכשלה');
+  if (settingsError) throw new Error('שמירת הגדרות התבנית נכשלה', { cause: settingsError });
 
   await logActivity({
     action: 'admin.templates.route_set',
@@ -269,7 +269,7 @@ export async function removeTemplateRoute(input: {
     .eq('with_media', input.withMedia);
   query = input.eventType === null ? query.is('event_type', null) : query.eq('event_type', input.eventType);
   const { data, error } = await query.select('whatsapp_template_id');
-  if (error) throw new Error('הסרת המסלול נכשלה');
+  if (error) throw new Error('הסרת המסלול נכשלה', { cause: error });
   if (!data || data.length === 0) return { ok: false, problems: ['המסלול לא נמצא'] };
 
   await logActivity({
@@ -302,7 +302,7 @@ export async function saveTemplateParameters(input: {
     .from('message_template_routes')
     .select('message_key')
     .eq('whatsapp_template_id', input.templateId);
-  if (routesError) throw new Error('טעינת המסלולים נכשלה');
+  if (routesError) throw new Error('טעינת המסלולים נכשלה', { cause: routesError });
   const keys = [...new Set((routes ?? []).map((r) => r.message_key))];
   // Not routed yet: any value a step can have (setTemplateRoute re-checks
   // against the step it is routed to).
@@ -335,7 +335,7 @@ export async function saveTemplateParameters(input: {
     })),
     { onConflict: 'whatsapp_template_id,type,index,position,parameter_name' },
   );
-  if (upsertError) throw new Error('שמירת המשתנים נכשלה');
+  if (upsertError) throw new Error('שמירת המשתנים נכשלה', { cause: upsertError });
   // Rows for variables the template no longer has (it changed in Meta). If
   // this fails, the new mapping is already whole and the leftovers are the
   // ones that were there before.
@@ -344,7 +344,7 @@ export async function saveTemplateParameters(input: {
       .from('whatsapp_template_parameters')
       .delete()
       .in('id', stale.map((p) => p.id));
-    if (staleError) throw new Error('שמירת המשתנים נכשלה');
+    if (staleError) throw new Error('שמירת המשתנים נכשלה', { cause: staleError });
   }
 
   await logActivity({
@@ -376,7 +376,7 @@ export async function setWhatsAppStepActive(input: { messageKey: string; active:
     )
     .eq('message_key', input.messageKey)
     .maybeSingle();
-  if (error) throw new Error('טעינת השלב נכשלה');
+  if (error) throw new Error('טעינת השלב נכשלה', { cause: error });
   if (!step || step.channel !== 'whatsapp') return { ok: false, problems: ['השלב לא נמצא או שאינו שלב WhatsApp'] };
   if (step.active === input.active) return { ok: true };
 
@@ -412,7 +412,7 @@ export async function setWhatsAppStepActive(input: { messageKey: string; active:
         .select('id, name, language, status, category, components, quality_score, rejected_reason, whatsapp_template_parameters(type, sub_type, index, position, source_path)')
         .in('name', deleted.map((t) => t.name))
         .neq('status', 'DELETED');
-      if (twinError) throw new Error('טעינת התבניות נכשלה');
+      if (twinError) throw new Error('טעינת התבניות נכשלה', { cause: twinError });
       for (const t of twins ?? []) live.set(`${t.name}|${t.language}`, asStepTemplate(t));
     }
     const outcome = stepOutcome({
@@ -435,7 +435,7 @@ export async function setWhatsAppStepActive(input: { messageKey: string; active:
     .update({ active: input.active })
     .eq('message_key', input.messageKey)
     .eq('channel', 'whatsapp');
-  if (writeError) throw new Error('עדכון השלב נכשל');
+  if (writeError) throw new Error('עדכון השלב נכשל', { cause: writeError });
   await logActivity({
     action: 'admin.templates.step_active_set',
     meta: { message_key: input.messageKey, from: step.active, to: input.active },
@@ -461,7 +461,7 @@ export async function acknowledgeWhatsAppTemplateCategory(input: {
     .select('id, name, category, whatsapp_template_settings(requested_category)')
     .eq('id', input.templateId)
     .maybeSingle();
-  if (error) throw new Error('טעינת התבנית נכשלה');
+  if (error) throw new Error('טעינת התבנית נכשלה', { cause: error });
   if (!data) return { ok: false, problems: ['התבנית לא נמצאה'] };
   if (!data.category) return { ok: false, problems: ['התבנית טרם סונכרנה מול Meta'] };
   if (data.category !== input.observedCategory) {
@@ -480,7 +480,7 @@ export async function acknowledgeWhatsAppTemplateCategory(input: {
       { whatsapp_template_id: data.id, requested_category: data.category },
       { onConflict: 'whatsapp_template_id' },
     );
-  if (writeError) throw new Error('אישור הקטגוריה נכשל');
+  if (writeError) throw new Error('אישור הקטגוריה נכשל', { cause: writeError });
   await logActivity({
     action: 'admin.templates.category_acknowledged',
     meta: { whatsapp_template_id: data.id, template_name: data.name, from: requested ?? null, to: data.category },

@@ -126,7 +126,7 @@ async function loadWorkflow(workflowId: string) {
     .select('is_active, definition')
     .eq('id', workflowId)
     .maybeSingle();
-  if (error) throw new Error('קריאת התהליך נכשלה');
+  if (error) throw new Error('קריאת התהליך נכשלה', { cause: error });
   return data;
 }
 
@@ -141,7 +141,7 @@ async function loadConnections(workflowId: string): Promise<ConnectionRow[]> {
     .eq('credential_kind', KIND)
     .eq('status', 'active')
     .eq('metadata->>workflowId', workflowId);
-  if (error) throw new Error('קריאת רישומי SUMIT נכשלה');
+  if (error) throw new Error('קריאת רישומי SUMIT נכשלה', { cause: error });
   return (data ?? []).map((row) => ({ id: row.id, meta: row.metadata as unknown as ConnectionMeta }));
 }
 
@@ -170,7 +170,7 @@ async function updateConnection(
       updated_at: new Date().toISOString(),
     })
     .eq('id', id);
-  if (error) throw new Error('עדכון רישום SUMIT נכשל');
+  if (error) throw new Error('עדכון רישום SUMIT נכשל', { cause: error });
 }
 
 // ---------------------------------------------------------------------------

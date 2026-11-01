@@ -83,7 +83,7 @@ export async function markEventAsTest(eventId: string): Promise<MarkOutcome> {
     p_event: id,
     p_actor: user.id,
   });
-  if (error) throw new Error('סימון אירוע הבדיקה נכשל');
+  if (error) throw new Error('סימון אירוע הבדיקה נכשל', { cause: error });
   return markOutcomeSchema.parse(data);
 }
 
@@ -94,7 +94,7 @@ export async function unmarkEventAsTest(eventId: string): Promise<UnmarkOutcome>
     p_event: id,
     p_actor: user.id,
   });
-  if (error) throw new Error('ביטול סימון אירוע הבדיקה נכשל');
+  if (error) throw new Error('ביטול סימון אירוע הבדיקה נכשל', { cause: error });
   return unmarkOutcomeSchema.parse(data);
 }
 
@@ -105,6 +105,6 @@ export async function purgeTestEvent(eventId: string): Promise<PurgeOutcome> {
     p_event: id,
     p_actor: user.id,
   });
-  if (error) throw new Error('מחיקת אירוע הבדיקה נכשלה');
+  if (error) throw new Error('מחיקת אירוע הבדיקה נכשלה', { cause: error });
   return purgeOutcomeSchema.parse(data);
 }

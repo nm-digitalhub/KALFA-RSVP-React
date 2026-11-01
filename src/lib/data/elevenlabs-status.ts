@@ -352,5 +352,5 @@ export async function setElevenLabsApiKey(key: string): Promise<void> {
     .from('app_settings')
     .update({ elevenlabs_api_key: value } as never)
     .eq('id', true);
-  if (error) throw new Error('שמירת מפתח ElevenLabs נכשלה');
+  if (error) throw new Error('שמירת מפתח ElevenLabs נכשלה', { cause: error });
 }

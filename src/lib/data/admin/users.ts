@@ -152,7 +152,7 @@ export async function listAllUsers(
       perPage: pageSize,
     });
     if (error) {
-      throw new Error('טעינת המשתמשים נכשלה');
+      throw new Error('טעינת המשתמשים נכשלה', { cause: error });
     }
     return {
       items: await enrichUsers(data.users),
@@ -200,7 +200,7 @@ export async function listAllUsers(
       perPage: SEARCH_PER_PAGE,
     });
     if (error) {
-      throw new Error('טעינת המשתמשים נכשלה');
+      throw new Error('טעינת המשתמשים נכשלה', { cause: error });
     }
     for (const u of data.users) {
       if ((u.email ?? '').toLowerCase().includes(lower)) byId.set(u.id, u);
@@ -400,7 +400,7 @@ export async function setUserSuspended(userId: string, suspend: boolean): Promis
   const { error } = await admin.auth.admin.updateUserById(userId, {
     ban_duration: suspend ? BAN_FOREVER : UNBAN,
   });
-  if (error) throw new Error('עדכון סטטוס המשתמש נכשל');
+  if (error) throw new Error('עדכון סטטוס המשתמש נכשל', { cause: error });
 
   await logActivity({
     action: suspend ? 'admin.user.suspended' : 'admin.user.reactivated',
@@ -471,7 +471,7 @@ export async function grantBillingCredit(input: {
     reason: input.reason,
     created_by: actor.id,
   });
-  if (error) throw new Error('מתן ההטבה נכשל');
+  if (error) throw new Error('מתן ההטבה נכשל', { cause: error });
 
   await logActivity({
     eventId: input.eventId,
@@ -560,7 +560,7 @@ export async function voidBillingCredit(input: {
     .is('voided_at', null)
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('ביטול הזיכוי נכשל');
+  if (error) throw new Error('ביטול הזיכוי נכשל', { cause: error });
   if (!updated) throw new Error('הזיכוי כבר בוטל');
 
   await logActivity({

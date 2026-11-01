@@ -72,7 +72,7 @@ export async function getEventForAdminView(eventId: string): Promise<OwnedEvent>
     .eq('id', eventId)
     .maybeSingle();
   if (error) {
-    throw new Error('טעינת האירוע נכשלה');
+    throw new Error('טעינת האירוע נכשלה', { cause: error });
   }
   if (!data) {
     notFound();
@@ -146,7 +146,7 @@ export async function getCampaignForAdminView(campaignId: string): Promise<Owner
     .eq('id', campaignId)
     .maybeSingle();
   if (error) {
-    throw new Error('טעינת הקמפיין נכשלה');
+    throw new Error('טעינת הקמפיין נכשלה', { cause: error });
   }
   if (!data) {
     notFound();
@@ -194,7 +194,7 @@ export async function getThankyouScheduleForAdminView(
     .eq('id', campaignId)
     .maybeSingle();
   if (error) {
-    throw new Error('טעינת לוח הזמנים לתודה נכשלה');
+    throw new Error('טעינת לוח הזמנים לתודה נכשלה', { cause: error });
   }
   if (!data) {
     notFound();
@@ -238,7 +238,7 @@ export async function listCampaignsForAdmin(): Promise<AdminCampaignListItem[]> 
     .or(ADMIN_ATTENTION_FILTER)
     .order('created_at', { ascending: false });
   if (error) {
-    throw new Error('טעינת הקמפיינים נכשלה');
+    throw new Error('טעינת הקמפיינים נכשלה', { cause: error });
   }
   return (data ?? []).map((c) => ({
     id: c.id,

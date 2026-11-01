@@ -127,7 +127,7 @@ export async function createCallAttempt(
     })
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('יצירת ניסיון השיחה נכשלה');
+  if (error) throw new Error('יצירת ניסיון השיחה נכשלה', { cause: error });
   if (!data) return null;
   return { id: data.id };
 }
@@ -196,7 +196,7 @@ async function hydrateCallContext(
     )
     .eq('id', attempt.event_id)
     .maybeSingle();
-  if (evErr) throw new Error('טעינת האירוע נכשלה');
+  if (evErr) throw new Error('טעינת האירוע נכשלה', { cause: evErr });
   if (!event) return null;
 
   let guestFullName: string | null = null;
@@ -234,7 +234,7 @@ export async function getCallContextById(id: string): Promise<CallContext | null
     .select(CTX_SELECT)
     .eq('id', id)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   if (!attempt) return null;
   return hydrateCallContext(attempt);
 }
@@ -253,7 +253,7 @@ export async function getCallContextByAccessToken(
     .select(CTX_SELECT)
     .eq('access_token', accessToken)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   if (!attempt) return null;
   return hydrateCallContext(attempt);
 }
@@ -270,7 +270,7 @@ export async function getCallAttemptByAccessToken(
     .select('id, token_expires_at')
     .eq('access_token', accessToken)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   return data ?? null;
 }
 
@@ -283,7 +283,7 @@ export async function getContactNormalizedPhone(contactId: string): Promise<stri
     .select('normalized_phone')
     .eq('id', contactId)
     .maybeSingle();
-  if (error) throw new Error('טעינת איש הקשר נכשלה');
+  if (error) throw new Error('טעינת איש הקשר נכשלה', { cause: error });
   return data?.normalized_phone ?? null;
 }
 
@@ -295,7 +295,7 @@ export async function getCallAttemptById(id: string): Promise<CallAttemptRow | n
     .select('*')
     .eq('id', id)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   return data;
 }
 
@@ -307,7 +307,7 @@ export async function getGuestRsvpToken(guestId: string): Promise<string | null>
     .select('rsvp_token')
     .eq('id', guestId)
     .maybeSingle();
-  if (error) throw new Error('טעינת האורח נכשלה');
+  if (error) throw new Error('טעינת האורח נכשלה', { cause: error });
   return data?.rsvp_token ?? null;
 }
 
@@ -336,7 +336,7 @@ export async function setCallAttemptRsvpOutcome(
     .from('call_attempts')
     .update({ rsvp_outcome: outcome })
     .eq('id', attemptId);
-  if (error) throw new Error('עדכון תוצאת ה-RSVP על ניסיון השיחה נכשל');
+  if (error) throw new Error('עדכון תוצאת ה-RSVP על ניסיון השיחה נכשל', { cause: error });
 }
 
 // Atomically record a callback outcome with a compare-and-set guard so a stale or
@@ -359,7 +359,7 @@ export async function recordCallOutcome(
     : // non-terminal (e.g. recording_started): only advance from a pre-terminal state
       base.in('status', PRE_TERMINAL as unknown as string[]);
   const { data, error } = await guarded.select('id').maybeSingle();
-  if (error) throw new Error('רישום תוצאת השיחה נכשל');
+  if (error) throw new Error('רישום תוצאת השיחה נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -471,7 +471,7 @@ export async function getCallAttemptByTouchpoint(
     .eq('contact_id', contactId)
     .eq('touchpoint_index', touchpointIndex)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   return data;
 }
 
@@ -490,7 +490,7 @@ export async function getCallAttemptByDispatchId(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   return data;
 }
 
@@ -523,7 +523,7 @@ export async function recordDialConfirmed(
     .in('status', PRE_TERMINAL as unknown as string[])
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום אימות החיוג נכשל');
+  if (error) throw new Error('רישום אימות החיוג נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -571,14 +571,14 @@ export async function stampElCorrelationNonce(
     .update({ el_correlation_nonce: nonce, updated_at: new Date().toISOString() })
     .eq('id', id)
     .is('el_correlation_nonce', null);
-  if (upErr) throw new Error('רישום מזהה הקורלציה נכשל');
+  if (upErr) throw new Error('רישום מזהה הקורלציה נכשל', { cause: upErr });
   // Read back the effective value (ours, or a pre-existing one from a prior run).
   const { data, error } = await admin
     .from('call_attempts')
     .select('el_correlation_nonce')
     .eq('id', id)
     .maybeSingle();
-  if (error) throw new Error('רישום מזהה הקורלציה נכשל');
+  if (error) throw new Error('רישום מזהה הקורלציה נכשל', { cause: error });
   if (!data?.el_correlation_nonce) return null;
   return { nonce: data.el_correlation_nonce };
 }
@@ -601,7 +601,7 @@ export async function setElConversationId(
     .eq('id', id)
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום מזהה השיחה נכשל');
+  if (error) throw new Error('רישום מזהה השיחה נכשל', { cause: error });
   return { applied: data !== null };
 }
 

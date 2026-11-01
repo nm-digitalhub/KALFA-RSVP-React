@@ -45,7 +45,7 @@ export async function listStaffAccessLog(
     .order('accessed_at', { ascending: false })
     .range(from, to);
   if (error) {
-    throw new Error('טעינת יומן הגישה נכשלה');
+    throw new Error('טעינת יומן הגישה נכשלה', { cause: error });
   }
 
   const rows = data ?? [];

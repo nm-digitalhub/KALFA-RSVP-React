@@ -82,7 +82,7 @@ export async function seedOutreachState(
     .from('campaign_authorized_contacts')
     .select('contact_id')
     .eq('campaign_id', campaignId);
-  if (error) throw new Error('טעינת מערך אנשי הקשר נכשלה');
+  if (error) throw new Error('טעינת מערך אנשי הקשר נכשלה', { cause: error });
   const rows = (set ?? []).map((r) => ({
     event_id: eventId,
     campaign_id: campaignId,
@@ -95,7 +95,7 @@ export async function seedOutreachState(
         onConflict: 'campaign_id,contact_id',
         ignoreDuplicates: true,
       });
-    if (insErr) throw new Error('יצירת מצב ה-outreach נכשלה');
+    if (insErr) throw new Error('יצירת מצב ה-outreach נכשלה', { cause: insErr });
   }
   return rows.length;
 }
@@ -109,7 +109,7 @@ export async function listActiveCampaigns(): Promise<
     .from('campaigns')
     .select('id, event_id')
     .eq('status', 'active');
-  if (error) throw new Error('טעינת הקמפיינים הפעילים נכשלה');
+  if (error) throw new Error('טעינת הקמפיינים הפעילים נכשלה', { cause: error });
   return data ?? [];
 }
 
@@ -123,7 +123,7 @@ export async function listActiveOutreach(
     .select('contact_id, current_step_index')
     .eq('campaign_id', campaignId)
     .eq('status', 'active');
-  if (error) throw new Error('טעינת מצב ה-outreach נכשלה');
+  if (error) throw new Error('טעינת מצב ה-outreach נכשלה', { cause: error });
   return data ?? [];
 }
 
@@ -286,7 +286,7 @@ export async function claimStep(
     .eq('current_step_index', stepIndex)
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('עדכון מצב ה-outreach נכשל');
+  if (error) throw new Error('עדכון מצב ה-outreach נכשל', { cause: error });
   return data !== null;
 }
 

@@ -35,7 +35,7 @@ export async function uploadInviteImage(
     contentType,
     upsert: true,
   });
-  if (error) throw new Error('העלאת תמונת ההזמנה נכשלה');
+  if (error) throw new Error('העלאת תמונת ההזמנה נכשלה', { cause: error });
   return path;
 }
 

@@ -2,6 +2,7 @@ import 'server-only';
 
 import { createHash } from 'node:crypto';
 
+import { errorDetail } from '@/lib/error-detail';
 import { QUEUES } from '@/lib/queue/queues';
 import { getWebJobSender } from '@/lib/queue/web-sender';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -135,5 +136,20 @@ export async function markWebhookEventFailed(
     .from('webhook_inbox')
     .update({ attempts, last_error: lastError.slice(0, 500) })
     .eq('id', id);
-  if (error) throw new Error('עדכון כשל אירוע הוובהוק נכשל');
+  if (error) throw new Error('עדכון כשל אירוע הוובהוק נכשל', { cause: error });
+}
+
+// A row whose processing threw: log it and record it, with the cause the data
+// layer attached (errorDetail), so a Supabase/Postgres failure behind a Hebrew
+// message is still diagnosable — from the log and from last_error in the admin
+// inspector. Every message thrown on this path is fixed text or an error code,
+// never payload text (measured 30.10.2026), so both are safe to keep. The caller
+// still owns the ops alert, which carries ids only.
+export async function recordWebhookEventFailure(
+  row: Pick<WebhookInboxRow, 'id' | 'attempts'>,
+  error: unknown,
+): Promise<void> {
+  const detail = errorDetail(error);
+  console.error(`[webhook] row ${row.id} failed (attempt ${row.attempts + 1}): ${detail}`);
+  await markWebhookEventFailed(row.id, row.attempts + 1, detail);
 }

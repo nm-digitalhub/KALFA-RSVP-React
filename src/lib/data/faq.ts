@@ -23,6 +23,6 @@ export async function getPublishedFaqItems(): Promise<FaqItemRow[]> {
     .eq('published', true)
     .order('category', { ascending: true })
     .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת השאלות הנפוצות נכשלה');
+  if (error) throw new Error('טעינת השאלות הנפוצות נכשלה', { cause: error });
   return (data ?? []) as FaqItemRow[];
 }

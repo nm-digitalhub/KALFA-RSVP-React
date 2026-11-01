@@ -40,5 +40,5 @@ export async function setOutreachEnabled(enabled: boolean): Promise<void> {
     .from('app_settings')
     .update({ outreach_enabled: enabled })
     .eq('id', true);
-  if (error) throw new Error('עדכון מתג הפנייה נכשל');
+  if (error) throw new Error('עדכון מתג הפנייה נכשל', { cause: error });
 }

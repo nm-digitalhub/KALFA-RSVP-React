@@ -53,7 +53,7 @@ export async function listInteractionsForContact(
     .eq('event_id', eventId)
     .eq('contact_id', contactId)
     .order('created_at', { ascending: true });
-  if (error) throw new Error('טעינת היסטוריית האינטראקציות נכשלה');
+  if (error) throw new Error('טעינת היסטוריית האינטראקציות נכשלה', { cause: error });
   return (data ?? []).map((r) => ({
     id: r.id,
     direction: r.direction === 'in' ? 'in' : 'out',
@@ -89,7 +89,7 @@ export async function getGuestOutreachSummary(
     .eq('event_id', eventId)
     .eq('id', guestId)
     .maybeSingle();
-  if (gErr) throw new Error('טעינת המוזמן נכשלה');
+  if (gErr) throw new Error('טעינת המוזמן נכשלה', { cause: gErr });
   const contactId = guest?.contact_id ?? null;
   if (!contactId) return null;
 
@@ -99,7 +99,7 @@ export async function getGuestOutreachSummary(
     .eq('event_id', eventId)
     .eq('id', contactId)
     .maybeSingle();
-  if (cErr) throw new Error('טעינת איש הקשר נכשלה');
+  if (cErr) throw new Error('טעינת איש הקשר נכשלה', { cause: cErr });
   if (!contact) return null;
 
   return {

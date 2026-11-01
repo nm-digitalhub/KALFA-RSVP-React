@@ -45,7 +45,7 @@ export async function getSlackAlertsView(): Promise<SlackAlertsView> {
     .eq('id', SETTINGS_ID)
     .maybeSingle();
 
-  if (error) throw new Error('טעינת הגדרות ההתראות נכשלה');
+  if (error) throw new Error('טעינת הגדרות ההתראות נכשלה', { cause: error });
 
   const hasToken = typeof data?.slack_bot_token === 'string' && data.slack_bot_token.trim() !== '';
   const channelId = data?.slack_alert_channel_id ?? '';
@@ -86,7 +86,7 @@ export async function updateSlackConnection(input: {
   if (input.botToken) patch.slack_bot_token = input.botToken;
 
   const { error } = await supabase.from('app_settings').update(patch).eq('id', SETTINGS_ID);
-  if (error) throw new Error('שמירת חיבור ה-Slack נכשלה');
+  if (error) throw new Error('שמירת חיבור ה-Slack נכשלה', { cause: error });
 }
 
 // Save the personal @mention config: the member id (blank → cleared to null) and
@@ -105,7 +105,7 @@ export async function setSlackMention(input: {
   };
 
   const { error } = await supabase.from('app_settings').update(patch).eq('id', SETTINGS_ID);
-  if (error) throw new Error('שמירת הגדרות האזכור נכשלה');
+  if (error) throw new Error('שמירת הגדרות האזכור נכשלה', { cause: error });
 }
 
 // Disconnect: clear both credentials AND turn alerting off (fail-closed — no
@@ -121,7 +121,7 @@ export async function clearSlackConnection(): Promise<void> {
       slack_alerts_enabled: false,
     })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('ניתוק ה-Slack נכשל');
+  if (error) throw new Error('ניתוק ה-Slack נכשל', { cause: error });
 }
 
 export async function setSlackAlertsEnabled(enabled: boolean): Promise<void> {
@@ -131,7 +131,7 @@ export async function setSlackAlertsEnabled(enabled: boolean): Promise<void> {
     .from('app_settings')
     .update({ slack_alerts_enabled: enabled })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מתג ההתראות נכשל');
+  if (error) throw new Error('עדכון מתג ההתראות נכשל', { cause: error });
 }
 
 // The category toggles, keyed by the app_settings column they drive.
@@ -167,7 +167,7 @@ export async function setSlackAlertCategory(
     .from('app_settings')
     .update(patch)
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון קטגוריית ההתראות נכשל');
+  if (error) throw new Error('עדכון קטגוריית ההתראות נכשל', { cause: error });
 }
 
 // --- ops_alerts history (append-only audit) --------------------------------
@@ -196,7 +196,7 @@ export async function listOpsAlerts(
     .order('created_at', { ascending: false })
     .range(from, to);
 
-  if (error) throw new Error('טעינת יומן ההתראות נכשלה');
+  if (error) throw new Error('טעינת יומן ההתראות נכשלה', { cause: error });
 
   return {
     items: (data ?? []) as OpsAlertEntry[],

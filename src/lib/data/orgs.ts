@@ -295,7 +295,7 @@ export async function getOrgRolePermissionMatrix(orgId: string): Promise<OrgRole
     .from('organization_role_permissions')
     .select('role_id, permission_id')
     .eq('organization_id', orgId);
-  if (error) throw new Error('טעינת מטריצת ההרשאות נכשלה');
+  if (error) throw new Error('טעינת מטריצת ההרשאות נכשלה', { cause: error });
 
   const granted: Record<string, string[]> = {};
   for (const role of roles) granted[role.id] = [];
@@ -346,7 +346,7 @@ export async function setOrgRolePermission(
       { organization_id: orgId, role_id: roleId, permission_id: permissionId, granted_by: actor.id },
       { onConflict: 'organization_id,role_id,permission_id' },
     );
-    if (error) throw new Error('עדכון ההרשאה נכשל');
+    if (error) throw new Error('עדכון ההרשאה נכשל', { cause: error });
   } else {
     const { error } = await admin
       .from('organization_role_permissions')
@@ -354,7 +354,7 @@ export async function setOrgRolePermission(
       .eq('organization_id', orgId)
       .eq('role_id', roleId)
       .eq('permission_id', permissionId);
-    if (error) throw new Error('עדכון ההרשאה נכשל');
+    if (error) throw new Error('עדכון ההרשאה נכשל', { cause: error });
   }
 
   // organization_role_audit_log is written by the DB trigger on this same
@@ -400,7 +400,7 @@ export async function resetOrgRolePermissionsToDefault(
   const { data: defs, error: defsError } = await admin
     .from('permission_definitions')
     .select('id, resource, action, system_protected');
-  if (defsError) throw new Error('טעינת ברירת המחדל נכשלה');
+  if (defsError) throw new Error('טעינת ברירת המחדל נכשלה', { cause: defsError });
   const excludeIds = new Set(
     (defs ?? [])
       .filter(
@@ -413,7 +413,7 @@ export async function resetOrgRolePermissionsToDefault(
     .from('role_permissions')
     .select('permission_id')
     .eq('role_id', roleId);
-  if (templateError) throw new Error('טעינת ברירת המחדל נכשלה');
+  if (templateError) throw new Error('טעינת ברירת המחדל נכשלה', { cause: templateError });
   const targetIds = new Set(
     (templateRows ?? []).map((r) => r.permission_id).filter((id) => !excludeIds.has(id)),
   );
@@ -423,7 +423,7 @@ export async function resetOrgRolePermissionsToDefault(
     .select('permission_id')
     .eq('organization_id', orgId)
     .eq('role_id', roleId);
-  if (currentError) throw new Error('טעינת ההרשאות הנוכחיות נכשלה');
+  if (currentError) throw new Error('טעינת ההרשאות הנוכחיות נכשלה', { cause: currentError });
   const currentIds = new Set((currentRows ?? []).map((r) => r.permission_id));
 
   const extras = [...currentIds].filter((id) => !targetIds.has(id));
@@ -436,7 +436,7 @@ export async function resetOrgRolePermissionsToDefault(
       .eq('organization_id', orgId)
       .eq('role_id', roleId)
       .in('permission_id', extras);
-    if (error) throw new Error('איפוס ההרשאות נכשל');
+    if (error) throw new Error('איפוס ההרשאות נכשל', { cause: error });
   }
   if (missing.length > 0) {
     const { error } = await admin.from('organization_role_permissions').insert(
@@ -447,7 +447,7 @@ export async function resetOrgRolePermissionsToDefault(
         granted_by: actor.id,
       })),
     );
-    if (error) throw new Error('איפוס ההרשאות נכשל');
+    if (error) throw new Error('איפוס ההרשאות נכשל', { cause: error });
   }
 
   await logActivity({
@@ -513,7 +513,7 @@ export async function inviteMember(
     expires_at: invitationExpiry(),
   });
   if (error) {
-    throw new Error('שליחת ההזמנה נכשלה');
+    throw new Error('שליחת ההזמנה נכשלה', { cause: error });
   }
 
   await auditOrg({
@@ -572,7 +572,7 @@ export async function revokeInvitation(orgId: string, invitationId: string): Pro
     .is('accepted_at', null)
     .is('revoked_at', null);
   if (error) {
-    throw new Error('ביטול ההזמנה נכשל');
+    throw new Error('ביטול ההזמנה נכשל', { cause: error });
   }
   await auditOrg({
     organizationId: orgId,
@@ -631,7 +631,7 @@ export async function changeMemberRole(
     .eq('id', input.member_id)
     .eq('organization_id', orgId);
   if (error) {
-    throw new Error('שינוי התפקיד נכשל');
+    throw new Error('שינוי התפקיד נכשל', { cause: error });
   }
   await auditOrg({
     organizationId: orgId,
@@ -674,7 +674,7 @@ export async function removeMember(orgId: string, memberId: string): Promise<voi
     .eq('id', memberId)
     .eq('organization_id', orgId);
   if (error) {
-    throw new Error('הסרת החבר נכשלה');
+    throw new Error('הסרת החבר נכשלה', { cause: error });
   }
   await auditOrg({
     organizationId: orgId,

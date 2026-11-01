@@ -58,7 +58,7 @@ export async function rescheduleEventForAdmin(
     .eq('id', eventId)
     .maybeSingle();
   if (readErr) {
-    throw new Error('טעינת האירוע נכשלה');
+    throw new Error('טעינת האירוע נכשלה', { cause: readErr });
   }
   if (!event) {
     notFound();

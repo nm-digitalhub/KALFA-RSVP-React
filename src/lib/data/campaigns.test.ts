@@ -313,7 +313,7 @@ describe('getCampaignForPurchase', () => {
 
   it('throws a safe Hebrew message on a read error (never a null that reads as "not found")', async () => {
     adminWith({ data: null, error: { message: 'boom' } });
-    await expect(getCampaignForPurchase('c1')).rejects.toThrow('טעינת הקמפיין נכשלה');
+    await expect(getCampaignForPurchase('c1')).rejects.toThrow('טעינת נתוני השירות נכשלה');
   });
 });
 
@@ -1248,7 +1248,7 @@ describe('changeCampaignPackage — the pre-approval package change (task 5.3, D
     wireChange({ campaign: null });
 
     await expect(changeCampaignPackage('e1', 'pkg-fixed')).rejects.toThrow(
-      'אין קמפיין לאירוע — יש לבחור חבילה תחילה',
+      'יש לבחור תחילה חבילה לאירוע.',
     );
   });
 

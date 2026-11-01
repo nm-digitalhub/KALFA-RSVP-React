@@ -51,7 +51,7 @@ export async function resolveSendableContacts(
       .eq('campaign_authorized_contacts.campaign_id', campaignId);
     if (consentRequired) query = query.not('whatsapp_consent_at', 'is', null);
     const { data, error } = await query;
-    if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה');
+    if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה', { cause: error });
     return (data ?? []).map((c) => ({
       id: c.id,
       normalized_phone: c.normalized_phone,
@@ -65,7 +65,7 @@ export async function resolveSendableContacts(
     .eq('removal_requested', false);
   if (consentRequired) query = query.not('whatsapp_consent_at', 'is', null);
   const { data, error } = await query;
-  if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה');
+  if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה', { cause: error });
   return (data ?? []).map((c) => ({
     id: c.id,
     normalized_phone: c.normalized_phone,

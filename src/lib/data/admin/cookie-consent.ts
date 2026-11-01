@@ -56,7 +56,7 @@ export async function getCookieConsentAdminView(): Promise<CookieConsentAdminVie
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (error) throw new Error('טעינת הגדרות ההסכמה נכשלה');
+  if (error) throw new Error('טעינת הגדרות ההסכמה נכשלה', { cause: error });
 
   const revisionBump =
     typeof data?.cookie_consent_revision_bump === 'number' ? data.cookie_consent_revision_bump : 0;
@@ -97,7 +97,7 @@ export async function updateCookieConsentEnabled(enabled: boolean): Promise<Togg
     .eq('id', SETTINGS_ID)
     .neq('cookie_consent_enabled', enabled)
     .select('cookie_consent_revision_bump');
-  if (error) throw new Error('עדכון מתג ההסכמה נכשל');
+  if (error) throw new Error('עדכון מתג ההסכמה נכשל', { cause: error });
   const changed = (data?.length ?? 0) > 0;
   if (changed) {
     await logActivity({ action: 'admin.cookie_consent.master_toggled', meta: { enabled } });
@@ -121,7 +121,7 @@ export async function updateCookieConsentAnalyticsEnabled(
     .eq('id', SETTINGS_ID)
     .neq('cookie_consent_analytics_enabled', enabled)
     .select('cookie_consent_revision_bump');
-  if (error) throw new Error('עדכון קטגוריית האנליטיקה נכשל');
+  if (error) throw new Error('עדכון קטגוריית האנליטיקה נכשל', { cause: error });
   const changed = (data?.length ?? 0) > 0;
   if (changed) {
     await logActivity({
@@ -148,7 +148,7 @@ export async function updateCookieConsentMarketingEnabled(
     .eq('id', SETTINGS_ID)
     .neq('cookie_consent_marketing_enabled', enabled)
     .select('cookie_consent_revision_bump');
-  if (error) throw new Error('עדכון קטגוריית השיווק נכשל');
+  if (error) throw new Error('עדכון קטגוריית השיווק נכשל', { cause: error });
   const changed = (data?.length ?? 0) > 0;
   if (changed) {
     await logActivity({
@@ -173,7 +173,7 @@ export async function bumpCookieConsentRevision(): Promise<number> {
     .from('app_settings')
     .update({ cookie_consent_revision_bump: nextBump })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מספר הגרסה נכשל');
+  if (error) throw new Error('עדכון מספר הגרסה נכשל', { cause: error });
   await logActivity({
     action: 'admin.cookie_consent.revision_bumped',
     meta: { revisionBump: nextBump },

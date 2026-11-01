@@ -19,7 +19,7 @@ export async function uploadLegalDoc(
     contentType,
     upsert: false, // never silently overwrite a signed artifact
   });
-  if (error) throw new Error('העלאת המסמך נכשלה');
+  if (error) throw new Error('העלאת המסמך נכשלה', { cause: error });
 }
 
 // Download a stored legal doc (service-role). Callers MUST verify authorization

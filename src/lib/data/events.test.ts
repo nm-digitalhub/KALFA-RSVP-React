@@ -1322,3 +1322,13 @@ describe('R10 — one event per customer account', () => {
     await expect(canCreateEvent()).resolves.toBe(false);
   });
 });
+
+// Customer vocabulary (design D8): the lock messages reach the owner from the details form.
+describe('the event lock messages', () => {
+  it('name the service in the customer’s words, never "קמפיין"', () => {
+    for (const message of [CELEBRANTS_LOCKED_ERROR, EVENT_TYPE_LOCKED_ERROR, VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR]) {
+      expect(message).toContain('כל עוד שירות אישורי ההגעה בתהליך');
+      expect(message).not.toContain('קמפיין');
+    }
+  });
+});

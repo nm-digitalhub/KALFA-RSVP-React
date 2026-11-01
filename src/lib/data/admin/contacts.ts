@@ -112,7 +112,7 @@ export async function listContactMessages(
     .range(from, to);
 
   if (error) {
-    throw new Error('טעינת הפניות נכשלה');
+    throw new Error('טעינת הפניות נכשלה', { cause: error });
   }
 
   return {
@@ -161,7 +161,7 @@ export async function updateContactStatus(
     .maybeSingle();
 
   if (currentError) {
-    throw new Error('עדכון הסטטוס נכשל');
+    throw new Error('עדכון הסטטוס נכשל', { cause: currentError });
   }
 
   const terminal = status === 'done' || status === 'cancelled';
@@ -171,7 +171,7 @@ export async function updateContactStatus(
     .eq('id', id);
 
   if (error) {
-    throw new Error('עדכון הסטטוס נכשל');
+    throw new Error('עדכון הסטטוס נכשל', { cause: error });
   }
 
   await logActivity({

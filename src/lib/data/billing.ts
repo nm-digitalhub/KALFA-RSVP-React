@@ -41,7 +41,7 @@ export async function recordReached(args: ReachedArgs): Promise<string> {
     p_evidence: args.evidence,
     p_provider_ref: args.providerRef,
   });
-  if (error) throw new Error('רישום החיוב נכשל');
+  if (error) throw new Error('רישום החיוב נכשל', { cause: error });
   const outcome = typeof data === 'string' ? data : 'unknown';
   if (outcome === 'billed') {
     await setContactOpStatus(args.contactId, 'reached_billed');
@@ -64,7 +64,7 @@ export async function getCampaignBillingSummary(
   const { data, error } = await admin.rpc('campaign_billing_summary', {
     p_campaign: campaignId,
   });
-  if (error) throw new Error('שליפת סיכום החיוב נכשלה');
+  if (error) throw new Error('שליפת סיכום החיוב נכשלה', { cause: error });
   if (!data) return null;
   const row = (Array.isArray(data) ? data[0] : data) as
     | Record<string, unknown>

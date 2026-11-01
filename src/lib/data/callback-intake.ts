@@ -85,7 +85,7 @@ export async function getCallbackIntakeByToken(token: string): Promise<CallbackI
   const { data, error } = await createAdminClient().rpc('get_callback_intake_by_token', {
     _token: token,
   });
-  if (error) throw new Error('טעינת הטופס נכשלה');
+  if (error) throw new Error('טעינת הטופס נכשלה', { cause: error });
   if (data == null) return null;
   // Documented boundary cast: the function returns `Json`; its concrete shape
   // is fixed by the definition in the migration and modelled above.
@@ -121,7 +121,7 @@ export async function submitCallbackIntake(
     // parameter is `text` for exactly this reason; see 20260914115647.
     _requested_at: requestedAtIso ?? '',
   });
-  if (error) throw new Error('שליחת הפרטים נכשלה');
+  if (error) throw new Error('שליחת הפרטים נכשלה', { cause: error });
 
   const result = (data ?? {}) as { ok?: boolean; reason?: string; schedule_locked?: boolean };
   if (result.ok === true) {

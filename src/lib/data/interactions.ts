@@ -41,7 +41,7 @@ export async function insertInteraction(row: InteractionRow): Promise<boolean> {
     .upsert(row, { onConflict: 'channel,provider_id', ignoreDuplicates: true })
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('שמירת האינטראקציה נכשלה');
+  if (error) throw new Error('שמירת האינטראקציה נכשלה', { cause: error });
   return data !== null;
 }
 
@@ -62,7 +62,7 @@ export async function setInteractionBillingOutcome(input: {
     .eq('channel', input.channel)
     .eq('provider_id', input.providerId)
     .eq('direction', 'in');
-  if (error) throw new Error('עדכון תוצאת החיוב נכשל');
+  if (error) throw new Error('עדכון תוצאת החיוב נכשל', { cause: error });
 }
 
 // Resolve an inbound message (sender phone) to the (event, campaign, contact) it
@@ -80,7 +80,7 @@ export async function resolveInboundContact(
     .from('contacts')
     .select('id')
     .eq('normalized_phone', e164);
-  if (cErr) throw new Error('טעינת אנשי הקשר נכשלה');
+  if (cErr) throw new Error('טעינת אנשי הקשר נכשלה', { cause: cErr });
   const ids = (contacts ?? []).map((c) => c.id);
   if (ids.length === 0) return null;
 
@@ -92,7 +92,7 @@ export async function resolveInboundContact(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('טעינת האינטראקציה נכשלה');
+  if (error) throw new Error('טעינת האינטראקציה נכשלה', { cause: error });
   if (!data || !data.event_id || !data.campaign_id || !data.contact_id) {
     return null;
   }
@@ -121,7 +121,7 @@ export async function resolveByContextId(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('טעינת האינטראקציה לפי הקשר נכשלה');
+  if (error) throw new Error('טעינת האינטראקציה לפי הקשר נכשלה', { cause: error });
   if (!data || !data.event_id || !data.campaign_id || !data.contact_id) {
     return null;
   }
@@ -150,7 +150,7 @@ export async function setDeliveryStatus(
     .eq('direction', 'out')
     .select('contact_id')
     .maybeSingle();
-  if (error) throw new Error('עדכון סטטוס המסירה נכשל');
+  if (error) throw new Error('עדכון סטטוס המסירה נכשל', { cause: error });
   return { contactId: data?.contact_id ?? null };
 }
 
@@ -163,7 +163,7 @@ export async function setContactOpStatus(
     .from('contacts')
     .update({ op_status: status })
     .eq('id', contactId);
-  if (error) throw new Error('עדכון סטטוס איש הקשר נכשל');
+  if (error) throw new Error('עדכון סטטוס איש הקשר נכשל', { cause: error });
 }
 
 // D4: a removal/opt-out reply still BILLS (the human reach), THEN stops FUTURE
@@ -180,7 +180,7 @@ export async function markContactRemovalRequested(
     .from('contacts')
     .update({ removal_requested: true })
     .eq('id', contactId);
-  if (error) throw new Error('עדכון בקשת ההסרה נכשל');
+  if (error) throw new Error('עדכון בקשת ההסרה נכשל', { cause: error });
 }
 
 // Return ALL guests linked to a contact within an event (id + name + RSVP
@@ -206,7 +206,7 @@ export async function getGuestsForContact(
     .eq('event_id', eventId)
     .eq('contact_id', contactId)
     .order('created_at', { ascending: true });
-  if (error) throw new Error('טעינת האורחים נכשלה');
+  if (error) throw new Error('טעינת האורחים נכשלה', { cause: error });
   return (data ?? []).map((g) => ({
     id: g.id,
     full_name: g.full_name,

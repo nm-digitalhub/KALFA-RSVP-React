@@ -54,7 +54,7 @@ import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import {
   claimUnprocessedWebhookEvents,
   markWebhookEventProcessed,
-  markWebhookEventFailed,
+  recordWebhookEventFailure,
 } from '@/lib/data/webhooks';
 import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import {
@@ -122,6 +122,7 @@ import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-ca
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
 import { runRdpAccessSweep } from '@/lib/rdp-access/sweep';
 import { runPaymentOrphanSweep } from '@/lib/data/payment-orphans';
+import { errorDetail } from '@/lib/error-detail';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import { reportPgBossError } from '@/lib/alerts/pg-boss-alert';
@@ -361,29 +362,6 @@ async function handleSalesCallDispatch(boss: PgBoss, job: SalesCallJob): Promise
     kind: result.kind,
     ...('reason' in result ? { reason: result.reason } : {}),
   });
-}
-
-// Data-layer throws for a failed Supabase/Postgrest call attach the original
-// error as `cause` (see e.g. claimUnprocessedWebhookEvents) so the generic
-// Hebrew message shown to that layer's other callers doesn't erase the
-// diagnostic code underneath. Surface that code here — it's a Postgres/
-// PostgREST error code, never guest data — so an ops alert alone is enough to
-// triage a recurrence without a live DB query.
-function errorDetail(e: unknown): string {
-  if (!(e instanceof Error)) return 'unknown error';
-  const cause = e.cause;
-  if (cause && typeof cause === 'object' && 'message' in cause) {
-    const rawCode =
-      'code' in cause && typeof (cause as { code?: unknown }).code === 'string'
-        ? (cause as { code: string }).code
-        : '';
-    // PostgrestError's own fields are always strings, but a fetch/network
-    // failure surfaces the same {message,details,hint,code} shape with code
-    // defaulted to '' — skip the brackets rather than print "[]".
-    const code = rawCode.length > 0 ? rawCode : undefined;
-    return `${e.message} — ${code ? `[${code}] ` : ''}${String((cause as { message: unknown }).message)}`;
-  }
-  return e.message;
 }
 
 // Wrap a pg-boss work handler so a thrown failure fires a fail-safe ops alert
@@ -637,10 +615,11 @@ async function handleWebhook(boss: PgBoss): Promise<void> {
       await startWorkflowRuns(boss, row);
       await markWebhookEventProcessed(row.id);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'unknown error';
-      await markWebhookEventFailed(row.id, row.attempts + 1, message);
-      // Fail-safe ops alert — row id + attempts only (the message may echo
-      // provider payload text, so it is deliberately NOT included).
+      // Logged and kept in last_error WITH its cause (the Supabase/Postgres code
+      // behind the data layer's Hebrew message) — see recordWebhookEventFailure.
+      await recordWebhookEventFailure(row, e);
+      // Fail-safe ops alert — row id + attempts only; the detail is in the log
+      // and in last_error (recordWebhookEventFailure).
       await sendSlackAlert({
         level: 'warn',
         title: 'webhook processing failed',

@@ -48,7 +48,7 @@ export async function getSendPolicyForAdmin(): Promise<AdminSendPolicy> {
     .select('whatsapp_send_policy')
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (error) throw new Error('טעינת מדיניות השליחה נכשלה');
+  if (error) throw new Error('טעינת מדיניות השליחה נכשלה', { cause: error });
 
   const raw = data?.whatsapp_send_policy ?? null;
   if (raw == null) {
@@ -87,7 +87,7 @@ export async function updateSendPolicy(policy: SendPolicy): Promise<void> {
       whatsapp_send_policy: validated as unknown as TablesUpdate<'app_settings'>['whatsapp_send_policy'],
     })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('שמירת מדיניות השליחה נכשלה');
+  if (error) throw new Error('שמירת מדיניות השליחה נכשלה', { cause: error });
 
   // Audit what CHANGED in shape, never guest data. The window itself is business
   // configuration and is safe to record; it is also the thing someone will want to

@@ -50,7 +50,7 @@ export async function listActiveMicrosoftWorkflowConnections(): Promise<
     .order('label', { ascending: true })
     .order('id', { ascending: true });
 
-  if (error) throw new Error('טעינת חיבורי Microsoft הפעילים נכשלה');
+  if (error) throw new Error('טעינת חיבורי Microsoft הפעילים נכשלה', { cause: error });
 
   return (data ?? [])
     .filter((row) =>
@@ -89,7 +89,7 @@ export async function listMicrosoftWorkflowConnectionsForAdmin(): Promise<
     .eq('provider', 'microsoft')
     .order('created_at', { ascending: false });
 
-  if (error) throw new Error('טעינת חיבורי Microsoft נכשלה');
+  if (error) throw new Error('טעינת חיבורי Microsoft נכשלה', { cause: error });
 
   return (data ?? []).map((row) => ({
     label: row.label,

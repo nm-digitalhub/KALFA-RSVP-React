@@ -70,7 +70,7 @@ export async function createSalesDispatchAttempt(
     })
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('יצירת ניסיון שיחת המכירה נכשלה');
+  if (error) throw new Error('יצירת ניסיון שיחת המכירה נכשלה', { cause: error });
   if (!data) return null;
   return { id: data.id };
 }
@@ -88,7 +88,7 @@ export async function getSalesDispatchAttemptBySlot(
     .eq('callback_request_id', callbackRequestId)
     .eq('scheduled_at_snapshot', scheduledAtSnapshot)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה');
+  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה', { cause: error });
   return data;
 }
 
@@ -113,7 +113,7 @@ export async function recordSalesDialConfirmed(
     .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום אימות החיוג נכשל');
+  if (error) throw new Error('רישום אימות החיוג נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -134,7 +134,7 @@ async function recordDispatchOutcome(
     .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום תוצאת השיגור נכשל');
+  if (error) throw new Error('רישום תוצאת השיגור נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -189,7 +189,7 @@ export async function getUnresolvedSalesAttempt(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('בדיקת שיחת מכירה פתוחה נכשלה');
+  if (error) throw new Error('בדיקת שיחת מכירה פתוחה נכשלה', { cause: error });
   return data;
 }
 
@@ -210,7 +210,7 @@ export async function getSalesAttemptIdByConversationId(
       .select(select)
       .eq('id', correlationToken)
       .maybeSingle();
-    if (error) throw new Error('אחזור ניסיון שיחת מכירה לפי מזהה קורלציה נכשל');
+    if (error) throw new Error('אחזור ניסיון שיחת מכירה לפי מזהה קורלציה נכשל', { cause: error });
     if (data) return { id: data.id, callbackRequestId: data.callback_request_id };
   }
 
@@ -221,7 +221,7 @@ export async function getSalesAttemptIdByConversationId(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('אחזור ניסיון שיחת מכירה לפי מזהה שיחה נכשל');
+  if (error) throw new Error('אחזור ניסיון שיחת מכירה לפי מזהה שיחה נכשל', { cause: error });
   return data ? { id: data.id, callbackRequestId: data.callback_request_id } : null;
 }
 
@@ -318,7 +318,7 @@ export async function getSalesVoiceContextByAccessToken(
     .select(SALES_VOICE_CTX_SELECT)
     .eq('access_token', accessToken)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה');
+  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה', { cause: error });
   if (!attempt) return null;
 
   const { data: request, error: reqErr } = await admin
@@ -326,7 +326,7 @@ export async function getSalesVoiceContextByAccessToken(
     .select('full_name, note, topic, status, scheduled_at')
     .eq('id', attempt.callback_request_id)
     .maybeSingle();
-  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה');
+  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה', { cause: reqErr });
   if (!request) return null;
 
   return { attempt, request };
@@ -344,7 +344,7 @@ export async function getSalesAttemptByAccessToken(
     .select('id, callback_request_id, token_expires_at')
     .eq('access_token', accessToken)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה');
+  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה', { cause: error });
   return data ?? null;
 }
 
@@ -364,7 +364,7 @@ export async function getSalesRequestForAttempt(attemptId: string): Promise<{
     .select('callback_request_id')
     .eq('id', attemptId)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה');
+  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה', { cause: error });
   if (!attempt) return null;
 
   const { data: request, error: reqErr } = await admin
@@ -372,7 +372,7 @@ export async function getSalesRequestForAttempt(attemptId: string): Promise<{
     .select('full_name, phone, topic')
     .eq('id', attempt.callback_request_id)
     .maybeSingle();
-  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה');
+  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה', { cause: reqErr });
   if (!request) return null;
 
   return {
@@ -404,7 +404,7 @@ export async function recordSalesDispatchConcluded(
     .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום סיום השיחה נכשל');
+  if (error) throw new Error('רישום סיום השיחה נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -419,7 +419,7 @@ export async function setSalesAttemptElConversationId(
     .eq('id', id)
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום מזהה השיחה נכשל');
+  if (error) throw new Error('רישום מזהה השיחה נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -438,7 +438,7 @@ export async function claimSalesOutcome(
     .is('outcome_recorded_at', null)
     .select('callback_request_id')
     .maybeSingle();
-  if (error) throw new Error('רישום תוצאת השיחה נכשל');
+  if (error) throw new Error('רישום תוצאת השיחה נכשל', { cause: error });
   return data ? { callbackRequestId: data.callback_request_id } : null;
 }
 

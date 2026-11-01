@@ -108,7 +108,7 @@ async function succeededPurchase(admin: AdminClient, campaignId: string): Promis
     .eq('outcome', 'succeeded')
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('טעינת פעולות התשלום נכשלה');
+  if (error) throw new Error('טעינת פעולות התשלום נכשלה', { cause: error });
   // Normalised: a row that says nothing is "no recorded terminal" and real money.
   return data ? { ...data, provider_terminal: typeof data.provider_terminal === 'number' ? data.provider_terminal : null, is_test: data.is_test === true } : null;
 }

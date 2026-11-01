@@ -147,16 +147,16 @@ export async function recordPackageApproval(
     )
     .eq('id', input.campaignId)
     .maybeSingle();
-  if (error) return { ok: false, error: 'טעינת הקמפיין נכשלה' };
+  if (error) return { ok: false, error: 'טעינת תנאי החבילה נכשלה' };
   if (!campaign) {
     const { notFound } = await import('next/navigation');
     return notFound();
   }
   if (campaign.status !== 'pending_approval') {
-    return { ok: false, error: 'ניתן לאשר רק קמפיין הממתין לאישור' };
+    return { ok: false, error: 'אין כרגע תנאים שממתינים לאישור.' };
   }
   if (campaign.contact_quota == null) {
-    return { ok: false, error: 'תנאי הקמפיין חסרים' };
+    return { ok: false, error: 'תנאי החבילה חסרים' };
   }
 
   // Ownership, then the early rejections (before anything is rendered or stored).
@@ -187,10 +187,10 @@ export async function recordPackageApproval(
   try {
     round = await getCurrentPricingOrThrow(campaign.id);
   } catch {
-    return { ok: false, error: 'תנאי הקמפיין חסרים' };
+    return { ok: false, error: 'תנאי החבילה חסרים' };
   }
-  if (!round) return { ok: false, error: 'תנאי הקמפיין חסרים' };
-  if (round.lockedAt !== null) return { ok: false, error: 'ניתן לאשר רק קמפיין הממתין לאישור' };
+  if (!round) return { ok: false, error: 'תנאי החבילה חסרים' };
+  if (round.lockedAt !== null) return { ok: false, error: 'אין כרגע תנאים שממתינים לאישור.' };
 
   const [company, configTokens] = await Promise.all([
     getCompanyLegal(),

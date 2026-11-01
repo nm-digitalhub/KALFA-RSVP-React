@@ -132,7 +132,7 @@ export async function listMyExchangeConnections(): Promise<ExchangeConnectionVie
     query = query.eq('user_id', user.id);
   }
   const { data, error } = await query;
-  if (error) throw new Error('טעינת חיבורי Exchange נכשלה');
+  if (error) throw new Error('טעינת חיבורי Exchange נכשלה', { cause: error });
   return ((data ?? []) as ExchangeConnectionRow[]).map(toView);
 }
 
@@ -152,7 +152,7 @@ export async function listAllExchangeConnectionsForDebug(): Promise<ExchangeConn
     .from('exchange_connections')
     .select(PUBLIC_COLUMNS)
     .order('created_at', { ascending: false });
-  if (error) throw new Error('טעינת חיבורי Exchange נכשלה');
+  if (error) throw new Error('טעינת חיבורי Exchange נכשלה', { cause: error });
   return ((data ?? []) as ExchangeConnectionRow[]).map(toView);
 }
 
@@ -243,7 +243,7 @@ export async function createExchangeConnection(input: {
       reviveQuery = reviveQuery.eq('user_id', user.id);
     }
     const { error: reviveError } = await reviveQuery;
-    if (reviveError) throw new Error('חיבור התיבה מחדש נכשל');
+    if (reviveError) throw new Error('חיבור התיבה מחדש נכשל', { cause: reviveError });
     await logActivity({
       action: 'exchange.connection_reconnected',
       meta: { connectionId: existing.id, mode },
@@ -459,7 +459,7 @@ export async function revokeExchangeConnection(connectionId: string): Promise<vo
     query = query.eq('user_id', user.id);
   }
   const { error } = await query;
-  if (error) throw new Error('ניתוק החיבור נכשל');
+  if (error) throw new Error('ניתוק החיבור נכשל', { cause: error });
   await logActivity({ action: 'exchange.connection_revoked', meta: { connectionId } });
 }
 

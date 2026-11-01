@@ -87,7 +87,7 @@ export async function listOffers(): Promise<AdminOffer[]> {
     .order('created_at', { ascending: false });
 
   if (error) {
-    throw new Error('טעינת ההצעות נכשלה');
+    throw new Error('טעינת ההצעות נכשלה', { cause: error });
   }
 
   return ((data ?? []) as OfferJoinedRow[]).map(toAdminOffer);
@@ -105,7 +105,7 @@ export async function getOffer(id: string): Promise<AdminOffer> {
     .maybeSingle();
 
   if (error) {
-    throw new Error('טעינת ההצעה נכשלה');
+    throw new Error('טעינת ההצעה נכשלה', { cause: error });
   }
   if (!data) {
     notFound();
@@ -127,7 +127,7 @@ export async function listOfferPackageChoices(): Promise<OfferPackageChoice[]> {
     .order('name', { ascending: true });
 
   if (error) {
-    throw new Error('טעינת החבילות נכשלה');
+    throw new Error('טעינת החבילות נכשלה', { cause: error });
   }
   return data ?? [];
 }
@@ -144,7 +144,7 @@ async function assertPositiveFloors(input: OfferInput): Promise<void> {
     .in('id', ids);
 
   if (error) {
-    throw new Error('בדיקת מחירי החבילות נכשלה');
+    throw new Error('בדיקת מחירי החבילות נכשלה', { cause: error });
   }
   const byId = new Map((data ?? []).map((p) => [p.id, p]));
   for (const allowed of input.packages) {
@@ -262,14 +262,14 @@ export async function updateOffer(id: string, input: OfferInput): Promise<void> 
   const admin = createAdminClient();
   const { error } = await admin.from('offers').update(toOfferWritable(input)).eq('id', id);
   if (error) {
-    throw new Error('עדכון ההצעה נכשל');
+    throw new Error('עדכון ההצעה נכשל', { cause: error });
   }
 
   // Replace the allowed set: delete-then-insert. offer_packages has no dependents (assignments
   // freeze their own options), so the replacement can never orphan anything.
   const { error: clearError } = await admin.from('offer_packages').delete().eq('offer_id', id);
   if (clearError) {
-    throw new Error('עדכון ההצעה נכשל');
+    throw new Error('עדכון ההצעה נכשל', { cause: clearError });
   }
   const { error: packagesError } = await admin.from('offer_packages').insert(
     input.packages.map((p) => ({
@@ -279,7 +279,7 @@ export async function updateOffer(id: string, input: OfferInput): Promise<void> 
     })),
   );
   if (packagesError) {
-    throw new Error('עדכון ההצעה נכשל');
+    throw new Error('עדכון ההצעה נכשל', { cause: packagesError });
   }
 
   await logActivity({

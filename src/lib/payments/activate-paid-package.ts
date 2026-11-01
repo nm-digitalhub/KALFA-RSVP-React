@@ -63,7 +63,7 @@ async function readCampaign(admin: Admin, campaignId: string): Promise<CampaignR
     .select('status, event_id, updated_at')
     .eq('id', campaignId)
     .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (error) throw new Error('טעינת הקמפיין נכשלה', { cause: error });
   if (!data) throw new Error('הקמפיין לא נמצא');
   return data;
 }
@@ -76,7 +76,7 @@ async function complete(admin: Admin, campaignId: string, campaign: CampaignRow,
     .select('event_date')
     .eq('id', campaign.event_id)
     .maybeSingle();
-  if (error) throw new Error('טעינת האירוע נכשלה');
+  if (error) throw new Error('טעינת האירוע נכשלה', { cause: error });
   await seedThankyou(admin, campaignId, event?.event_date ?? null);
 
   const quietFor = Date.now() - new Date(campaign.updated_at).getTime();
@@ -95,7 +95,7 @@ async function hasActivationRow(admin: Admin, campaignId: string, eventId: strin
     .eq('action', 'campaign.activated')
     .eq('meta->>campaignId', campaignId)
     .limit(1);
-  if (error) throw new Error('טעינת יומן הפעילות נכשלה');
+  if (error) throw new Error('טעינת יומן הפעילות נכשלה', { cause: error });
   return (data?.length ?? 0) > 0;
 }
 
@@ -107,7 +107,7 @@ async function recordActivation(admin: Admin, campaignId: string, eventId: strin
     action: 'campaign.activated',
     meta: { campaignId, actor: 'system', paymentOperationId },
   });
-  if (error) throw new Error('רישום הפעלת הקמפיין נכשל');
+  if (error) throw new Error('רישום הפעלת הקמפיין נכשל', { cause: error });
 }
 
 // Only while empty: an owner-edited time is never replaced. A null or unreadable event date leaves it unset, as a
@@ -120,7 +120,7 @@ async function seedThankyou(admin: Admin, campaignId: string, eventDate: string 
     .update({ thankyou_send_at: seeded })
     .eq('id', campaignId)
     .is('thankyou_send_at', null);
-  if (error) throw new Error('קביעת מועד הודעת התודה נכשלה');
+  if (error) throw new Error('קביעת מועד הודעת התודה נכשלה', { cause: error });
 }
 
 // What a buyer's own request gets back: the service is running, or it is not yet (a later delivery of the job will

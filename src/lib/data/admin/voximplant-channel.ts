@@ -79,14 +79,14 @@ export async function getVoximplantChannelConfig(): Promise<VoximplantChannelCon
     .select('*')
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (error) throw new Error('טעינת הגדרות הערוץ נכשלה');
+  if (error) throw new Error('טעינת הגדרות הערוץ נכשלה', { cause: error });
   // The consent switch lives in call_compliance_settings (split out of app_settings 11.10.2026).
   const { data: compliance, error: complianceError } = await supabase
     .from('call_compliance_settings')
     .select('call_consent_required')
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (complianceError) throw new Error('טעינת הגדרות הערוץ נכשלה');
+  if (complianceError) throw new Error('טעינת הגדרות הערוץ נכשלה', { cause: complianceError });
 
   const row = (data ?? {}) as Record<string, unknown>;
   const saConfigured = s(row.voximplant_service_account_json).trim() !== '';
@@ -192,7 +192,7 @@ export async function updateVoximplantChannelConfig(
     .from('app_settings')
     .update(patch)
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון הגדרות הערוץ נכשל');
+  if (error) throw new Error('עדכון הגדרות הערוץ נכשל', { cause: error });
 }
 
 // Admin toggle for the live-dial gate (app_settings.voximplant_live_calls). This
@@ -206,7 +206,7 @@ export async function updateVoximplantLiveCalls(enabled: boolean): Promise<void>
     .from('app_settings')
     .update({ voximplant_live_calls: enabled })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מתג השיחות החיות נכשל');
+  if (error) throw new Error('עדכון מתג השיחות החיות נכשל', { cause: error });
 }
 
 // Per-persona kill switches — one combined rule_id+enabled write
@@ -235,7 +235,7 @@ export async function updateMeetingConfirmChannel(
       voximplant_meeting_confirm_rule_id: input.ruleId.trim() || null,
     })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון הגדרות סוכן אישור הפגישה נכשל');
+  if (error) throw new Error('עדכון הגדרות סוכן אישור הפגישה נכשל', { cause: error });
 }
 
 export async function updateSalesCallChannel(
@@ -250,7 +250,7 @@ export async function updateSalesCallChannel(
       voximplant_sales_call_rule_id: input.ruleId.trim() || null,
     })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון הגדרות סוכן סגירת המכירה נכשל');
+  if (error) throw new Error('עדכון הגדרות סוכן סגירת המכירה נכשל', { cause: error });
 }
 
 // Admin toggle for the AI-call CONSENT gate (call_compliance_settings.call_consent_required).
@@ -266,7 +266,7 @@ export async function updateCallConsentRequired(required: boolean): Promise<void
     .from('call_compliance_settings')
     .update({ call_consent_required: required, updated_at: new Date().toISOString() })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מתג ההסכמה נכשל');
+  if (error) throw new Error('עדכון מתג ההסכמה נכשל', { cause: error });
 }
 
 // ---------------------------------------------------------------------------

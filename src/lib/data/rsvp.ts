@@ -126,7 +126,7 @@ export async function getRsvpByToken(token: string): Promise<RsvpView | null> {
     _token: token,
   });
   if (error) {
-    throw new Error('טעינת אישור ההגעה נכשלה');
+    throw new Error('טעינת אישור ההגעה נכשלה', { cause: error });
   }
   if (data == null) return null;
   // Documented boundary cast: the RPC returns `Json`; its concrete shape is
@@ -155,7 +155,7 @@ export async function getEventAttendeesPublic(
     _token: token,
   });
   if (error) {
-    throw new Error('טעינת רשימת המגיעים נכשלה');
+    throw new Error('טעינת רשימת המגיעים נכשלה', { cause: error });
   }
   return (data ?? []) as unknown as RsvpAttendee[];
 }
@@ -183,7 +183,7 @@ export async function submitRsvp(
     _call_consent: input.call_consent ?? false,
   });
   if (error) {
-    throw new Error('שליחת אישור ההגעה נכשלה');
+    throw new Error('שליחת אישור ההגעה נכשלה', { cause: error });
   }
 
   const result = (data ?? {}) as {

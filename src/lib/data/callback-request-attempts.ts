@@ -106,7 +106,7 @@ export async function listCallbackDispatchAttemptsBySlot(
     .eq('scheduled_at_snapshot', scheduledAtSnapshot)
     .eq('issued_via', 'dispatch')
     .order('created_at', { ascending: false });
-  if (error) throw new Error('טעינת ניסיונות שיחת האישור נכשלה');
+  if (error) throw new Error('טעינת ניסיונות שיחת האישור נכשלה', { cause: error });
   return data ?? [];
 }
 
@@ -132,7 +132,7 @@ export async function recordCallbackDialConfirmed(
     .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום אימות החיוג נכשל');
+  if (error) throw new Error('רישום אימות החיוג נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -153,7 +153,7 @@ async function recordDispatchOutcome(
     .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום תוצאת השיגור נכשל');
+  if (error) throw new Error('רישום תוצאת השיגור נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -210,7 +210,7 @@ export async function recordCallbackDispatchConcluded(
     .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום סיום השיחה נכשל');
+  if (error) throw new Error('רישום סיום השיחה נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -230,7 +230,7 @@ export async function setCallbackAttemptElConversationId(
     .eq('id', id)
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום מזהה השיחה נכשל');
+  if (error) throw new Error('רישום מזהה השיחה נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -355,7 +355,7 @@ export async function getCallbackVoiceContextByAccessToken(
     .select(VOICE_CTX_SELECT)
     .eq('access_token', accessToken)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   if (!attempt) return null;
 
   const { data: request, error: reqErr } = await admin
@@ -363,7 +363,7 @@ export async function getCallbackVoiceContextByAccessToken(
     .select('full_name, topic, status, scheduled_at, calendar_item_id')
     .eq('id', attempt.callback_request_id)
     .maybeSingle();
-  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה');
+  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה', { cause: reqErr });
   if (!request) return null;
 
   return { attempt, request };
@@ -381,7 +381,7 @@ export async function getCallbackAttemptByAccessToken(
     .select('id, callback_request_id, token_expires_at')
     .eq('access_token', accessToken)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   return data ?? null;
 }
 
@@ -403,7 +403,7 @@ export async function getCallbackRequestForAttempt(attemptId: string): Promise<{
     .select('callback_request_id')
     .eq('id', attemptId)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   if (!attempt) return null;
 
   const { data: request, error: reqErr } = await admin
@@ -411,7 +411,7 @@ export async function getCallbackRequestForAttempt(attemptId: string): Promise<{
     .select('full_name, phone, topic')
     .eq('id', attempt.callback_request_id)
     .maybeSingle();
-  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה');
+  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה', { cause: reqErr });
   if (!request) return null;
 
   return {
@@ -441,6 +441,6 @@ export async function claimCallbackVoiceOutcome(
     .eq('confirmation_call_status', 'not_sent')
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום תוצאת השיחה נכשל');
+  if (error) throw new Error('רישום תוצאת השיחה נכשל', { cause: error });
   return { applied: data !== null };
 }

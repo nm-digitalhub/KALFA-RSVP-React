@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { insertWebhookEvents } from '@/lib/data/webhooks';
+import { errorDetail } from '@/lib/error-detail';
 import { processCallRsvp } from '@/lib/data/call-result-processing';
 import { guardAgentToolRequest } from '@/lib/voximplant/agent-tool-guard';
 import type { TablesInsert } from '@/lib/supabase/types';
@@ -47,6 +48,14 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
 const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
 
+// A failure in either stage is logged with its cause (errorDetail: the Supabase/
+// Postgres code behind the data layer's Hebrew message) and the attempt id — never
+// the token or the answer. Without it a persist failure left no trace at all, and
+// a sync failure the drain later recovered from was invisible.
+function logStageFailure(stage: 'persist' | 'sync_apply', attemptId: string, error: unknown): void {
+  console.error('[vox-rsvp] save_rsvp stage failed', { stage, attemptId, detail: errorDetail(error) });
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
@@ -83,7 +92,9 @@ export async function POST(
       payload: body as unknown as Json,
     };
     await insertWebhookEvents([row]);
-  } catch {
+  } catch (error) {
+    // Nothing stored and no drain behind it: this log line is the only record.
+    logStageFailure('persist', attemptId, error);
     return bad(500); // nothing stored — a non-200, which the scenario answers to the agent as 'error'
   }
 
@@ -105,8 +116,10 @@ export async function POST(
     const outcome = await processCallRsvp(attemptId, body);
     applyStatus = outcome.status;
     if (outcome.status === 'rejected') reason = outcome.reason;
-  } catch {
-    // Thrown = transient (RPC/transport). The durable row drives the retry.
+  } catch (error) {
+    // Thrown = transient (RPC/transport). The durable row drives the retry, so
+    // the answer stays 'queued'; the failure itself is logged.
+    logStageFailure('sync_apply', attemptId, error);
     applyStatus = 'queued';
   }
 

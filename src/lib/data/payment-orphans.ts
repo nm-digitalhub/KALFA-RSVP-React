@@ -126,7 +126,7 @@ async function sweepPendingOperations(admin: AdminClient, now: Date): Promise<Om
     .eq('outcome', 'pending')
     .lt('recorded_at', cutoff);
   // Thrown, not "0 found": a sweep that cannot read must look failed so the job is retried and shows up in the queue.
-  if (error) throw new Error('סריקת פעולות התשלום התקועות נכשלה');
+  if (error) throw new Error('סריקת פעולות התשלום התקועות נכשלה', { cause: error });
 
   const rows: PendingRow[] = data ?? [];
   const sweptRows: PendingRow[] = [];

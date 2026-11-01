@@ -45,7 +45,7 @@ export async function requireOwnedEvent(eventId: string): Promise<OwnedEvent> {
     .eq('owner_id', user.id)
     .maybeSingle();
   if (error) {
-    throw new Error('טעינת האירוע נכשלה');
+    throw new Error('טעינת האירוע נכשלה', { cause: error });
   }
   if (!data) {
     notFound();
@@ -89,7 +89,7 @@ export async function requireEventAccess(
     .eq('id', eventId)
     .maybeSingle();
   if (error) {
-    throw new Error('טעינת האירוע נכשלה');
+    throw new Error('טעינת האירוע נכשלה', { cause: error });
   }
   if (!data) {
     notFound();
@@ -135,7 +135,7 @@ export async function listEvents(
     .range(offset, offset + limit - 1);
 
   if (error) {
-    throw new Error('טעינת האירועים נכשלה');
+    throw new Error('טעינת האירועים נכשלה', { cause: error });
   }
 
   return data ?? [];
@@ -294,7 +294,7 @@ export async function getEvent(eventId: string): Promise<EventDetail> {
     .maybeSingle();
 
   if (error) {
-    throw new Error('טעינת האירוע נכשלה');
+    throw new Error('טעינת האירוע נכשלה', { cause: error });
   }
   if (!data) {
     notFound();
@@ -347,11 +347,11 @@ export interface UpdateEventInput {
 // remove / re-type" invariants — the guards a user can reach through ENABLED UI,
 // exported so the action surfaces the actionable message, not the generic text.
 export const CELEBRANTS_LOCKED_ERROR =
-  'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד קיים קמפיין אישורי הגעה בתהליך — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.';
+  'לא ניתן להשאיר את פרטי בעלי השמחה חסרים כל עוד שירות אישורי ההגעה בתהליך — הם מופיעים בהזמנות ובתזכורות. השלימו את השדות המסומנים ונסו שוב.';
 export const EVENT_TYPE_LOCKED_ERROR =
-  'לא ניתן לשנות את סוג האירוע כל עוד קיים קמפיין אישורי הגעה בתהליך.';
+  'לא ניתן לשנות את סוג האירוע כל עוד שירות אישורי ההגעה בתהליך.';
 export const VENUE_REQUIRED_WHILE_CAMPAIGN_ERROR =
-  'לא ניתן להשאיר את המיקום ריק כל עוד קיים קמפיין אישורי הגעה בתהליך — המיקום מופיע בהזמנות ובתזכורות.';
+  'לא ניתן להשאיר את המיקום ריק כל עוד שירות אישורי ההגעה בתהליך — המיקום מופיע בהזמנות ובתזכורות.';
 
 // Update an event the current user may edit — the OWNER or an org member holding
 // events.edit. The org-aware gate (requireEventAccess → can_access_event) runs
@@ -382,7 +382,7 @@ async function hasOutboundSend(
     .eq('direction', 'out')
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('בדיקת מצב השליחה נכשלה');
+  if (error) throw new Error('בדיקת מצב השליחה נכשלה', { cause: error });
   return data !== null;
 }
 
@@ -541,7 +541,7 @@ export async function publishEvent(eventId: string): Promise<void> {
     .eq('status', 'draft');
 
   if (error) {
-    throw new Error('אישור פרטי האירוע נכשל');
+    throw new Error('אישור פרטי האירוע נכשל', { cause: error });
   }
 
   await logActivity({ eventId, action: 'event.published', meta: {} });

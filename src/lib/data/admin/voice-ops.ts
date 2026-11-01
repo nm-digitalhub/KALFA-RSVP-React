@@ -579,6 +579,6 @@ export async function listCallRecordings(limit = 100): Promise<CallRecordingRow[
     )
     .order('created_at', { ascending: false })
     .limit(Math.min(Math.max(limit, 1), 200));
-  if (error) throw new Error('טעינת ההקלטות נכשלה');
+  if (error) throw new Error('טעינת ההקלטות נכשלה', { cause: error });
   return (data ?? []) as CallRecordingRow[];
 }

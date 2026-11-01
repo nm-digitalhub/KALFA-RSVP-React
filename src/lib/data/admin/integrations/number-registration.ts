@@ -146,7 +146,7 @@ async function reserveRegistrationBudget(
   });
 
   if (error) {
-    throw new Error('לא ניתן לרשום את ניסיון הרישום ביומן — הפעולה נעצרה');
+    throw new Error('לא ניתן לרשום את ניסיון הרישום ביומן — הפעולה נעצרה', { cause: error });
   }
 }
 

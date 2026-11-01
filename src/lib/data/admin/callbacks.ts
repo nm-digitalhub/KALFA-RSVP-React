@@ -499,7 +499,7 @@ async function loadAiCallsForCallbacks(
     .select(AI_CALL_EMBED)
     .in('id', ids);
 
-  if (error) throw new Error('טעינת שיחות ה-AI נכשלה');
+  if (error) throw new Error('טעינת שיחות ה-AI נכשלה', { cause: error });
 
   for (const rawRow of Array.isArray(data) ? (data as unknown[]) : []) {
     if (!rawRow || typeof rawRow !== 'object') continue;
@@ -696,7 +696,7 @@ export async function getCallbackRequest(
     .eq('id', id)
     .maybeSingle();
 
-  if (error) throw new Error('טעינת בקשת החזרה נכשלה');
+  if (error) throw new Error('טעינת בקשת החזרה נכשלה', { cause: error });
   if (!data) return null;
 
   const [salesByCallback, audit] = await Promise.all([
@@ -733,7 +733,7 @@ export async function getCallbackRequestByCalendarItem(
     .eq('calendar_item_id', calendarItemId)
     .maybeSingle();
 
-  if (error) throw new Error('טעינת בקשת החזרה נכשלה');
+  if (error) throw new Error('טעינת בקשת החזרה נכשלה', { cause: error });
   if (!data) return null;
 
   const salesByCallback = await loadAiCallsForCallbacks(supabase, [data.id]);
@@ -759,7 +759,7 @@ export async function listCallbackRequests(
     .range(from, to);
 
   if (error) {
-    throw new Error('טעינת בקשות החזרה נכשלה');
+    throw new Error('טעינת בקשות החזרה נכשלה', { cause: error });
   }
 
   const rows = data ?? [];
@@ -799,7 +799,7 @@ export async function cancelCallback(id: string): Promise<CancelCallbackResult> 
     .maybeSingle();
 
   if (currentError) {
-    throw new Error('ביטול הבקשה נכשל');
+    throw new Error('ביטול הבקשה נכשל', { cause: currentError });
   }
 
   // A terminal request is REFUSED here, on the server — the hidden button in
@@ -830,7 +830,7 @@ export async function cancelCallback(id: string): Promise<CancelCallbackResult> 
     .not('status', 'in', `(${CALLBACK_TERMINAL_STATUSES.join(',')})`);
 
   if (error) {
-    throw new Error('ביטול הבקשה נכשל');
+    throw new Error('ביטול הבקשה נכשל', { cause: error });
   }
   // Lost that race: the request went terminal after the read. Report it as
   // what it now is, and do NOT archive the appointment or log a cancellation
@@ -878,7 +878,7 @@ export async function updateCallOutcome(
     .maybeSingle();
 
   if (currentError) {
-    throw new Error('עדכון תוצאת השיחה נכשל');
+    throw new Error('עדכון תוצאת השיחה נכשל', { cause: currentError });
   }
 
   const result = await applyCallOutcome(id, callOutcome);

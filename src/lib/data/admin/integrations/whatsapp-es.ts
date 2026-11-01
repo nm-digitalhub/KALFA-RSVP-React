@@ -390,7 +390,7 @@ export async function listEsConnections(): Promise<EsConnectionRow[]> {
     .select('label, status, created_at, metadata')
     .eq('provider', ES_PROVIDER)
     .order('created_at', { ascending: false });
-  if (error) throw new Error('טעינת חיבורי WhatsApp נכשלה');
+  if (error) throw new Error('טעינת חיבורי WhatsApp נכשלה', { cause: error });
 
   return (data ?? []).map((row) => {
     const meta = (row.metadata ?? {}) as Partial<EsConnectionMeta>;

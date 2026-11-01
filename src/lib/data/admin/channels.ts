@@ -37,7 +37,7 @@ export async function getWhatsAppChannelConfig(): Promise<WhatsAppChannelConfig>
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (error) throw new Error('טעינת הגדרות הערוץ נכשלה');
+  if (error) throw new Error('טעינת הגדרות הערוץ נכשלה', { cause: error });
 
   const phoneNumberId = data?.whatsapp_phone_number_id ?? '';
   const accessToken = data?.whatsapp_access_token ?? '';
@@ -77,7 +77,7 @@ export async function updateWhatsAppConsentRequired(
     .from('app_settings')
     .update({ whatsapp_consent_required: required })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מתג ההסכמה לוואטסאפ נכשל');
+  if (error) throw new Error('עדכון מתג ההסכמה לוואטסאפ נכשל', { cause: error });
 }
 
 export type UpdateWhatsAppChannelInput = {
@@ -105,7 +105,7 @@ export async function updateWhatsAppChannelConfig(
       whatsapp_verify_token: input.whatsapp_verify_token || null,
     })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון הגדרות הערוץ נכשל');
+  if (error) throw new Error('עדכון הגדרות הערוץ נכשל', { cause: error });
 }
 
 export type ConnectionTestResult = { ok: boolean; message: string };

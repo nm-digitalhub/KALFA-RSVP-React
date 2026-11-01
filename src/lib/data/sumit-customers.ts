@@ -44,7 +44,7 @@ export async function getSumitCustomerId(userId: string): Promise<number | null>
 // through this reader, after the caller has verified whose account it is.
 export async function readSumitCustomerNumber(userId: string): Promise<number | null> {
   const { data, error } = await selectCustomerNumber(userId);
-  if (error) throw new Error('טעינת מספר הלקוח נכשלה');
+  if (error) throw new Error('טעינת מספר הלקוח נכשלה', { cause: error });
   return data ? Number(data.sumit_customer_id) : null;
 }
 

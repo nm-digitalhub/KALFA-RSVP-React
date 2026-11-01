@@ -62,7 +62,7 @@ export async function listPlatformRoles(): Promise<PlatformRoleDTO[]> {
     .select('id, name, label, description, is_owner_role, rank, sort_order')
     .order('rank', { ascending: false })
     .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת התפקידים נכשלה');
+  if (error) throw new Error('טעינת התפקידים נכשלה', { cause: error });
   return (data ?? []).map((r) => ({
     id: r.id,
     name: r.name,
@@ -83,7 +83,7 @@ export async function listPlatformPermissions(): Promise<PlatformPermissionDTO[]
     .from('platform_permission_definitions')
     .select('id, key, label, category, sort_order')
     .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת ההרשאות נכשלה');
+  if (error) throw new Error('טעינת ההרשאות נכשלה', { cause: error });
   return (data ?? []).map((p) => ({
     id: p.id,
     key: p.key,
@@ -104,7 +104,7 @@ export async function getRolePermissionMatrix(): Promise<RolePermissionMatrix> {
   const { data, error } = await admin
     .from('platform_role_permissions')
     .select('role_id, permission_id');
-  if (error) throw new Error('טעינת מטריצת ההרשאות נכשלה');
+  if (error) throw new Error('טעינת מטריצת ההרשאות נכשלה', { cause: error });
 
   const granted: Record<string, string[]> = {};
   for (const role of roles) granted[role.id] = [];
@@ -124,7 +124,7 @@ export async function getUserStaffRoleId(userId: string): Promise<string | null>
     .select('role_id')
     .eq('user_id', userId)
     .maybeSingle();
-  if (error) throw new Error('טעינת תפקיד הצוות נכשלה');
+  if (error) throw new Error('טעינת תפקיד הצוות נכשלה', { cause: error });
   return data?.role_id ?? null;
 }
 
@@ -167,14 +167,14 @@ export async function setRolePermission(
     const { error } = await admin
       .from('platform_role_permissions')
       .upsert({ role_id: roleId, permission_id: permissionId }, { onConflict: 'role_id,permission_id' });
-    if (error) throw new Error('עדכון ההרשאה נכשל');
+    if (error) throw new Error('עדכון ההרשאה נכשל', { cause: error });
   } else {
     const { error } = await admin
       .from('platform_role_permissions')
       .delete()
       .eq('role_id', roleId)
       .eq('permission_id', permissionId);
-    if (error) throw new Error('עדכון ההרשאה נכשל');
+    if (error) throw new Error('עדכון ההרשאה נכשל', { cause: error });
   }
 
   await logActivity({
@@ -272,7 +272,7 @@ export async function getUserConsoleAgent(userId: string): Promise<ConsoleAgentD
     .select('display_name, vox_username, vox_active')
     .eq('user_id', userId)
     .maybeSingle();
-  if (error) throw new Error('טעינת חברות המוקד נכשלה');
+  if (error) throw new Error('טעינת חברות המוקד נכשלה', { cause: error });
   if (!data) return null;
 
   // A username alone is NOT proof of provisioning — console_agents carried one
@@ -339,7 +339,7 @@ export async function enrollConsoleAgent(
       .from('console_agents')
       .update({ display_name: displayName })
       .eq('user_id', userId);
-    if (error) throw new Error('עדכון נציג המוקד נכשל');
+    if (error) throw new Error('עדכון נציג המוקד נכשל', { cause: error });
     await logActivity({
       action: 'admin.console_agent.display_name_updated',
       meta: { targetUserId: userId },
@@ -424,7 +424,7 @@ export async function removeConsoleAgent(
   }
 
   const { error } = await admin.from('console_agents').delete().eq('user_id', userId);
-  if (error) throw new Error('הסרת נציג המוקד נכשלה');
+  if (error) throw new Error('הסרת נציג המוקד נכשלה', { cause: error });
 
   await logActivity({
     action: 'admin.console_agent.removed',
@@ -541,7 +541,7 @@ export async function assignStaffRole(userId: string, roleId: string): Promise<v
   const { error } = await admin
     .from('platform_staff')
     .upsert({ user_id: userId, role_id: roleId, granted_by: actor.id }, { onConflict: 'user_id' });
-  if (error) throw new Error('הקצאת התפקיד נכשלה');
+  if (error) throw new Error('הקצאת התפקיד נכשלה', { cause: error });
 
   await logActivity({
     action: 'admin.platform_staff.role_assigned',

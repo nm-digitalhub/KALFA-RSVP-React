@@ -20,6 +20,6 @@ export async function purchaseProviderOf(campaignId: string): Promise<PurchasePr
     .eq('outcome', 'succeeded')
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error('טעינת פעולות התשלום נכשלה');
+  if (error) throw new Error('טעינת פעולות התשלום נכשלה', { cause: error });
   return data?.provider === 'cardcom' ? 'cardcom' : 'sumit';
 }

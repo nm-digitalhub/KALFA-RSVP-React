@@ -28,7 +28,7 @@ export async function fillAuthorizedSet(eventId: string, campaignId: string, act
     p_campaign: campaignId,
     p_actor: actor,
   });
-  if (error) throw new Error('מילוי רשימת אנשי הקשר נכשל');
+  if (error) throw new Error('מילוי רשימת אנשי הקשר נכשל', { cause: error });
   const parsed = fillResultSchema.safeParse(data);
   if (!parsed.success) throw new Error('מילוי רשימת אנשי הקשר החזיר תשובה לא מוכרת');
   return parsed.data;

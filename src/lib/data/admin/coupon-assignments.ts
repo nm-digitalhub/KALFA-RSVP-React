@@ -111,7 +111,7 @@ export async function createStaffAssignment({
     .select('id, kind, value, validity_days, allow_staff, is_active, offer_packages(package_id, value_override)')
     .eq('id', offerId)
     .maybeSingle();
-  if (offerError) throw new Error('טעינת ההצעה נכשלה');
+  if (offerError) throw new Error('טעינת ההצעה נכשלה', { cause: offerError });
   const offer = offerRow as OfferRow | null;
   if (!offer || !offer.is_active) throw new Error('ההצעה אינה פעילה');
   if (!offer.allow_staff) throw new Error('ההצעה אינה מוקצית על ידי צוות');
@@ -394,7 +394,7 @@ export async function listStaffAssignments(
       _page: page,
       _page_size: LIST_PAGE_SIZE,
     });
-    if (error) throw new Error('טעינת ההטבות נכשלה');
+    if (error) throw new Error('טעינת ההטבות נכשלה', { cause: error });
     return (data ?? []) as ListRpcRow[];
   };
 
@@ -470,7 +470,7 @@ export async function findAccountByEmail(
   const needle = email.trim();
   if (!needle) return null;
   const { data, error } = await admin.rpc('admin_lookup_account_by_email', { _email: needle });
-  if (error) throw new Error('חיפוש החשבון נכשל');
+  if (error) throw new Error('חיפוש החשבון נכשל', { cause: error });
   const hit = (data ?? [])[0] as { id: string; email: string; full_name: string | null } | undefined;
   return hit ? { id: hit.id, email: hit.email, name: hit.full_name } : null;
 }
@@ -677,7 +677,7 @@ export async function getStaffAssignmentDetail(id: string): Promise<StaffAssignm
     )
     .eq('id', id)
     .maybeSingle();
-  if (error) throw new Error('טעינת ההטבה נכשלה');
+  if (error) throw new Error('טעינת ההטבה נכשלה', { cause: error });
   if (!data) return null;
   type BaseRow = {
     id: string; created_at: string; expires_at: string; state: string; kind: string; value: number;

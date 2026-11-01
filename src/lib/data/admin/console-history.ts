@@ -59,7 +59,7 @@ export async function listConsoleCalls(
   if (filter.status) query = query.eq('status', filter.status);
 
   const { data, count, error } = await query;
-  if (error) throw new Error('טעינת היסטוריית השיחות נכשלה');
+  if (error) throw new Error('טעינת היסטוריית השיחות נכשלה', { cause: error });
   const rows = (data ?? []) as Array<{
     id: string;
     direction: string;

@@ -41,7 +41,7 @@ async function isOurDocument(documentNumber: number, typeName: string, terminal:
     .eq('provider_document_number', documentNumber);
   if (terminal !== null) query = query.eq('provider_terminal', terminal);
   const { data: rows, error } = await query;
-  if (error) throw new Error('בדיקת מסמך CardCom מול ספר התשלומים נכשלה');
+  if (error) throw new Error('בדיקת מסמך CardCom מול ספר התשלומים נכשלה', { cause: error });
   if ((rows ?? []).some((r) => r.provider_document_type === typeName)) return true;
 
   const parentIds = (rows ?? []).flatMap((r) =>
@@ -52,7 +52,7 @@ async function isOurDocument(documentNumber: number, typeName: string, terminal:
     .from('payment_operations')
     .select('provider_document_type')
     .in('id', parentIds);
-  if (parentError) throw new Error('בדיקת מסמך CardCom מול ספר התשלומים נכשלה');
+  if (parentError) throw new Error('בדיקת מסמך CardCom מול ספר התשלומים נכשלה', { cause: parentError });
   return (parents ?? []).some((p) => refundDocumentFor(p.provider_document_type)?.answered === typeName);
 }
 

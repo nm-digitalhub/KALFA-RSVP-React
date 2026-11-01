@@ -319,7 +319,7 @@ export async function listGuests(
     .range(offset, offset + pageSize - 1);
 
   if (error) {
-    throw new Error('טעינת המוזמנים נכשלה');
+    throw new Error('טעינת המוזמנים נכשלה', { cause: error });
   }
 
   // Documented boundary cast (repo pattern, same as the RPC casts): the select
@@ -420,7 +420,7 @@ export async function getGuest(
     .maybeSingle();
 
   if (error) {
-    throw new Error('טעינת המוזמן נכשלה');
+    throw new Error('טעינת המוזמן נכשלה', { cause: error });
   }
   return data;
 }
@@ -509,7 +509,7 @@ export async function countGuestsMissingExpectedCount(eventId: string): Promise<
     .eq('event_id', eventId)
     .is('expected_count', null);
   if (error) {
-    throw new Error('ספירת המוזמנים ללא כמות נכשלה');
+    throw new Error('ספירת המוזמנים ללא כמות נכשלה', { cause: error });
   }
   return count ?? 0;
 }
@@ -540,7 +540,7 @@ export async function fillMissingExpectedCount(
     .is('expected_count', null)
     .select('id');
   if (error) {
-    throw new Error('עדכון כמות המוזמנים נכשל');
+    throw new Error('עדכון כמות המוזמנים נכשל', { cause: error });
   }
   return data?.length ?? 0;
 }
@@ -629,7 +629,7 @@ export async function deleteGuest(
     .eq('id', guestId);
 
   if (error) {
-    throw new Error('מחיקת המוזמן נכשלה');
+    throw new Error('מחיקת המוזמן נכשלה', { cause: error });
   }
 
   // P0-1 (A6): reconcile the campaign set BEFORE pruning — the RPC decides
@@ -670,7 +670,7 @@ export async function updateContactStatus(
     .eq('id', guestId);
 
   if (error) {
-    throw new Error('עדכון סטטוס יצירת הקשר נכשל');
+    throw new Error('עדכון סטטוס יצירת הקשר נכשל', { cause: error });
   }
 
   await logActivity({
@@ -700,7 +700,7 @@ export async function listGroups(eventId: string): Promise<GuestGroup[]> {
     .order('name', { ascending: true });
 
   if (error) {
-    throw new Error('טעינת הקבוצות נכשלה');
+    throw new Error('טעינת הקבוצות נכשלה', { cause: error });
   }
   return data ?? [];
 }
@@ -746,7 +746,7 @@ export async function countGuests(eventId: string): Promise<number> {
     .from('guests')
     .select('id', { count: 'exact', head: true })
     .eq('event_id', eventId);
-  if (error) throw new Error('טעינת מונה המוזמנים נכשלה');
+  if (error) throw new Error('טעינת מונה המוזמנים נכשלה', { cause: error });
   return count ?? 0;
 }
 
@@ -847,7 +847,7 @@ export async function deleteGroup(
     .eq('id', groupId);
 
   if (error) {
-    throw new Error('מחיקת הקבוצה נכשלה');
+    throw new Error('מחיקת הקבוצה נכשלה', { cause: error });
   }
 
   await logActivity({

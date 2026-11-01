@@ -49,7 +49,7 @@ export async function getAppSettings(): Promise<AppSettings> {
     .maybeSingle();
 
   if (error) {
-    throw new Error('טעינת ההגדרות נכשלה');
+    throw new Error('טעינת ההגדרות נכשלה', { cause: error });
   }
 
   return {
@@ -124,7 +124,7 @@ export async function updateAppSettings(
     .eq('id', SETTINGS_ID);
 
   if (error) {
-    throw new Error('עדכון ההגדרות נכשל');
+    throw new Error('עדכון ההגדרות נכשל', { cause: error });
   }
 }
 
@@ -217,7 +217,7 @@ export async function setExchangeConnectionMode(
     .from('app_settings')
     .update({ exchange_connection_mode: mode })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון מצב הבעלות של Exchange נכשל');
+  if (error) throw new Error('עדכון מצב הבעלות של Exchange נכשל', { cause: error });
 }
 
 // Infra config that legitimately stays in env (not editable via the form): the
@@ -277,7 +277,7 @@ export async function getSumitCredentials(): Promise<SumitCredentials> {
     .select('sumit_company_id, sumit_api_public_key, sumit_api_key')
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (error) throw new Error('טעינת פרטי SUMIT נכשלה');
+  if (error) throw new Error('טעינת פרטי SUMIT נכשלה', { cause: error });
   return {
     sumit_company_id: data?.sumit_company_id ?? '',
     sumit_api_public_key: data?.sumit_api_public_key ?? '',
@@ -302,7 +302,7 @@ export async function updateSumitCredentials(input: {
       sumit_api_key: input.sumit_api_key || null,
     })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון פרטי SUMIT נכשל');
+  if (error) throw new Error('עדכון פרטי SUMIT נכשל', { cause: error });
 }
 
 export type ExtraSmsConfig = {
@@ -324,7 +324,7 @@ export async function getExtraSmsConfig(): Promise<ExtraSmsConfig> {
     )
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (error) throw new Error('טעינת הגדרות ה-SMS נכשלה');
+  if (error) throw new Error('טעינת הגדרות ה-SMS נכשלה', { cause: error });
   return {
     sms_enabled: data?.sms_enabled ?? false,
     extra_sms_sender: data?.extra_sms_sender ?? '',
@@ -355,7 +355,7 @@ export async function updateExtraSmsConfig(input: {
       callback_intake_sms_daily_cap: input.callback_intake_sms_daily_cap,
     })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון הגדרות ה-SMS נכשל');
+  if (error) throw new Error('עדכון הגדרות ה-SMS נכשל', { cause: error });
 }
 
 export type EmailTransportConfig = {
@@ -378,7 +378,7 @@ export async function getEmailTransportConfig(): Promise<EmailTransportConfig> {
     .select('email_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_password, smtp_from')
     .eq('id', SETTINGS_ID)
     .maybeSingle();
-  if (error) throw new Error('טעינת הגדרות הדואר נכשלה');
+  if (error) throw new Error('טעינת הגדרות הדואר נכשלה', { cause: error });
   return {
     email_enabled: data?.email_enabled ?? false,
     smtp_host: data?.smtp_host ?? '',
@@ -419,5 +419,5 @@ export async function updateEmailTransportConfig(input: {
       smtp_from: input.smtp_from || null,
     })
     .eq('id', SETTINGS_ID);
-  if (error) throw new Error('עדכון הגדרות הדואר נכשל');
+  if (error) throw new Error('עדכון הגדרות הדואר נכשל', { cause: error });
 }

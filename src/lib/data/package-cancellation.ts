@@ -3,7 +3,6 @@
 // src/lib/payments/package-refund.ts.
 
 import type { PackageRefundRefusal } from '@/lib/payments/package-refund-types';
-import type { FormState } from '@/lib/validation/result';
 
 const toCents = (n: number) => Math.round(n * 100);
 
@@ -115,5 +114,3 @@ export class CancellationResolveError extends Error {
   }
 }
 
-// The resolve form's state: the shared FormState plus, after a failed resolve, whether approving again is safe.
-export type ResolveFormState = (NonNullable<FormState> & { retry?: RetryAdvice }) | null;

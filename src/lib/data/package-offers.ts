@@ -46,7 +46,7 @@ export async function listPackageOffers(): Promise<PackageOffer[]> {
     .eq('active', true)
     .not('contact_quota', 'is', null)
     .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת החבילות נכשלה');
+  if (error) throw new Error('טעינת החבילות נכשלה', { cause: error });
   return (data ?? [])
     .filter(
       (p) =>

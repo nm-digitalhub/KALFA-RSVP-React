@@ -49,7 +49,7 @@ export async function listAllFaqItems(): Promise<AdminFaqItem[]> {
     .select('id, item_key, category, question, answer, sort_order, published, is_structural')
     .order('category', { ascending: true })
     .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת השאלות הנפוצות נכשלה');
+  if (error) throw new Error('טעינת השאלות הנפוצות נכשלה', { cause: error });
   return (data ?? []) as AdminFaqItem[];
 }
 
@@ -74,7 +74,7 @@ export async function createFaqItem(input: CreateFaqItemInput): Promise<void> {
     sort_order: input.sort_order,
     published: input.published,
   });
-  if (error) throw new Error('יצירת השאלה נכשלה');
+  if (error) throw new Error('יצירת השאלה נכשלה', { cause: error });
 }
 
 export type UpdateFaqItemInput = {
@@ -118,7 +118,7 @@ export async function updateFaqItem(input: UpdateFaqItemInput): Promise<void> {
     published: isProtected ? true : input.published,
   };
   const { error } = await supabase.from('faq_items').update(patch).eq('id', input.id);
-  if (error) throw new Error('עדכון השאלה נכשל');
+  if (error) throw new Error('עדכון השאלה נכשל', { cause: error });
 
   if (existing.is_structural) {
     await logActivity({
@@ -145,5 +145,5 @@ export async function deleteFaqItem(id: string): Promise<void> {
   }
 
   const { error } = await supabase.from('faq_items').delete().eq('id', id);
-  if (error) throw new Error('מחיקת השאלה נכשלה');
+  if (error) throw new Error('מחיקת השאלה נכשלה', { cause: error });
 }

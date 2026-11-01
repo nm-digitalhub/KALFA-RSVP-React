@@ -69,7 +69,7 @@ export async function listWorkflows(): Promise<WorkflowSummary[]> {
     .select('id, name, event_id, is_active, version, updated_at')
     .order('updated_at', { ascending: false });
 
-  if (error) throw new Error('טעינת התהליכים נכשלה');
+  if (error) throw new Error('טעינת התהליכים נכשלה', { cause: error });
 
   return (data ?? []).map((row) => ({
     id: row.id,
@@ -91,7 +91,7 @@ export async function getWorkflow(id: string): Promise<WorkflowDetail | null> {
     .eq('id', id)
     .maybeSingle();
 
-  if (error) throw new Error('טעינת התהליך נכשלה');
+  if (error) throw new Error('טעינת התהליך נכשלה', { cause: error });
   if (!data) return null;
 
   return {
@@ -148,7 +148,7 @@ export async function createWorkflow(name: string): Promise<string> {
     .select('id')
     .single();
 
-  if (error) throw new Error('יצירת התהליך נכשלה');
+  if (error) throw new Error('יצירת התהליך נכשלה', { cause: error });
   return data.id;
 }
 
@@ -205,7 +205,7 @@ export async function saveWorkflowDefinition(
     .eq('version', current.data.version)
     .select('id');
 
-  if (error) throw new Error('שמירת התהליך נכשלה');
+  if (error) throw new Error('שמירת התהליך נכשלה', { cause: error });
   if ((updated?.length ?? 0) === 0) {
     throw new Error('התהליך נערך במקביל. רעננו את הדף לפני שמירה נוספת.');
   }
@@ -296,7 +296,7 @@ export async function setWorkflowActive(
       .from('workflows')
       .update({ is_active: true })
       .eq('id', id);
-    if (armError) throw new Error('עדכון מצב התהליך נכשל');
+    if (armError) throw new Error('עדכון מצב התהליך נכשל', { cause: armError });
 
     // AFTER the workflow is armed, and deliberately in that order: claiming the
     // role is a convenience, and a failure in it must not leave the owner with a
@@ -314,7 +314,7 @@ export async function setWorkflowActive(
     .update({ is_active: isActive })
     .eq('id', id);
 
-  if (error) throw new Error('עדכון מצב התהליך נכשל');
+  if (error) throw new Error('עדכון מצב התהליך נכשל', { cause: error });
   // A disarmed address answers 404, and SUMIT suspends a trigger after five
   // failures — so its registration leaves SUMIT now and returns on the next arm.
   const sumitProblems = await syncSumitTriggers(id).catch(() => ['ביטול הטריגר ב-SUMIT נכשל']);
@@ -463,7 +463,7 @@ export async function deleteWorkflow(id: string): Promise<DeleteResult> {
   if (sumitProblems.length > 0) return { ok: false, errors: sumitProblems };
 
   const { error } = await supabase.from('workflows').delete().eq('id', id);
-  if (error) throw new Error('מחיקת התהליך נכשלה');
+  if (error) throw new Error('מחיקת התהליך נכשלה', { cause: error });
   return { ok: true };
 }
 
@@ -515,7 +515,7 @@ export async function cancelRun(runId: string): Promise<CancelRunResult> {
     .in('status', ['pending', 'waiting'])
     .select('id');
 
-  if (error) throw new Error('ביטול ההרצה נכשל');
+  if (error) throw new Error('ביטול ההרצה נכשל', { cause: error });
   if ((data ?? []).length === 0) {
     return {
       ok: false,
@@ -618,7 +618,7 @@ export async function listWorkflowRuns(
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (error) throw new Error('טעינת ההרצות נכשלה');
+  if (error) throw new Error('טעינת ההרצות נכשלה', { cause: error });
 
   return (data ?? []).map((row) => ({
     id: row.id,
@@ -666,7 +666,7 @@ export async function workflowRunsFingerprint(workflowId: string): Promise<strin
     .order('created_at', { ascending: false })
     .limit(RUNS_WINDOW);
 
-  if (error) throw new Error('בדיקת ההרצות נכשלה');
+  if (error) throw new Error('בדיקת ההרצות נכשלה', { cause: error });
 
   return runsFingerprint(data ?? []);
 }
@@ -705,7 +705,7 @@ export async function listEventsForManualRun(limit = 50): Promise<ManualRunEvent
     .order('event_date', { ascending: false })
     .limit(limit);
 
-  if (error) throw new Error('טעינת האירועים נכשלה');
+  if (error) throw new Error('טעינת האירועים נכשלה', { cause: error });
 
   return (data ?? []).map((row) => ({
     id: row.id,

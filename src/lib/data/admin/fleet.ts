@@ -248,7 +248,7 @@ export async function getFleetConversation(
       .select('id, role, created_at')
       .eq('id', focus)
       .maybeSingle();
-    if (error) throw new Error('טעינת השיחה נכשלה');
+    if (error) throw new Error('טעינת השיחה נכשלה', { cause: error });
     if (focused && focused.role === role) {
       // Anchor: the focused row and the page of history right before it.
       const anchored = await supabase
@@ -338,7 +338,7 @@ export async function getFleetRequestRole(id: string): Promise<string | null> {
   if (!uuid.safeParse(id).success) return null;
   const supabase = await createClient();
   const { data, error } = await supabase.from('fleet_requests').select('role').eq('id', id).maybeSingle();
-  if (error) throw new Error('טעינת הפנייה נכשלה');
+  if (error) throw new Error('טעינת הפנייה נכשלה', { cause: error });
   return data?.role ?? null;
 }
 
@@ -429,7 +429,7 @@ export async function createOwnerFleetContinuation(input: {
     .select('id, role, tier, title, status, payload')
     .eq('id', input.continueFrom)
     .maybeSingle();
-  if (error) throw new Error('פתיחת הפנייה נכשלה');
+  if (error) throw new Error('פתיחת הפנייה נכשלה', { cause: error });
   if (!source) throw new Error('ההודעה שאליה משיבים לא נמצאה');
   if (source.status === 'pending' && requestBodyAuthor(source.payload) === 'agent') {
     // An open agent request is answered, not continued.
@@ -445,7 +445,7 @@ export async function createOwnerFleetContinuation(input: {
       .select('title')
       .eq('id', threadRoot)
       .maybeSingle();
-    if (rootError) throw new Error('פתיחת הפנייה נכשלה');
+    if (rootError) throw new Error('פתיחת הפנייה נכשלה', { cause: rootError });
     if (rootRow?.title) rootTitle = rootRow.title;
   }
 
@@ -482,7 +482,7 @@ export async function answerFleetRequest(input: {
     .select('role, title, payload')
     .eq('id', input.id)
     .maybeSingle();
-  if (readError) throw new Error('שמירת המענה נכשלה');
+  if (readError) throw new Error('שמירת המענה נכשלה', { cause: readError });
   if (!target) throw new Error('הפנייה לא נמצאה');
   // A request the owner opened (payload.origin='owner') is a task FOR the
   // agent, not a question to the owner. Answering it flips it to `answered`
@@ -578,7 +578,7 @@ export async function getFleetGoalById(id: string): Promise<FleetGoalEntry | nul
     .select(FLEET_GOAL_COLUMNS)
     .eq('id', id)
     .maybeSingle();
-  if (error) throw new Error('טעינת המטרה נכשלה');
+  if (error) throw new Error('טעינת המטרה נכשלה', { cause: error });
   return (data ?? null) as FleetGoalEntry | null;
 }
 

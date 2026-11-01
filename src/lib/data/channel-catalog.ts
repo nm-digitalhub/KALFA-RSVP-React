@@ -30,7 +30,7 @@ export async function getChannelCatalog(): Promise<ChannelCatalogEntry[]> {
     .select('key, display_name, is_built')
     .eq('active', true)
     .order('sort_order', { ascending: true });
-  if (error) throw new Error('טעינת קטלוג הערוצים נכשלה');
+  if (error) throw new Error('טעינת קטלוג הערוצים נכשלה', { cause: error });
   return (data ?? []).map((row) => ({
     key: row.key,
     display_name: row.display_name,

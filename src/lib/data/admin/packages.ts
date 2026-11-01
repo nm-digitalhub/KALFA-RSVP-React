@@ -72,7 +72,7 @@ export async function listPackages(): Promise<AdminPackage[]> {
     .order('name', { ascending: true });
 
   if (error) {
-    throw new Error('טעינת החבילות נכשלה');
+    throw new Error('טעינת החבילות נכשלה', { cause: error });
   }
 
   return data ?? [];
@@ -90,7 +90,7 @@ export async function getPackage(id: string): Promise<AdminPackage> {
     .maybeSingle();
 
   if (error) {
-    throw new Error('טעינת החבילה נכשלה');
+    throw new Error('טעינת החבילה נכשלה', { cause: error });
   }
   if (!data) {
     notFound();
@@ -242,7 +242,7 @@ export async function getScheduleStepOptions(): Promise<ScheduleStepOption[]> {
   const { data, error } = await admin
     .from('message_templates')
     .select('message_key, channel, label, active, message_template_routes(event_type, with_media, whatsapp_message_templates(status))');
-  if (error) throw new Error('טעינת תבניות ההודעות נכשלה');
+  if (error) throw new Error('טעינת תבניות ההודעות נכשלה', { cause: error });
   return buildScheduleOptions(data ?? []);
 }
 
@@ -265,7 +265,7 @@ export async function getSuggestedSchedule(): Promise<SuggestedSchedule | null> 
     .eq('active', true)
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
-  if (error) throw new Error('טעינת החבילות נכשלה');
+  if (error) throw new Error('טעינת החבילות נכשלה', { cause: error });
 
   for (const pkg of data ?? []) {
     const parsed = z.array(outreachTouchpointSchema).safeParse(pkg.outreach_schedule);
@@ -328,7 +328,7 @@ export async function updatePackage(
   const { error } = await supabase.from('packages').update(payload).eq('id', id);
 
   if (error) {
-    throw new Error('עדכון החבילה נכשל');
+    throw new Error('עדכון החבילה נכשל', { cause: error });
   }
 
   await logActivity({

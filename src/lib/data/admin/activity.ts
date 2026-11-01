@@ -481,7 +481,7 @@ export async function listActivity(
   const { data, error, count } = await query.range(offsetFrom, offsetTo);
 
   if (error) {
-    throw new Error('טעינת היומן נכשלה');
+    throw new Error('טעינת היומן נכשלה', { cause: error });
   }
 
   return {
@@ -564,7 +564,7 @@ export async function recentActivity(limit = 5): Promise<ActivityEntry[]> {
     .range(0, safeLimit - 1);
 
   if (error) {
-    throw new Error('טעינת היומן נכשלה');
+    throw new Error('טעינת היומן נכשלה', { cause: error });
   }
 
   return data ?? [];

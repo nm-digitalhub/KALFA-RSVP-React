@@ -81,7 +81,7 @@ export async function getEventForStaffView(eventId: string): Promise<StaffEventV
     admin.from('campaigns').select('id').eq('event_id', eventId).order('created_at', { ascending: false }).limit(1),
   ]);
   if (error) {
-    throw new Error('טעינת האירוע נכשלה');
+    throw new Error('טעינת האירוע נכשלה', { cause: error });
   }
   if (!data) {
     notFound();

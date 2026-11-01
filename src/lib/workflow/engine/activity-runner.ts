@@ -17,6 +17,8 @@
 // condition node's `nextPort` is the branch it chose; a replay that returned a
 // fresh empty result would re-decide that branch and could send half the graph
 // down a path that never ran the first time.
+import { errorDetail } from '@/lib/error-detail';
+
 import { isKnownNodeType } from '../catalogue/nodes';
 import { SECRET_BEARING_NODE_TYPES, type KalfaNodeType } from '../catalogue/types';
 import { STEP_HANDLERS, type WorkflowTriggerPayload } from '../steps';
@@ -362,6 +364,12 @@ export function createActivityRunner<TNode extends RunnableNode>(
           throw error;
         }
 
+        // The step row keeps the message alone — it is what the run screen shows
+        // to whoever may view the workflow. The cause (errorDetail: the Supabase/
+        // Postgres code behind it) is diagnostic, and no permission in the CASL
+        // map (src/lib/casl.ts) grants diagnostics yet, so it goes to the server
+        // log only (owner, 30.10.2026). Ids only — never the step's input.
+        console.error('[workflow] step failed', { runId, nodeId: node.id, detail: errorDetail(error) });
         await ledger.failStep({
           runId,
           nodeId: node.id,

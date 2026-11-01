@@ -33,7 +33,7 @@ export async function checkContactSeat(campaignId: string, contactId: string): P
     .select('contact_quota')
     .eq('id', campaignId)
     .maybeSingle();
-  if (error) throw new Error('בדיקת מכסת אנשי הקשר נכשלה');
+  if (error) throw new Error('בדיקת מכסת אנשי הקשר נכשלה', { cause: error });
   // No such campaign, or no quota: the package model does not apply here.
   if (!campaign || campaign.contact_quota === null) return { allowed: true };
 
@@ -44,7 +44,7 @@ export async function checkContactSeat(campaignId: string, contactId: string): P
     .eq('contact_id', contactId)
     .limit(1)
     .maybeSingle();
-  if (seatError) throw new Error('בדיקת מכסת אנשי הקשר נכשלה');
+  if (seatError) throw new Error('בדיקת מכסת אנשי הקשר נכשלה', { cause: seatError });
 
   return seat ? { allowed: true } : { allowed: false, reason: 'waiting_for_quota' };
 }

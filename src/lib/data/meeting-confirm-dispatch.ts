@@ -202,7 +202,7 @@ export async function dispatchMeetingConfirmCall(
     .select('id, phone, status, scheduled_at')
     .eq('id', callbackRequestId)
     .maybeSingle();
-  if (rowErr) throw new Error('טעינת בקשת שיחה חוזרת נכשלה');
+  if (rowErr) throw new Error('טעינת בקשת שיחה חוזרת נכשלה', { cause: rowErr });
   if (!row || row.status !== 'scheduled' || !row.scheduled_at) {
     return { kind: 'skipped', reason: 'not_scheduled' };
   }

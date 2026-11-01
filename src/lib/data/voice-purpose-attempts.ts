@@ -56,7 +56,7 @@ export async function getVoicePurposeAttemptByAccessToken(
     .select('id, token_expires_at, run_id, node_id')
     .eq('access_token', accessToken)
     .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה');
+  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
   return data ?? null;
 }
 
@@ -109,7 +109,7 @@ export async function recordVoicePurposeConcluded(
     .in('dispatch_status', PURPOSE_PRE_TERMINAL as unknown as string[])
     .select('id')
     .maybeSingle();
-  if (error) throw new Error('רישום סיום השיחה נכשל');
+  if (error) throw new Error('רישום סיום השיחה נכשל', { cause: error });
   return { applied: data !== null };
 }
 
@@ -127,7 +127,7 @@ export async function setVoicePurposeElConversationId(
     .from('voice_purpose_attempts')
     .update({ el_conversation_id: elConversationId, updated_at: new Date().toISOString() })
     .eq('id', id);
-  if (error) throw new Error('רישום מזהה השיחה נכשל');
+  if (error) throw new Error('רישום מזהה השיחה נכשל', { cause: error });
 }
 
 /**
@@ -173,7 +173,7 @@ export async function getVoicePurposeOutcomeForStep(input: {
     .eq('node_id', input.nodeId)
     .order('created_at', { ascending: false })
     .limit(1);
-  if (error) throw new Error('טעינת תוצאת השיחה נכשלה');
+  if (error) throw new Error('טעינת תוצאת השיחה נכשלה', { cause: error });
 
   const row = data?.[0];
   return row

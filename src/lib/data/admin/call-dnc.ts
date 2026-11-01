@@ -84,7 +84,7 @@ export async function listCallDnc({
   const from = (page - 1) * CALL_DNC_PAGE_SIZE;
   const { data, error, count } = await q.range(from, from + CALL_DNC_PAGE_SIZE - 1);
   if (error) {
-    throw new Error('טעינת רשימת החסימה נכשלה');
+    throw new Error('טעינת רשימת החסימה נכשלה', { cause: error });
   }
   return { entries: (data ?? []) as CallDncEntry[], total: count ?? 0, page, pageSize: CALL_DNC_PAGE_SIZE };
 }
@@ -142,7 +142,7 @@ export async function getRegistryConnectionStatus(): Promise<RegistryConnectionS
     .select('dnc_registry_gate_enabled')
     .eq('id', true)
     .maybeSingle();
-  if (settingsError) throw new Error('טעינת מצב החיבור נכשלה');
+  if (settingsError) throw new Error('טעינת מצב החיבור נכשלה', { cause: settingsError });
 
   const admin = createAdminClient();
   const [success, failure] = await Promise.all([
@@ -182,5 +182,5 @@ export async function setRegistryGateEnabled(enabled: boolean): Promise<void> {
     .from('call_compliance_settings')
     .update({ dnc_registry_gate_enabled: enabled, updated_at: new Date().toISOString() })
     .eq('id', true);
-  if (error) throw new Error('עדכון מתג הבדיקה מול המאגר נכשל');
+  if (error) throw new Error('עדכון מתג הבדיקה מול המאגר נכשל', { cause: error });
 }

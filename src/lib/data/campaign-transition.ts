@@ -124,7 +124,7 @@ export async function transitionCampaignStatus(
     .select('id, event_id')
     .eq('id', campaignId)
     .maybeSingle();
-  if (error) throw new Error('טעינת הקמפיין נכשלה');
+  if (error) throw new Error('טעינת הקמפיין נכשלה', { cause: error });
   if (!campaign) {
     if (session) return session.notFound();
     throw new Error('הקמפיין לא נמצא');
@@ -156,7 +156,7 @@ export async function transitionCampaignStatus(
       .select('event_date, status')
       .eq('id', campaign.event_id)
       .maybeSingle();
-    if (evErr) throw new Error('טעינת האירוע נכשלה');
+    if (evErr) throw new Error('טעינת האירוע נכשלה', { cause: evErr });
     if (!event) throw new Error('האירוע לא נמצא');
     applyEventGuards(event);
     eventDate = event.event_date;
@@ -178,7 +178,7 @@ export async function transitionCampaignStatus(
   const { data: updated, error: upErr } = await query
     .select('id')
     .maybeSingle();
-  if (upErr) throw new Error('עדכון מצב הקמפיין נכשל');
+  if (upErr) throw new Error('עדכון מצב הקמפיין נכשל', { cause: upErr });
   if (!updated) {
     throw new Error('לא ניתן לשנות את מצב הקמפיין במצבו הנוכחי');
   }

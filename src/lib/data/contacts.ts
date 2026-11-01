@@ -80,7 +80,7 @@ export async function buildContactsForEvent(
     // contacts would be created — and, in the contact-quota model, seats handed out — in
     // an arbitrary order instead of the order the guests were added.
     .order('seq', { ascending: true });
-  if (error) throw new Error('טעינת המוזמנים נכשלה');
+  if (error) throw new Error('טעינת המוזמנים נכשלה', { cause: error });
 
   const derived = deriveContacts(guests ?? []);
   const admin = createAdminClient();
@@ -108,7 +108,7 @@ export async function buildContactsForEvent(
       .update({ contact_id: contactId })
       .eq('id', guestId)
       .eq('event_id', eventId);
-    if (linkErr) throw new Error('קישור המוזמנים לאנשי הקשר נכשל');
+    if (linkErr) throw new Error('קישור המוזמנים לאנשי הקשר נכשל', { cause: linkErr });
   }
 
   return {
@@ -166,7 +166,7 @@ export async function linkGuestContact(
     .update({ contact_id: contactId })
     .eq('id', guestId)
     .eq('event_id', eventId);
-  if (linkErr) throw new Error('עדכון קישור איש הקשר נכשל');
+  if (linkErr) throw new Error('עדכון קישור איש הקשר נכשל', { cause: linkErr });
 
   // Phone changed away from a previous contact → prune it if now orphaned.
   if (prevContactId && prevContactId !== contactId) {
@@ -233,7 +233,7 @@ export async function pruneOrphanContact(
     .delete()
     .eq('id', contactId)
     .eq('event_id', eventId);
-  if (error) throw new Error('מחיקת איש קשר יתום נכשלה');
+  if (error) throw new Error('מחיקת איש קשר יתום נכשלה', { cause: error });
   return true;
 }
 
@@ -303,7 +303,7 @@ export async function countAuthorizedContacts(campaignId: string): Promise<numbe
     .from('campaign_authorized_contacts')
     .select('contact_id', { count: 'exact', head: true })
     .eq('campaign_id', campaignId);
-  if (error) throw new Error('טעינת מונה אנשי הקשר בקמפיין נכשלה');
+  if (error) throw new Error('טעינת מונה אנשי הקשר בקמפיין נכשלה', { cause: error });
   return count ?? 0;
 }
 
@@ -321,7 +321,7 @@ export async function countUniqueContactsForEvent(
     .from('guests')
     .select('id, phone')
     .eq('event_id', eventId);
-  if (error) throw new Error('טעינת המוזמנים נכשלה');
+  if (error) throw new Error('טעינת המוזמנים נכשלה', { cause: error });
   return deriveContacts(guests ?? []).uniquePhones.length;
 }
 
@@ -335,7 +335,7 @@ export async function listContacts(eventId: string): Promise<EventContact[]> {
     .select('id, normalized_phone, op_status, removal_requested')
     .eq('event_id', eventId)
     .order('created_at', { ascending: true });
-  if (error) throw new Error('טעינת אנשי הקשר נכשלה');
+  if (error) throw new Error('טעינת אנשי הקשר נכשלה', { cause: error });
   return data ?? [];
 }
 
@@ -353,7 +353,7 @@ export async function recordWhatsAppConsent(
     .update({ whatsapp_consent_at: new Date().toISOString() })
     .eq('id', contactId)
     .eq('event_id', eventId);
-  if (error) throw new Error('שמירת ההסכמה לוואטסאפ נכשלה');
+  if (error) throw new Error('שמירת ההסכמה לוואטסאפ נכשלה', { cause: error });
 }
 
 // Record channel-specific CALL consent for one contact (caller authorized). The
@@ -375,7 +375,7 @@ export async function recordCallConsent(
     .update({ call_consent_at: new Date().toISOString() })
     .eq('id', contactId)
     .eq('event_id', eventId);
-  if (error) throw new Error('שמירת ההסכמה לשיחה נכשלה');
+  if (error) throw new Error('שמירת ההסכמה לשיחה נכשלה', { cause: error });
 }
 
 // Contacts eligible for a WhatsApp send: not removal-requested AND, unless an admin

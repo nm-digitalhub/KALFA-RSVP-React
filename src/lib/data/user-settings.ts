@@ -38,7 +38,7 @@ export async function getUserSettings(): Promise<UserSettingsDTO | null> {
     .maybeSingle();
 
   if (error) {
-    throw new Error('טעינת ההגדרות נכשלה');
+    throw new Error('טעינת ההגדרות נכשלה', { cause: error });
   }
 
   return data;

@@ -102,7 +102,7 @@ export async function listMyAvailabilityBlocks(): Promise<AvailabilityBlock[]> {
     .eq('user_id', user.id)
     .gt('ends_at', new Date().toISOString())
     .order('starts_at', { ascending: true });
-  if (error) throw new Error('טעינת סטטוס הזמינות נכשלה');
+  if (error) throw new Error('טעינת סטטוס הזמינות נכשלה', { cause: error });
   return ((data ?? []) as BlockRow[]).map(toBlock);
 }
 

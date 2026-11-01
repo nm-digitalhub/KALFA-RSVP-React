@@ -60,7 +60,7 @@ export async function listProviderNumbers(): Promise<ProviderNumber[]> {
     .order('e164', { ascending: true, nullsFirst: false });
 
   if (error) {
-    throw new Error('טעינת רשימת המספרים נכשלה');
+    throw new Error('טעינת רשימת המספרים נכשלה', { cause: error });
   }
 
   return (data ?? []).map((row) => {
@@ -237,7 +237,7 @@ export async function clearRole(role: NumberRole): Promise<void> {
 
   const supabase = await createClient();
   const { error } = await supabase.from('provider_number_roles').delete().eq('role', parsed);
-  if (error) throw new Error('ביטול שיוך התפקיד נכשל');
+  if (error) throw new Error('ביטול שיוך התפקיד נכשל', { cause: error });
 }
 
 // ─── SYNC ─────────────────────────────────────────────────────────────────────

@@ -613,6 +613,33 @@ describe('a template failure leaves a usable trace', () => {
     expect(d._ledger.rows.get('run-tmpl:t')?.status).toBe('done');
   });
 
+  it('keeps the step row to the message; the cause goes to the server log only', async () => {
+    // No CASL permission grants diagnostics yet (src/lib/casl.ts), so the run
+    // screen — which shows workflow_run_steps.error_message — must not carry the
+    // Supabase/Postgres cause; the log does (owner, 30.10.2026).
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const d = deps();
+    (d.guests.submitRsvp as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('שליחת אישור ההגעה נכשלה', {
+        cause: { code: '57014', message: 'canceling statement due to statement timeout' },
+      }),
+    );
+
+    await run(slice(), d, 'run-cause').catch(() => undefined);
+
+    expect(d.ledger.failStep).toHaveBeenCalledWith({
+      runId: 'run-cause',
+      nodeId: 'a',
+      message: 'שליחת אישור ההגעה נכשלה',
+    });
+    expect(log).toHaveBeenCalledWith('[workflow] step failed', {
+      runId: 'run-cause',
+      nodeId: 'a',
+      detail: 'שליחת אישור ההגעה נכשלה — [57014] canceling statement due to statement timeout',
+    });
+    log.mockRestore();
+  });
+
   it('puts the offending token in the log, where the owner reads it', async () => {
     const log = collectingLog();
     const d = deps();
