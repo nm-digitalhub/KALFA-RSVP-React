@@ -671,6 +671,11 @@
       "sourceType": "github",
       "computedHash": "00bfe0a64438fb4fc618aec1008c392065de89f8a2f7462b93dd5592026a7086"
     },
+    "hebrew-tailwind-preset": {
+      "source": "skills-il/localization",
+      "sourceType": "github",
+      "computedHash": "7ad762bb30792b125633f61b134d6727f4b294fc8b3c8325b458a5ca4c0600d3"
+    },
     "hebrew-voice-bot-builder": {
       "source": "skills-il/developer-tools",
       "sourceType": "github",
