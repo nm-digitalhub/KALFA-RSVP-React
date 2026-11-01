@@ -1,7 +1,11 @@
+import './server-only';
+
 import { createClient } from '@supabase/supabase-js';
 import type { Page } from 'next/experimental/testmode/playwright';
+import { PgBoss, type JobWithMetadata } from 'pg-boss';
 
-import { resolveLocalTestDb } from '@/lib/outreach/test-db-guard';
+import { resolveLocalTestDb, testDbSsl } from '@/lib/outreach/test-db-guard';
+import { packageActivationJobId, QUEUES, type PackageActivationJob } from '@/lib/queue/queues';
 
 import { expect, test } from './fixtures';
 
@@ -74,6 +78,45 @@ function localAdmin() {
   return createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
+/**
+ * The package-activation worker, run in the test's own process as the pg-boss docs test a worker (docs/api/testing):
+ * boss.work() with the worker's real handler and options (worker/main.ts), and a spy (__test__enableSpies) to wait
+ * for the job to complete. The job itself is sent by the app's server; this instance only works it, which is what its
+ * spy sees. It runs against the local stack only: the queues from the global setup, the admin client on the local API.
+ * The two variables that client reads are set only while the worker runs: the test guard (resolveTestDb) takes a
+ * NEXT_PUBLIC_SUPABASE_URL in the environment for the production one.
+ */
+async function withActivationWorker<T>(run: (boss: PgBoss) => Promise<T>): Promise<T> {
+  const env = resolveLocalTestDb();
+  const saved = { url: process.env.NEXT_PUBLIC_SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY };
+  process.env.NEXT_PUBLIC_SUPABASE_URL = env.supabaseUrl;
+  process.env.SUPABASE_SERVICE_ROLE_KEY = env.serviceKey;
+  const boss = new PgBoss({
+    connectionString: env.dbUrl,
+    ssl: testDbSsl(env.dbUrl),
+    schema: 'pgboss',
+    supervise: false,
+    schedule: false,
+    migrate: false,
+    __test__enableSpies: true,
+  });
+  boss.on('error', () => {});
+  try {
+    const { runPackageActivationJob } = await import('@/lib/payments/package-activation-job');
+    await boss.start();
+    await boss.work(QUEUES.packageActivation, { includeMetadata: true }, async ([job]: JobWithMetadata<PackageActivationJob>[]) => ({
+      result: await runPackageActivationJob(job),
+    }));
+    return await run(boss);
+  } finally {
+    await boss.stop({ graceful: false });
+    for (const [name, value] of [['NEXT_PUBLIC_SUPABASE_URL', saved.url], ['SUPABASE_SERVICE_ROLE_KEY', saved.key]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
 test.describe('event setup', () => {
   test('a new owner goes through every setup step, pays, and lands on the management page', async ({ page }) => {
     const eventId = await createEvent(page);
@@ -95,6 +138,7 @@ test.describe('event setup', () => {
 
     // The payment renders inside the same setup shell, step list included.
     await expect(page).toHaveURL(new RegExp(`/app/events/${eventId}/campaign/[0-9a-f-]{36}/payment$`));
+    const campaignId = /\/campaign\/([0-9a-f-]{36})\/payment$/.exec(new URL(page.url()).pathname)![1];
     await expectSetupScreen(page, 'תשלום החבילה');
     await expect(page).not.toHaveTitle(new RegExp(WORD));
     await pay(page);
@@ -109,6 +153,27 @@ test.describe('event setup', () => {
     // And setup now sends the owner to the event page.
     await page.goto(`/app/events/${eventId}/setup`);
     await expect(page).toHaveURL(`/app/events/${eventId}`);
+
+    // The recorded payment queued the package's start (design D23), under the payment's own id, and the worker runs it.
+    // The payment path already started the service inline, so the job finds it running: 'already_active'.
+    const { data: paid } = await localAdmin()
+      .from('payment_operations')
+      .select('id')
+      .eq('campaign_id', campaignId)
+      .eq('outcome', 'succeeded')
+      .single();
+    expect(paid).not.toBeNull();
+    const job = await withActivationWorker((boss) =>
+      boss.getSpy<PackageActivationJob>(QUEUES.packageActivation).waitForJob((data) => data.campaignId === campaignId, 'completed'),
+    );
+    expect(job.id).toBe(packageActivationJobId(paid!.id));
+    expect(job.data).toEqual({ campaignId, operationId: paid!.id });
+    expect(job.output).toEqual({ result: 'already_active' });
+    const db = localAdmin();
+    const { data: campaign } = await db.from('campaigns').select('status').eq('id', campaignId).single();
+    expect(campaign?.status).toBe('active');
+    const { data: activated } = await db.from('activity_log').select('id').eq('action', 'campaign.activated').eq('event_id', eventId);
+    expect(activated).toHaveLength(1);
   });
 
   test('closing during setup retires the unpaid package, keeps the record, and shows the closed event', async ({
