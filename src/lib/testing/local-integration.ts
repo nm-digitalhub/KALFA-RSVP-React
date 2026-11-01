@@ -549,6 +549,14 @@ export async function cleanupIds(pool: Pool, given: FixtureIds, opts: { lockTime
     // deleteReferrers) instead of hanging the suite.
     await c.query(`select set_config('lock_timeout', $1, true)`, [`${opts.lockTimeoutMs ?? 15_000}ms`]);
     ids = await expandIds(c, given);
+    // campaign_authorized_set_audit is append-only: its trigger blocks DELETE, which the referrer pass below would
+    // report as a failure. A fixture's rows are removed by exact event id with the triggers off for that one statement
+    // (session_replication_role, as fill-authorized-set.integration.test.ts does), then the role is restored.
+    await step('public.campaign_authorized_set_audit', async () => {
+      await c.query('set local session_replication_role = replica');
+      await c.query('delete from public.campaign_authorized_set_audit where event_id = any($1::uuid[])', [ids.events]);
+      await c.query('set local session_replication_role = origin');
+    });
     const fixtureValues = (r: Referrer) => ids[ROOTS[r.root]] as string[];
     await deleteReferrers(c, 'fixture', await blockingReferrers(c, Object.keys(ROOTS)), fixtureValues);
     await step('webhook_inbox', () =>

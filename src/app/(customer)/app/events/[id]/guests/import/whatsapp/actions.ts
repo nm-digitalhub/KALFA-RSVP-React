@@ -186,6 +186,13 @@ export const confirmWhatsappImportAction = actionClient
       }
     } catch (err) {
       unstable_rethrow(err);
+      // A derived step: it never fails a completed import, but it is logged, as import-actions.ts logs it (event id
+      // and the error message only, no guest data), so a missed admission is visible; the worker's top-up repairs it.
+      console.error(
+        `[contacts] post-import contacts rebuild failed (event=${eventId}): ${
+          err instanceof Error ? err.message : 'unknown error'
+        }`,
+      );
     }
     await resolveStaging(stagingId, 'confirmed');
     await logActivity({

@@ -21,10 +21,42 @@ const enable = (on: boolean) => vi.mocked(isReconcileEnabled).mockReturnValue(on
 afterEach(() => vi.restoreAllMocks());
 
 describe('reconcileCampaignSetForContact (kill-switch gated)', () => {
-  it('is a no-op when the flag is OFF — never touches the DB', async () => {
+  it('an add is a no-op when the flag is OFF — never touches the DB (the worker top-up admits it)', async () => {
     enable(false);
     await reconcileCampaignSetForContact('e1', 'add', 'ct1');
     expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
+  // package-outreach-admission-safety D3: a delete or repoint reaches a campaign with a package quota whatever the
+  // switch says, so the list drops the contact with an audit row and the freed seat goes to the next guest.
+  it.each(['delete', 'repoint'] as const)('flag OFF + a package campaign → a %s still calls the reconcile RPC', async (op) => {
+    enable(false);
+    const { client } = createMockSupabase<{ id: string; contact_quota: number | null }[]>({
+      data: [{ id: 'camp1', contact_quota: 100 }],
+      error: null,
+    });
+    client.rpc.mockResolvedValue({ data: 'removed', error: null });
+    vi.mocked(createAdminClient).mockReturnValue(client as unknown as ReturnType<typeof createAdminClient>);
+
+    await reconcileCampaignSetForContact('e1', op, 'ct1', op === 'repoint' ? 'old1' : undefined);
+
+    expect(client.rpc).toHaveBeenCalledWith(
+      'reconcile_authorized_set',
+      expect.objectContaining({ p_event: 'e1', p_campaign: 'camp1', p_op: op, p_contact: 'ct1' }),
+    );
+  });
+
+  it('flag OFF + a campaign without a quota → today’s behavior: no RPC for a delete', async () => {
+    enable(false);
+    const { client } = createMockSupabase<{ id: string; contact_quota: number | null }[]>({
+      data: [{ id: 'camp1', contact_quota: null }],
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValue(client as unknown as ReturnType<typeof createAdminClient>);
+
+    await reconcileCampaignSetForContact('e1', 'delete', 'ct1');
+
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 
   it('flag ON + an operational campaign → calls the reconcile RPC with the op args', async () => {
@@ -136,21 +168,23 @@ describe('reconcileCampaignSetForContact (kill-switch gated)', () => {
 });
 
 describe('pruneOrphanContact — authorized-set member guard (kill-switch gated)', () => {
-  // Per-table count builders so the guests/billed/interactions/set queries each
-  // resolve to a distinct count and contacts.delete is observable.
+  // Per-table builders so the guests/billed/interactions queries each resolve to a distinct count, the set read to
+  // its member rows, the campaigns read to how many of those campaigns have a package quota, and contacts.delete is
+  // observable.
   function mockPrune(counts: {
     guests: number;
     billed: number;
     interactions: number;
     setMember: number;
+    packageCampaigns?: number;
   }) {
-    const mkCount = (count: number) => {
+    const mkResult = (result: Record<string, unknown>) => {
       const b: Record<string, unknown> = {};
-      for (const m of ['select', 'eq', 'delete']) b[m] = vi.fn(() => b);
-      (b as { then: unknown }).then = (f: (v: unknown) => unknown) =>
-        f({ data: null, error: null, count });
+      for (const m of ['select', 'eq', 'in', 'not', 'delete']) b[m] = vi.fn(() => b);
+      (b as { then: unknown }).then = (f: (v: unknown) => unknown) => f({ data: null, error: null, ...result });
       return b;
     };
+    const mkCount = (count: number) => mkResult({ count });
     const del: Record<string, unknown> = {};
     for (const m of ['delete', 'eq']) del[m] = vi.fn(() => del);
     (del as { then: unknown }).then = (f: (v: unknown) => unknown) =>
@@ -159,7 +193,9 @@ describe('pruneOrphanContact — authorized-set member guard (kill-switch gated)
       if (table === 'guests') return mkCount(counts.guests);
       if (table === 'billed_results') return mkCount(counts.billed);
       if (table === 'contact_interactions') return mkCount(counts.interactions);
-      if (table === 'campaign_authorized_contacts') return mkCount(counts.setMember);
+      if (table === 'campaign_authorized_contacts')
+        return mkResult({ data: Array.from({ length: counts.setMember }, (_, i) => ({ campaign_id: `camp${i + 1}` })) });
+      if (table === 'campaigns') return mkCount(counts.packageCampaigns ?? 0);
       return del; // contacts
     });
     vi.mocked(createAdminClient).mockReturnValue({
@@ -186,12 +222,44 @@ describe('pruneOrphanContact — authorized-set member guard (kill-switch gated)
     expect(del.delete).toHaveBeenCalled();
   });
 
-  it('flag OFF → the set guard is skipped entirely (legacy behavior, deletes)', async () => {
+  it('flag OFF + a member of campaigns without a quota → today’s behavior: deletes', async () => {
     enable(false);
-    const { from, del } = mockPrune({ guests: 0, billed: 0, interactions: 0, setMember: 5 });
+    const { del } = mockPrune({ guests: 0, billed: 0, interactions: 0, setMember: 2, packageCampaigns: 0 });
     const deleted = await pruneOrphanContact('e1', 'c1');
     expect(deleted).toBe(true);
-    expect(from).not.toHaveBeenCalledWith('campaign_authorized_contacts');
     expect(del.delete).toHaveBeenCalled();
+  });
+
+  // package-outreach-admission-safety D3: a package list never loses a contact through the cascade, switch or not.
+  it('flag OFF + a member of a package campaign → KEEPS it', async () => {
+    enable(false);
+    const { from, del } = mockPrune({ guests: 0, billed: 0, interactions: 0, setMember: 1, packageCampaigns: 1 });
+    const deleted = await pruneOrphanContact('e1', 'c1');
+    expect(deleted).toBe(false);
+    expect(from).toHaveBeenCalledWith('campaigns');
+    expect(del.delete).not.toHaveBeenCalled();
+  });
+
+  it('a set read that fails KEEPS the contact (an unproven membership is never deleted)', async () => {
+    enable(false);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const del: Record<string, unknown> = {};
+    for (const m of ['delete', 'eq']) del[m] = vi.fn(() => del);
+    const mk = (result: Record<string, unknown>) => {
+      const b: Record<string, unknown> = {};
+      for (const m of ['select', 'eq']) b[m] = vi.fn(() => b);
+      (b as { then: unknown }).then = (f: (v: unknown) => unknown) => f({ data: null, error: null, ...result });
+      return b;
+    };
+    vi.mocked(createAdminClient).mockReturnValue({
+      from: vi.fn((table: string) =>
+        table === 'campaign_authorized_contacts' ? mk({ error: { message: 'down' } }) : table === 'contacts' ? del : mk({ count: 0 }),
+      ),
+      rpc: vi.fn(),
+    } as unknown as ReturnType<typeof createAdminClient>);
+
+    await expect(pruneOrphanContact('e1', 'c1')).resolves.toBe(false);
+    expect(del.delete).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('event=e1'));
   });
 });

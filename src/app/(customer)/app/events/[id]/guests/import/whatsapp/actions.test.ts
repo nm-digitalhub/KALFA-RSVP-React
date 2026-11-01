@@ -81,6 +81,21 @@ describe('confirmWhatsappImportAction — outreach list admission', () => {
     expect(result).toEqual({ data: { notice: 'יובאו 2 מוזמנים.' } });
     expect(bulkInsertGuests).toHaveBeenCalledTimes(1);
   });
+
+  it('a failed admission step is logged with the event id and the error only, and the import still completes', async () => {
+    vi.mocked(buildContactsForEvent).mockRejectedValue(new Error('contacts upsert failed'));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const result = await confirmWhatsappImportAction(E1, S1, {}, new FormData());
+
+      expect(result).toEqual({ data: { notice: 'יובאו 2 מוזמנים.' } });
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith(`[contacts] post-import contacts rebuild failed (event=${E1}): contacts upsert failed`);
+      expect(reconcileCampaignSetForContact).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
 });
 
 // The actions are built from the shared next-safe-action client (src/lib/safe-action.ts). The confirm form's merge

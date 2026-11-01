@@ -64,6 +64,12 @@ export type CampaignContext = {
    */
   rsvpDeadline: string | null;
   inviteImagePath: string | null;
+  /**
+   * campaigns.contact_quota — the package's contact cap, or null for a campaign without one (pay-per-result). A
+   * campaign with a quota keeps its outreach guards whatever RECONCILE_AUTHORIZED_SET_ENABLED says (design D3 of
+   * package-outreach-admission-safety).
+   */
+  contactQuota: number | null;
   // The template-binding slice of the event row (event_date repeats eventDate —
   // kept flat above for the worker's scheduling math, nested here in exactly
   // the shape buildTemplateParams consumes).
@@ -138,7 +144,7 @@ export async function getCampaignContext(
   const admin = createAdminClient();
   const { data: c, error } = await admin
     .from('campaigns')
-    .select('status, event_id, allowed_channels, start_at, close_at, outreach_schedule')
+    .select('status, event_id, allowed_channels, start_at, close_at, outreach_schedule, contact_quota')
     .eq('id', campaignId)
     .maybeSingle();
   if (error) throw new Error('טעינת הקמפיין נכשלה', { cause: error });
@@ -161,6 +167,7 @@ export async function getCampaignContext(
     eventStatus: ev.status,
     rsvpDeadline: ev.rsvp_deadline ?? null,
     inviteImagePath: ev.invite_image_path ?? null,
+    contactQuota: c.contact_quota ?? null,
     event: {
       name: ev.name,
       event_type: ev.event_type,
@@ -699,8 +706,10 @@ export async function prepareAndSendStep(
   // P0-1 (A6): a contact PINNED in the authorized set (exposed/billed) but no
   // longer referenced by a live guest keeps its billing legitimacy for a late
   // callback, but must receive NO new outbound touchpoints. Kill-switch gated —
-  // inert (no extra query) unless reconciliation is enabled.
-  if (isReconcileEnabled()) {
+  // inert (no extra query) unless reconciliation is enabled — except for a
+  // campaign with a package quota, where it always runs, so a deleted guest's
+  // phone never receives outreach (package-outreach-admission-safety D3).
+  if (isReconcileEnabled() || ctx.contactQuota !== null) {
     const { count: liveGuest } = await admin
       .from('guests')
       .select('id', { count: 'exact', head: true })

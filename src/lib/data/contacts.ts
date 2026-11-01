@@ -4,6 +4,7 @@ import { requireEventAccess } from '@/lib/data/events';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { normalizePhone } from '@/lib/phone';
+import { deriveContacts } from '@/lib/data/derive-contacts';
 import { isReconcileEnabled } from '@/lib/data/reconcile-config';
 import { resolveSendableContacts } from '@/lib/data/sendable-contacts';
 import type { Tables } from '@/lib/supabase/types';
@@ -19,36 +20,8 @@ export type EventContact = Pick<
   'id' | 'normalized_phone' | 'op_status' | 'removal_requested'
 >;
 
-type GuestPhone = { id: string; phone: string | null };
-
-export type DerivedContacts = {
-  guestToPhone: Map<string, string | null>; // guestId → E.164 | null (invalid/missing)
-  uniquePhones: string[]; // distinct E.164 keys
-  withValidPhone: number;
-  invalid: number;
-};
-
-// Pure dedup/normalization — no I/O, fully unit-testable. This is the core of
-// the guests→contacts derivation; the DB wrapper below is thin around it.
-export function deriveContacts(guests: GuestPhone[]): DerivedContacts {
-  const guestToPhone = new Map<string, string | null>();
-  const unique = new Set<string>();
-  let withValidPhone = 0;
-  let invalid = 0;
-
-  for (const g of guests) {
-    const e164 = normalizePhone(g.phone);
-    guestToPhone.set(g.id, e164);
-    if (e164) {
-      withValidPhone++;
-      unique.add(e164);
-    } else {
-      invalid++;
-    }
-  }
-
-  return { guestToPhone, uniquePhones: [...unique], withValidPhone, invalid };
-}
+// The pure dedup/normalization (deriveContacts) lives in derive-contacts.ts; the DB
+// wrappers below are thin around it.
 
 export type BuildContactsResult = {
   guests: number;
@@ -218,13 +191,31 @@ export async function pruneOrphanContact(
   // (the root of the repoint/orphan mis-charge bug). Kill-switch gated — LIVE
   // in production since 2026-07-21 (see reconcile-config.ts), so this guard is
   // ACTIVE. reconcile_authorized_set is the ONLY path that removes a contact
-  // from the set.
-  if (isReconcileEnabled()) {
-    const { count: setMember } = await admin
-      .from('campaign_authorized_contacts')
-      .select('contact_id', { count: 'exact', head: true })
-      .eq('contact_id', contactId);
-    if ((setMember ?? 0) > 0) return false;
+  // from the set. With the switch off the guard still holds a member of a
+  // campaign with a package quota (package-outreach-admission-safety D3), so a
+  // package list never loses a contact through the cascade, without audit.
+  // A read that fails keeps the contact: an unproven membership is never deleted.
+  const { data: memberships, error: memberErr } = await admin
+    .from('campaign_authorized_contacts')
+    .select('campaign_id')
+    .eq('contact_id', contactId);
+  if (memberErr) {
+    console.error(`[contacts] prune kept a contact: list membership unreadable (event=${eventId}): ${memberErr.message}`);
+    return false;
+  }
+  const memberOf = (memberships ?? []).map((m) => m.campaign_id);
+  if (memberOf.length > 0) {
+    if (isReconcileEnabled()) return false;
+    const { count: packageMember, error: quotaErr } = await admin
+      .from('campaigns')
+      .select('id', { count: 'exact', head: true })
+      .in('id', memberOf)
+      .not('contact_quota', 'is', null);
+    if (quotaErr) {
+      console.error(`[contacts] prune kept a contact: campaign quota unreadable (event=${eventId}): ${quotaErr.message}`);
+      return false;
+    }
+    if ((packageMember ?? 0) > 0) return false;
   }
 
   // Truly orphaned + history-free → safe to delete.
@@ -249,25 +240,34 @@ export async function pruneOrphanContact(
 // logged (no PII), never thrown. Callers must have already
 // verified event access (this is an internal service-role helper, like
 // pruneOrphanContact).
+//
+// With the switch off, a `delete` or `repoint` still reaches a campaign with a
+// package quota (package-outreach-admission-safety D3): the list then drops the
+// guest's contact with an audit row instead of through the contacts cascade, and
+// a freed seat goes to the next guest in order. An `add` stays switch-gated — the
+// worker's top-up admits that guest — whether it should too is the owner's open
+// question (design, Open Questions).
 export async function reconcileCampaignSetForContact(
   eventId: string,
   op: 'add' | 'repoint' | 'delete',
   contactId: string,
   prevContactId?: string | null,
 ): Promise<void> {
-  if (!isReconcileEnabled()) return;
+  const switchOn = isReconcileEnabled();
+  if (!switchOn && op === 'add') return;
   const admin = createAdminClient();
 
   // Resolve the operational campaign(s) for this event. The app invariant is one
   // per event, but the schema does not enforce it — iterate defensively.
   const { data: campaigns, error: campErr } = await admin
     .from('campaigns')
-    .select('id')
+    .select('id, contact_quota')
     .eq('event_id', eventId)
     .in('status', ['approved', 'scheduled', 'active', 'paused']);
   if (campErr || !campaigns || campaigns.length === 0) return;
 
   for (const c of campaigns) {
+    if (!switchOn && c.contact_quota === null) continue;
     const { data: outcome, error } = await admin.rpc('reconcile_authorized_set', {
       p_event: eventId,
       p_campaign: c.id,

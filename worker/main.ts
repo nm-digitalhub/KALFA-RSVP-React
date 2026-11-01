@@ -42,6 +42,7 @@ import {
   resolveStep,
   type CampaignContext,
 } from '@/lib/data/outreach-engine';
+import { topUpPackageList } from '@/lib/data/authorized-topup';
 import {
   runStepExecution,
   type StepExecutionDeps,
@@ -643,6 +644,9 @@ async function handleArm(boss: PgBoss): Promise<void> {
   for (const camp of await listActiveCampaigns()) {
     const ctx = await getCampaignContext(camp.id);
     if (!ctx || ctx.schedule.length === 0) continue;
+    // A package campaign's list first takes in any guest whose admission was missed (link repair, then the fill by
+    // order of addition, within the quota) — whatever RECONCILE_AUTHORIZED_SET_ENABLED says. Never throws.
+    if (ctx.contactQuota !== null) await topUpPackageList(camp.event_id, camp.id);
     // Seed the cursor from the campaign's authorized set (idempotent) — the single,
     // self-healing seeding path. Activation only flips status; the arm seeds.
     await seedOutreachState(camp.event_id, camp.id);
