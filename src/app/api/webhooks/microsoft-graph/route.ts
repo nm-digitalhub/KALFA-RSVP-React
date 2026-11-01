@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-import { insertWebhookEvents, type WebhookInboxInsert } from '@/lib/data/webhooks';
+import { insertWebhookEvents } from '@/lib/data/webhooks';
+import { type GraphNotification, graphNotificationRows } from '@/lib/microsoft/notifications';
 import { webhookClientState } from '@/lib/microsoft/subscriptions';
 
 // Microsoft Graph change notifications — persist-then-process, the same shape
@@ -10,28 +11,22 @@ import { webhookClientState } from '@/lib/microsoft/subscriptions';
 // This route does the minimum: answer Graph's validation handshake, check
 // clientState, normalize every notification in the (batched) delivery, insert
 // durably, return fast. A notification carries only a RESOURCE ID and never
-// content, so the worker is what actually reads the message — which is also
-// what keeps the mailbox credential out of the request path.
+// content, so the worker is what actually reads the message or the calendar —
+// which is also what keeps the mailbox credential out of the request path.
+// Mail, calendar and lifecycle notifications all arrive here; telling them
+// apart is graphNotificationRows' job (src/lib/microsoft/notifications.ts).
 //
 // Never log the payload, the sender, or the client state.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-type Notification = {
-  subscriptionId?: string;
-  clientState?: string;
-  changeType?: string;
-  resource?: string;
-  resourceData?: { id?: string };
-  subscriptionExpirationDateTime?: string;
-};
-
 /**
  * Graph validates a notification URL by POSTing to it with a `validationToken`
  * query parameter and requiring that exact string back as text/plain within 10
  * seconds. It is sent BEFORE any subscription exists, so this must run before
- * any auth check — there is nothing yet to authenticate against.
+ * any auth check — there is nothing yet to authenticate against. A calendar
+ * subscription's lifecycle URL is this same route, and is validated the same way.
  */
 function validationResponse(request: NextRequest): NextResponse | null {
   const token = request.nextUrl.searchParams.get('validationToken');
@@ -55,34 +50,14 @@ export async function POST(request: NextRequest) {
     return new NextResponse('ok', { status: 202 });
   }
 
-  let body: { value?: Notification[] };
+  let body: { value?: GraphNotification[] };
   try {
-    body = (await request.json()) as { value?: Notification[] };
+    body = (await request.json()) as { value?: GraphNotification[] };
   } catch {
     return new NextResponse('bad request', { status: 400 });
   }
 
-  const rows: WebhookInboxInsert[] = [];
-  for (const n of body.value ?? []) {
-    // Per-notification, not per-request: one delivery can batch notifications
-    // from several subscriptions, and only ours are trustworthy.
-    if (n.clientState !== expected) continue;
-    const messageId = n.resourceData?.id;
-    if (!messageId) continue;
-
-    rows.push({
-      provider: 'graph',
-      event_kind: 'graph_mail',
-      // Graph redelivers notifications by design; the (provider, dedupe_key)
-      // unique index is what makes that harmless at this layer.
-      dedupe_key: `graph-mail:${messageId}`,
-      message_id: messageId,
-      context_message_id: null,
-      phone_number_id: null,
-      event_at: null,
-      payload: n as unknown as WebhookInboxInsert['payload'],
-    });
-  }
+  const rows = graphNotificationRows(body.value ?? [], expected);
 
   if (rows.length > 0) {
     await insertWebhookEvents(rows);

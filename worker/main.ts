@@ -17,7 +17,7 @@ import { PgBoss, type Job, type JobWithMetadata } from 'pg-boss';
 import { Client as PgClient } from 'pg';
 
 import { QUEUES, RETIRED_QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS, isFinalDelivery, type OutreachCallRequest, type OutreachStepJob,
-  type WorkflowRunJob,
+  type WorkflowRunJob, CALENDAR_PRESENCE_SWEEP_KEY, type CalendarPresenceSyncJob,
 } from '@/lib/queue/queues';
 import { completedRetentionSeconds, PGBOSS_SEND_IT_QUEUE } from '@/lib/ops/queue-schedule';
 import { supabaseDbPort } from '@/lib/relocation/env-validation';
@@ -118,7 +118,10 @@ import { runLogExport } from '@/lib/data/vox-log-export';
 import { runElevenLabsQuotaCheck } from '@/lib/data/elevenlabs-quota';
 import { runTemplateHealthSync } from '@/lib/data/template-health-sync';
 import { runInstagramTokenRefresh } from '@/lib/data/instagram-token-refresh';
-import { runConsoleAgentCalendarPresenceSync } from '@/lib/data/console-agent-calendar-presence';
+import {
+  queueCalendarPresenceSweep,
+  runCalendarPresenceJob,
+} from '@/lib/data/console-agent-calendar-presence';
 import { runFleetExpireSweep } from '@/lib/fleet/expire';
 import { runRdpAccessSweep } from '@/lib/rdp-access/sweep';
 import { runPaymentOrphanSweep } from '@/lib/data/payment-orphans';
@@ -603,7 +606,7 @@ async function handleWebhook(boss: PgBoss): Promise<void> {
   // "which number holds whatsapp_import_sender" lookup is resolved once here
   // instead of once per row (§1.5.2). It lives only for this drain, so removing
   // the role assignment takes effect on the next tick without a restart.
-  const ctx = createWebhookBatchContext();
+  const ctx = createWebhookBatchContext(boss);
   for (const row of rows) {
     try {
       await processWebhookEvent(row, ctx);
@@ -1597,14 +1600,16 @@ async function main(): Promise<void> {
   );
   // Console-agent calendar presence sync:
   // per-agent Graph free/busy read → console_agent_calendar_presence (advisory
-  // only — never writes agent_status). runConsoleAgentCalendarPresenceSync
-  // never throws (one agent's broken mailbox does not stop the rest) and
-  // is a no-op when no console agent has a verified Exchange connection.
+  // only — never writes agent_status). An agent job reads that agent and queues
+  // the next read for the moment its presence can next change; the sweep (cron,
+  // or queued by a lifecycle notification) keeps the calendar subscriptions
+  // alive and queues every agent. A Graph failure is recorded on the agent's row,
+  // not thrown; a database or queue failure throws into the retry policy.
   await boss.work(
     QUEUES.calendarPresenceSync,
     POLL_SLOW_CRON,
-    guardedWorker(QUEUES.calendarPresenceSync, async () => {
-      await runConsoleAgentCalendarPresenceSync();
+    guardedWorker(QUEUES.calendarPresenceSync, async (jobs: Job<CalendarPresenceSyncJob>[]) => {
+      for (const job of jobs) await runCalendarPresenceJob(boss, job.data);
     }),
   );
   // Fleet-request expiry sweep: pending fleet_requests past expires_at become
@@ -1714,11 +1719,19 @@ async function main(): Promise<void> {
   // 24h remaining, so four chances a day means a renewal survives a full day of
   // worker downtime without intake ever lapsing.
   await boss.schedule(QUEUES.graphIntakeRenew, '23 */6 * * *', null, { tz: SCHEDULE_TZ });
-  // Every 10 minutes — a calendar event's start/end is minute-granular at best,
-  // so a tighter tick would only mean more remote Graph round trips against the
-  // same mailbox(es) for no material gain in freshness. Same cadence family as
-  // callbackScheduleSweep (also calendar-backed, also */10).
-  await boss.schedule(QUEUES.calendarPresenceSync, '*/10 * * * *');
+  // Every 6 hours, the sweep only — presence itself follows calendar
+  // notifications and each agent's own wakes (console-agent-calendar-presence.ts).
+  // Same reasoning as graphIntakeRenew: a calendar subscription lives ~2.94 days
+  // and renews under 24h remaining, so four chances a day survive a full day of
+  // worker downtime. The sweep's key keeps it from overlapping a sweep that a
+  // lifecycle notification queued.
+  await boss.schedule(QUEUES.calendarPresenceSync, '41 */6 * * *', null, {
+    tz: SCHEDULE_TZ,
+    singletonKey: CALENDAR_PRESENCE_SWEEP_KEY,
+  });
+  // And one sweep now: after a restart or a deploy, every agent's chain and
+  // subscription is (re)established at once instead of at the next 6-hour tick.
+  await queueCalendarPresenceSweep(boss);
   // Every 10 minutes — expiry windows are 72h, so minute-precision buys
   // nothing; 10m keeps a dead request from ever looking open for long.
   await boss.schedule(QUEUES.fleetExpireSweep, '*/10 * * * *');

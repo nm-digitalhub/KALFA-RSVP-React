@@ -1,5 +1,6 @@
 import 'server-only';
 
+import type { PgBoss } from 'pg-boss';
 import type { components as IncomingWebhook } from '@/lib/whatsapp/generated/incoming-webhook';
 
 import {
@@ -42,6 +43,17 @@ import {
   EL_ANALYSIS_SALES_KIND,
 } from '@/lib/data/elevenlabs-webhook-intake';
 import { intakeMailAsInquiry, REF_CODE_RE } from '@/lib/data/inquiry-mail-intake';
+import {
+  handleCalendarLifecycleEvent,
+  handleCalendarNotification,
+} from '@/lib/data/console-agent-calendar-presence';
+import {
+  GRAPH_CALENDAR_KIND,
+  GRAPH_LIFECYCLE_KIND,
+  GRAPH_MAIL_KIND,
+  type GraphNotification,
+} from '@/lib/microsoft/notifications';
+import { type GraphSubscription, listSubscriptions } from '@/lib/microsoft/subscriptions';
 import {
   processTemplateStatusRow,
   processTemplateCategoryRow,
@@ -112,11 +124,21 @@ export type WebhookBatchContext = {
   whatsappChannel(): Promise<WhatsAppChannel | null>;
   /** Does an Embedded Signup (Coexistence) connection own this number? */
   isEsConnected(phoneNumberId: string): Promise<boolean>;
+  /** This app's Graph subscriptions — one list per drain for every Graph row in it. */
+  graphSubscriptions(): Promise<GraphSubscription[]>;
+  /**
+   * The worker's own pg-boss handle, for a row whose processing queues more
+   * work. Never the web sender: inside the worker that would open a pooler
+   * connection the session-slot budget does not count (session-slots.test.ts).
+   */
+  jobs(): PgBoss;
 };
 
-export function createWebhookBatchContext(): WebhookBatchContext {
+/** `boss` is the worker's handle; a caller with none cannot process a row that queues work. */
+export function createWebhookBatchContext(boss?: PgBoss): WebhookBatchContext {
   let cached: WhatsAppChannel | null | undefined;
   const esConnected = new Map<string, boolean>();
+  let subscriptions: GraphSubscription[] | undefined;
   return {
     async whatsappChannel() {
       // Memoized on SUCCESS only. Caching the promise itself would pin a
@@ -133,6 +155,15 @@ export function createWebhookBatchContext(): WebhookBatchContext {
       const answer = await isEsConnectedPhoneNumber(phoneNumberId);
       esConnected.set(phoneNumberId, answer);
       return answer;
+    },
+    async graphSubscriptions() {
+      // Same rule: only a successful answer is remembered.
+      if (subscriptions === undefined) subscriptions = await listSubscriptions();
+      return subscriptions;
+    },
+    jobs() {
+      if (!boss) throw new Error('webhook_jobs_unavailable');
+      return boss;
     },
   };
 }
@@ -190,8 +221,16 @@ export async function processWebhookEvent(
     await processElevenLabsSalesAnalysisRow(row);
     return;
   }
-  if (row.event_kind === 'graph_mail') {
+  if (row.event_kind === GRAPH_MAIL_KIND) {
     await processGraphMail(row);
+    return;
+  }
+  if (row.event_kind === GRAPH_CALENDAR_KIND) {
+    await processGraphCalendar(row, ctx);
+    return;
+  }
+  if (row.event_kind === GRAPH_LIFECYCLE_KIND) {
+    await processGraphLifecycle(row, ctx);
     return;
   }
   if (row.event_kind === 'email_delivery') {
@@ -259,6 +298,28 @@ async function processGraphMail(row: WebhookInboxRow): Promise<void> {
   // already visible in durable state — a created inquiry as a contact_messages
   // row, anything else as a processed webhook_inbox row with no row behind it.
   await intakeMailAsInquiry(row.message_id);
+}
+
+// A console agent's calendar changed. The notification names only the
+// subscription, so the agent is resolved from it and that agent's presence sync
+// is queued — coalesced, so a burst of notifications (a series edited) is one
+// read. Outcome not logged, as above; an unknown subscription is terminal (the
+// sweep deletes it), and only a Graph or database failure reaches the retry
+// budget.
+async function processGraphCalendar(row: WebhookInboxRow, ctx: WebhookBatchContext): Promise<void> {
+  const { subscriptionId } = (row.payload ?? {}) as GraphNotification;
+  if (!subscriptionId) return;
+  await handleCalendarNotification(ctx.jobs(), await ctx.graphSubscriptions(), subscriptionId);
+}
+
+// A calendar subscription was removed, missed changes, or needs reauthorizing.
+async function processGraphLifecycle(row: WebhookInboxRow, ctx: WebhookBatchContext): Promise<void> {
+  const { subscriptionId, lifecycleEvent } = (row.payload ?? {}) as GraphNotification;
+  if (!subscriptionId || !lifecycleEvent) return;
+  await handleCalendarLifecycleEvent(ctx.jobs(), () => ctx.graphSubscriptions(), {
+    subscriptionId,
+    lifecycleEvent,
+  });
 }
 
 // An inbound human message. FIRST the row is routed by the business number it

@@ -41,7 +41,19 @@ vi.mock('@/lib/data/whatsapp-account-processing', () => ({
 vi.mock('@/lib/whatsapp/embedded-signup/connected-numbers', () => ({
   isEsConnectedPhoneNumber: vi.fn(async () => false),
 }));
+vi.mock('@/lib/data/console-agent-calendar-presence', () => ({
+  handleCalendarNotification: vi.fn(async () => 'queued'),
+  handleCalendarLifecycleEvent: vi.fn(async () => 'renewed'),
+}));
+vi.mock('@/lib/microsoft/subscriptions', () => ({ listSubscriptions: vi.fn(async () => []) }));
 
+import type { PgBoss } from 'pg-boss';
+
+import {
+  handleCalendarLifecycleEvent,
+  handleCalendarNotification,
+} from '@/lib/data/console-agent-calendar-presence';
+import { listSubscriptions } from '@/lib/microsoft/subscriptions';
 import { recordProviderComplaint, recordProviderUnsubscribe } from '@/lib/data/marketing-contact-sync';
 import {
   createWebhookBatchContext,
@@ -968,5 +980,40 @@ describe('createWebhookBatchContext', () => {
     await processWebhookEvent(messageRow());
     await processWebhookEvent(messageRow());
     expect(getWhatsAppChannel).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Graph calendar and lifecycle rows', () => {
+  const boss = { send: vi.fn() } as unknown as PgBoss;
+
+  function graphRow(event_kind: string, payload: Record<string, string>): WebhookInboxRow {
+    return messageRow({ provider: 'graph', event_kind, message_id: null, context_message_id: null, phone_number_id: null, payload });
+  }
+
+  it("hands a calendar row to the presence sync with the worker's queue and one subscription list per drain", async () => {
+    const ctx = createWebhookBatchContext(boss);
+    await processWebhookEvent(graphRow('graph_calendar', { subscriptionId: 'sub-1' }), ctx);
+    await processWebhookEvent(graphRow('graph_calendar', { subscriptionId: 'sub-1' }), ctx);
+
+    expect(handleCalendarNotification).toHaveBeenCalledWith(boss, [], 'sub-1');
+    expect(listSubscriptions).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands a lifecycle row over with its event', async () => {
+    await processWebhookEvent(
+      graphRow('graph_lifecycle', { subscriptionId: 'sub-1', lifecycleEvent: 'reauthorizationRequired' }),
+      createWebhookBatchContext(boss),
+    );
+
+    expect(handleCalendarLifecycleEvent).toHaveBeenCalledWith(boss, expect.any(Function), {
+      subscriptionId: 'sub-1',
+      lifecycleEvent: 'reauthorizationRequired',
+    });
+  });
+
+  it('a calendar row outside the worker (no queue) fails, so it is retried rather than lost', async () => {
+    await expect(
+      processWebhookEvent(graphRow('graph_calendar', { subscriptionId: 'sub-1' }), createWebhookBatchContext()),
+    ).rejects.toThrow('webhook_jobs_unavailable');
   });
 });

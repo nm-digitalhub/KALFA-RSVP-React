@@ -42,7 +42,6 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // Every 10 minutes.
   'callback-calendar-schedule-sweep': 30,
   'voximplant-call-reconcile': 30,
-  'console-agent-calendar-presence-sync': 30,
   'fleet-request-expire-sweep': 30,
   'payment-orphans': 30,
   // Every 30 minutes.
@@ -61,6 +60,11 @@ export const QUEUE_EXPECTED_MAX_MINUTES: Record<string, number> = {
   // lives ~2.94 days — so the badge turns red with well over a day of margin
   // before inbound intake could actually lapse.
   'graph-intake-subscription-renew': 18 * 60,
+  // Every 6 hours, the calendar-presence sweep — same lifetime and renewal
+  // window as the intake subscription above, so the same allowance. (Between
+  // sweeps the queue also runs every agent's event-driven reads, so in practice
+  // it completes far more often.)
+  'console-agent-calendar-presence-sync': 18 * 60,
   // Daily. Same 3x-ish allowance as its neighbours — a daily job flagged after four
   // hours is "stale" by breakfast every single day.
   'extra-key-check': 3 * 24 * 60,

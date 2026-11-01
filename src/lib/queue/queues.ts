@@ -111,12 +111,14 @@ export const QUEUES = {
   // 60-day expiry. Singleton so an overlapping run never refreshes the same
   // token twice in flight. See src/lib/data/instagram-token-refresh.ts.
   igTokenRefresh: 'instagram-token-refresh',
-  // Console-agent calendar presence sync —
-  // every 10m, per-agent calendar-derived free/busy into
-  // console_agent_calendar_presence (a THIRD, advisory axis — never merged
-  // into agent_status, the business truth). Read-only against Exchange;
-  // writes only the closed presence table. See
-  // src/lib/data/console-agent-calendar-presence.ts.
+  // Console-agent calendar presence sync — per-agent calendar-derived
+  // free/busy into console_agent_calendar_presence (a THIRD, advisory axis —
+  // never merged into agent_status, the business truth). Read-only against
+  // Exchange; writes only the closed presence table. Event-driven: a Graph
+  // calendar notification, or the moment the next meeting starts or ends,
+  // queues one agent's sync (CalendarPresenceSyncJob below); a 6-hourly sweep
+  // keeps the calendar subscriptions alive and restarts every agent's chain.
+  // See src/lib/data/console-agent-calendar-presence.ts.
   calendarPresenceSync: 'console-agent-calendar-presence-sync',
   // Microsoft Graph subscription renewal for mail intake. A Graph subscription
   // lasts ~2.94 days and expires with NO notification — intake would simply go
@@ -325,6 +327,35 @@ export const PACKAGE_ACTIVATION_RETRY = {
   retryDelay: 30,
   retryBackoff: true,
   retryDelayMax: 300,
+} as const;
+
+// The calendar-presence job payload. Ids only — never a mailbox address.
+//   { agentId }      one agent's sync (a notification, or a sweep's fan-out)
+//   { agentId, at }  the wake for the moment `at` (epoch ms) when that agent's
+//                    calendar presence can next change
+//   {} / null        the sweep: subscriptions, then every agent's sync
+export type CalendarPresenceSyncJob = {
+  agentId?: string;
+  at?: number;
+} | null;
+
+// The sweep's singleton key, shared by the cron and any sweep queued early, so
+// two sweeps never run side by side and race two creations of one subscription.
+export const CALENDAR_PRESENCE_SWEEP_KEY = 'calendar-presence-sweep';
+
+// The wake job id, deterministic over (agent, moment): every sync that sees the
+// same next meeting boundary queues ONE job for it, and a duplicate send is a
+// no-op (pg-boss ignores a send whose id exists).
+export function calendarPresenceWakeJobId(agentId: string, atMs: number): string {
+  return deterministicJobId(`calendar-presence-wake:${agentId}:${atMs}`);
+}
+
+// calendar-presence retry policy. A sync records a Graph failure on its row and
+// returns, so a retry is only for an unexpected throw (the database, pg-boss).
+export const CALENDAR_PRESENCE_RETRY = {
+  retryLimit: 3,
+  retryDelay: 60,
+  retryBackoff: true,
 } as const;
 
 // The owner-agent-reply job payload. The intake row id ONLY — never the question,
