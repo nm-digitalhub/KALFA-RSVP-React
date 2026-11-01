@@ -13,14 +13,6 @@ vi.mock('@/lib/data/admin/channels', () => ({
 // actions.ts imports the Voximplant channel + outreach-master DALs
 // (both `server-only`). Stub them so importing './actions' doesn't pull the
 // server-only guard into this Node test suite.
-// `./actions` imports this DAL, and it is `server-only` — an unstubbed
-// server-only import fails the whole FILE at import time, not one test.
-// Same gotcha the channel-catalog DAL caused here in July.
-vi.mock('@/lib/data/admin/voice-purposes', () => ({
-  createVoicePurpose: vi.fn(),
-  updateVoicePurpose: vi.fn(),
-  listVoicePurposesForAdmin: vi.fn(),
-}));
 vi.mock('@/lib/data/admin/voximplant-channel', () => ({
   getVoximplantChannelConfig: vi.fn(),
   updateVoximplantChannelConfig: vi.fn(),
@@ -40,7 +32,6 @@ vi.mock('@/lib/data/admin/integrations/send-policy', () => ({
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
 import { updateWhatsAppChannelConfig } from '@/lib/data/admin/channels';
-import { createVoicePurpose, updateVoicePurpose, listVoicePurposesForAdmin } from '@/lib/data/admin/voice-purposes';
 import {
   getVoximplantChannelConfig,
   updateVoximplantLiveCalls,
@@ -77,18 +68,6 @@ const FIELDS = {
 };
 
 beforeEach(() => vi.clearAllMocks());
-
-describe.each([
-  { name: 'create voice purpose', action: createVoicePurposeAction, write: vi.mocked(createVoicePurpose) },
-  { name: 'update voice purpose', action: updateVoicePurposeAction, write: vi.mocked(updateVoicePurpose) },
-])('$name authorization', ({ action, write }) => {
-  it('propagates a DAL redirect even after the earlier read was allowed', async () => {
-    vi.mocked(getVoximplantChannelConfig).mockResolvedValue({} as VoxChannelConfig);
-    vi.mocked(listVoicePurposesForAdmin).mockResolvedValue([]);
-    write.mockRejectedValueOnce(NEXT_REDIRECT);
-    await expect(action({}, fd({ key: 'test_purpose', displayName: 'ייעוד בדיקה' }))).rejects.toBe(NEXT_REDIRECT);
-  });
-});
 
 describe('updateWhatsAppChannelAction — Next.js control-flow signals (requirePlatformPermission)', () => {
   it('propagates a NEXT_REDIRECT from updateWhatsAppChannelConfig instead of returning { error }', async () => {

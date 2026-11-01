@@ -19,7 +19,7 @@ import { createMongoAbility } from '@casl/ability';
 
 // nav-visibility.ts is `import 'server-only'`; this suite reads one exported
 // const from it and never calls the resolver, so the marker is stubbed exactly
-// as the other suites do it (see src/lib/workflow/manual-run.test.ts).
+// as the other server-only suites do it.
 vi.mock('server-only', () => ({}));
 
 import { NAV_GROUPS, visibleNavGroups } from './admin-shell';

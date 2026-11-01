@@ -28,7 +28,6 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 60_000,
-    server: { deps: { inline: ['@workflowbuilder/sdk', '@workflowbuilder/ui'] } },
   },
   resolve: {
     alias: {

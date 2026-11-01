@@ -1,89 +1,5 @@
 module.exports = {
   forbidden: [
-    {
-      // ⚠️ THE RULE A PRODUCTION OUTAGE BOUGHT (2026-09-14).
-      //
-      // `src/lib/workflow/catalogue/schemas.ts` is `'use client'` and loads
-      // `@workflowbuilder/sdk` runtime values via the node palette files it imports,
-      // so Next compiles it into the CLIENT module graph. A server module that
-      // imports it does not receive the values — it receives a client REFERENCE,
-      // and every property access on it throws at request time:
-      //
-      //   TypeError: PALETTE_ITEMS.find is not a function
-      //
-      // `tsc` accepts it (the import is perfectly typed), vitest accepts it (no
-      // Next bundling), and the pre-existing worker rule never looked here. The
-      // result was that arming ANY workflow 500'd in production while every gate
-      // was green.
-      //
-      // The catalogue's SDK-free half (`types.ts`, `nodes.ts`) is what server
-      // code reads instead — the same split `nodes.ts` documents for the worker.
-      name: 'server-code-must-not-reach-the-editor-schemas',
-      comment:
-        'Server-side workflow code must not import catalogue/schemas.ts — it lives in the client graph and resolves to a client reference on the server. Read NODE_REQUIRED_FIELDS / NODE_NUMBER_RANGES from catalogue/types.ts instead.',
-      severity: 'error',
-      from: { path: '^src/lib/(workflow|data|queue|ops)/' },
-      to: { path: '^src/lib/workflow/catalogue/schemas\\.ts$', reachable: true },
-    },
-{
-    // ⚠️ THE PACKAGE, NOT A FILE. The rule above names `catalogue/schemas.ts` by
-    // path, so it cannot see the per-node editor files the one-folder-per-node
-    // move creates (`nodes/<name>/schema.ts`, `uischema.ts`, …) — each of which
-    // imports SDK runtime values exactly as the vendor starter does. This one
-    // names the SDK itself, so whichever editor file a server module reaches,
-    // directly or through any chain, the cruise fails.
-    //
-    // WHAT COUNTS AS SERVER: the worker, the engine and its step handlers, the
-    // adapter, the SDK-free half of every node folder (`definition.ts`,
-    // `runtime.ts`, `match.ts`), the SDK-free catalogue files, and the server
-    // data layers — `src/lib/data` included, because that is exactly where the
-    // 2026-09-23 SUMIT client-reference bug came in.
-    //
-    // `tsPreCompilationDeps` is on, so a TYPE-only SDK import counts too. That is
-    // deliberate: the SDK-free files are a contract, and "only a type" is how a
-    // value import usually starts.
-    name: 'server-code-must-not-reach-the-editor-sdk',
-    comment:
-      'Server-side workflow code must not reach @workflowbuilder/sdk, directly or transitively. The SDK is browser-only; in the Next server a value from it arrives as a client reference, and in the worker it adds megabytes for nothing. Node folders split for this: definition.ts / runtime.ts / match.ts are SDK-free; schema.ts, uischema.ts, default-properties-data.ts and the palette file are the editor side.',
-    severity: 'error',
-    from: {
-      path: '^(worker/|src/lib/workflow/(steps|engine|adapter)/|src/lib/workflow/nodes/[^/]+/(definition|runtime|match)\\.ts$|src/lib/workflow/catalogue/(types|nodes|arm-check)\\.ts$|src/lib/(data|queue|ops)/)',
-    },
-    to: { path: '@workflowbuilder/sdk', reachable: true },
-  },
-  {
-    // ⚠️ AN ALLOW-LIST, NOT A DENY-LIST. A step handler reaches the outside world
-    // ONLY through the ports on `ctx.deps` — the vendor's own ports-and-adapters
-    // shape (`runGraph` is pure; activities are injected), and the reason the
-    // editor's dry run can swap every side effect for a recording. Nothing
-    // enforced it: the source scans only read the node's own files, so a
-    // runtime that imported `@/lib/foo`, which imported `child_process` or a
-    // SUMIT client, slipped past them.
-    //
-    // Measured 2026-09-24: the whole server-side step layer reaches exactly the
-    // modules listed in `to.pathNot` below — all pure, no I/O, no core module.
-    // Anything else reachable from it, directly or through any chain, fails the
-    // cruise. Widening the list is a deliberate, reviewed edit of this rule.
-    //
-    // FROM: `steps/` and every node-folder file except the four editor-side ones
-    // (schema, uischema, defaults, and the palette file named after its folder —
-    // `\\3` is the folder name), which `server-code-must-not-reach-the-editor-sdk`
-    // already fences off from the server.
-    name: 'step-layer-reaches-only-pure-modules',
-    comment:
-      'A step handler may reach the outside world only through ctx.deps (the ports), so the dry run can swap every side effect. The server-side step layer may therefore reach only the pure modules allow-listed here. To add one, confirm it has no I/O, no core-module and no server-only import, then list it.',
-    severity: 'error',
-    from: {
-      path: '^src/lib/workflow/(steps|nodes)/',
-      pathNot:
-        '(\\.test\\.tsx?$|^src/lib/workflow/nodes/[^/]+/(schema|uischema|default-properties-data)\\.ts$|^src/lib/workflow/nodes/([^/]+)/\\3\\.ts$)',
-    },
-    to: {
-      pathNot:
-        '^(src/lib/workflow/(steps|vendor/workflowbuilder)/|src/lib/workflow/nodes/[^/]+/(?!(schema|uischema|default-properties-data)\\.ts$)|src/lib/workflow/catalogue/types\\.ts$|src/lib/workflow/engine/(ports|wait-signal)\\.ts$|src/lib/workflow/voice-outcome\\.ts$|src/lib/constants\\.ts$|src/lib/integrations/errors\\.ts$|src/lib/sumit/hold-status\\.ts$)',
-      reachable: true,
-    },
-  },
   {
     // The owner WhatsApp agent's read cores (plan §5, stage 5) run outside a
     // request — in the agent process, with a service-role client and no cookie
@@ -109,20 +25,20 @@ module.exports = {
     // dependency-cruiser cannot see a 'use client' directive, so this rule fences
     // off the DIRECTORIES that hold them. Measured 2026-09-24 (grep for a
     // leading 'use client' under src/): every such module lives in src/app,
-    // src/components, src/hooks or src/lib/workflow, and none of those four is
-    // reached from src/lib/owner-agent (42 modules, none under them). A client
-    // module reached from server code arrives as a client REFERENCE (see
-    // `server-code-must-not-reach-the-editor-schemas` above); the agent process
-    // has no use for UI, hooks or the workflow editor either way.
+    // src/components or src/hooks, and none of them is reached from
+    // src/lib/owner-agent. A client module reached from
+    // server code arrives as a client REFERENCE — on the server every property
+    // access on it throws at request time; the agent process has no use for UI
+    // or hooks either way.
     //
-    // A 'use client' module added OUTSIDE these four directories is not caught
+    // A 'use client' module added OUTSIDE these three directories is not caught
     // here; if one appears, add its directory.
     name: 'owner-agent-no-client-or-ui-modules',
     comment:
-      "src/lib/owner-agent/** may not reach src/app, src/components, src/hooks or src/lib/workflow, directly or transitively. Those are the directories every 'use client' module under src/ lives in (measured 2026-09-24); dependency-cruiser cannot detect the directive itself, so a new 'use client' module elsewhere must add its directory here.",
+      "src/lib/owner-agent/** may not reach src/app, src/components or src/hooks, directly or transitively. Those are the directories every 'use client' module under src/ lives in; dependency-cruiser cannot detect the directive itself, so a new 'use client' module elsewhere must add its directory here.",
     severity: 'error',
     from: { path: '^src/lib/owner-agent/' },
-    to: { path: '^src/(app|components|hooks)/|^src/lib/workflow/', reachable: true },
+    to: { path: '^src/(app|components|hooks)/', reachable: true },
   },
   {
     name: 'worker-no-request-scoped-next',

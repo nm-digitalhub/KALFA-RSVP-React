@@ -2,7 +2,7 @@ import type { PgBoss } from 'pg-boss';
 
 import { completedRetentionSeconds, PGBOSS_SEND_IT_QUEUE } from '@/lib/ops/queue-schedule';
 
-import { QUEUES, RETIRED_QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS } from './queues';
+import { QUEUES, RETIRED_QUEUES } from './queues';
 
 // The queues every pg-boss schema of this app holds, with their policy, expiry and retention. The pg-boss docs: a
 // queue is created with createQueue() "before anything is sent to it", and a send to a queue that does not exist
@@ -122,14 +122,7 @@ export async function ensureQueues(boss: PgBoss): Promise<void> {
       // would both drive the installer into ~/.supabase/bin and both run
       // `npm install` in the same tree. Concurrency here corrupts a toolchain.
       q === QUEUES.supabaseCliUpdate;
-    // The workflow queue gets its own, and it is not a tuning knob: it has to
-    // sit between the largest node budget and the step lease. See
-    // WORKFLOW_RUN_EXPIRE_SECONDS.
-    const expire = SWEEP_QUEUES.has(q)
-      ? SWEEP_EXPIRE_SECONDS
-      : q === QUEUES.workflowRun
-        ? WORKFLOW_RUN_EXPIRE_SECONDS
-        : undefined;
+    const expire = SWEEP_QUEUES.has(q) ? SWEEP_EXPIRE_SECONDS : undefined;
     // A completed job must outlive the queue's staleness allowance, or the
     // Debug badge reads a healthy queue as stale (completedRetentionSeconds).
     const deleteAfterSeconds = completedRetentionSeconds(q);

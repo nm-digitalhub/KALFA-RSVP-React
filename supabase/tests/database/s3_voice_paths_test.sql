@@ -1,12 +1,9 @@
 -- staff-tables-permission-rls, stage S3 (task 4.1): the hand-written cases (HAND_WRITTEN in
 -- src/lib/auth/staff-table-rls.ts) that s3_voice_test.sql does not generate:
 --   * the seeded roles (owner, ops_engineer, billing_clerk, auditor) and a stand-in for support_agent;
---   * each user-session path as the data layer sends it (call-dnc.ts, voximplant-channel.ts, voice-purposes.ts,
---     provider-numbers.ts, owner-agent.ts), including the PostgREST upserts and every path of the
+--   * each user-session path as the data layer sends it (call-dnc.ts, provider-numbers.ts, owner-agent.ts), including the PostgREST upserts and every path of the
 --     upsert_provider_number RPC (an INVOKER function, so it runs under the caller's policies), for each key holder
---     alone and for staff without either key;
---   * the service-role statements of voice_purpose_attempts (voice-purpose-dispatch.ts, voice-purpose-attempts.ts,
---     purpose/[purpose]/ctx/[token]/route.ts, elevenlabs-analysis.ts).
+--     alone and for staff without either key.
 -- Created with `npx supabase test new database/s3_voice_paths`; run with
 --   SUPABASE_DB_PORT=54322 npx supabase test db --local supabase/tests/database
 -- One transaction, rolled back: no row, role or grant survives the run.
@@ -20,7 +17,7 @@
 -- path, and inside upsert_provider_number on each of its paths.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(226);
+select plan(160);
 
 -- Actors.
 insert into auth.users (id, email) values
@@ -56,8 +53,7 @@ insert into public.platform_staff (user_id, role_id, granted_by) values ('000000
 -- Row fixtures.
 insert into public.call_dnc_list (normalized_phone, reason) values ('+972500000911', 'rls paths');
 insert into public.call_compliance_settings (id) values (true) on conflict (id) do nothing;
-update public.call_compliance_settings set dnc_registry_gate_enabled = false, call_consent_required = true where id;
-insert into public.voice_purposes (key, display_name) values ('rls_paths', 'RLS paths');
+update public.call_compliance_settings set dnc_registry_gate_enabled = false where id;
 insert into public.provider_numbers (id, provider, provider_ref, e164, source) values
   ('00000000-0000-4000-8000-00000000c901', 'voximplant', '911', '+97230000911', 'sync'),
   ('00000000-0000-4000-8000-00000000c902', 'meta_whatsapp', 'm911', '+97230000912', 'sync'),
@@ -67,13 +63,6 @@ insert into public.provider_numbers (id, provider, provider_ref, e164, source) v
   ('00000000-0000-4000-8000-00000000c905', 'company', null, '+97230000915', 'admin'),
   ('00000000-0000-4000-8000-00000000c906', 'extra_sms', null, '+97230000916', 'admin');
 insert into public.provider_number_roles (role, number_id) values ('voice_caller_id_sales', '00000000-0000-4000-8000-00000000c901');
--- voice_purpose_attempts: its foreign-key chain (an event, a contact, a purpose).
-insert into public.events (id, owner_id, name) values ('00000000-0000-4000-8000-00000000e901', '00000000-0000-4000-8000-00000000d008', 'RLS S3 event');
-insert into public.contacts (id, event_id, normalized_phone) values ('00000000-0000-4000-8000-00000000e902', '00000000-0000-4000-8000-00000000e901', '+972500000999');
-insert into public.voice_purposes (key, display_name) values ('rls_paths_vpa', 'RLS attempts');
--- What a holder of manage_voice must list: every purpose, read as postgres.
-create temp table s3_expected_purposes on commit drop as select key from public.voice_purposes;
-grant select on s3_expected_purposes to authenticated;
 
 -- The actors hold what the cases assume.
 set local role authenticated;
@@ -213,70 +202,39 @@ set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
 select results_eq($$insert into public.call_dnc_list (normalized_phone, reason, added_by) values ('+972500000922', 'rls upsert', '00000000-0000-4000-8000-00000000d006') on conflict (normalized_phone) do update set normalized_phone = excluded.normalized_phone, reason = excluded.reason, added_by = excluded.added_by returning normalized_phone$$, array['+972500000922'], 'call_dnc_list: holder of manage_voice only addToCallDnc adds a new number');
 
--- call_compliance_settings: getRegistryConnectionStatus / setRegistryGateEnabled (call-dnc.ts), getVoximplantChannelConfig /
--- updateCallConsentRequired (voximplant-channel.ts).
+-- call_compliance_settings: getRegistryConnectionStatus / setRegistryGateEnabled (call-dnc.ts).
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d007';
 select is_empty($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: holder of manage_settings only getRegistryConnectionStatus sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d007';
-select is_empty($$select call_consent_required::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: holder of manage_settings only getVoximplantChannelConfig sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d007';
 select is_empty($$update public.call_compliance_settings set dnc_registry_gate_enabled = true, updated_at = now() where id = true returning dnc_registry_gate_enabled::text$$, 'call_compliance_settings: holder of manage_settings only setRegistryGateEnabled sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d007';
-select is_empty($$update public.call_compliance_settings set call_consent_required = false, updated_at = now() where id = true returning call_consent_required::text$$, 'call_compliance_settings: holder of manage_settings only updateCallConsentRequired sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
 select is_empty($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: billing_clerk getRegistryConnectionStatus sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
-select is_empty($$select call_consent_required::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: billing_clerk getVoximplantChannelConfig sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
 select is_empty($$update public.call_compliance_settings set dnc_registry_gate_enabled = true, updated_at = now() where id = true returning dnc_registry_gate_enabled::text$$, 'call_compliance_settings: billing_clerk setRegistryGateEnabled sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
-select is_empty($$update public.call_compliance_settings set call_consent_required = false, updated_at = now() where id = true returning call_consent_required::text$$, 'call_compliance_settings: billing_clerk updateCallConsentRequired sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
 select is_empty($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: auditor getRegistryConnectionStatus sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
-select is_empty($$select call_consent_required::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: auditor getVoximplantChannelConfig sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
 select is_empty($$update public.call_compliance_settings set dnc_registry_gate_enabled = true, updated_at = now() where id = true returning dnc_registry_gate_enabled::text$$, 'call_compliance_settings: auditor setRegistryGateEnabled sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
-select is_empty($$update public.call_compliance_settings set call_consent_required = false, updated_at = now() where id = true returning call_consent_required::text$$, 'call_compliance_settings: auditor updateCallConsentRequired sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
 select is_empty($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: support_agent (stand-in) getRegistryConnectionStatus sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
-select is_empty($$select call_consent_required::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: support_agent (stand-in) getVoximplantChannelConfig sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
 select is_empty($$update public.call_compliance_settings set dnc_registry_gate_enabled = true, updated_at = now() where id = true returning dnc_registry_gate_enabled::text$$, 'call_compliance_settings: support_agent (stand-in) setRegistryGateEnabled sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
-select is_empty($$update public.call_compliance_settings set call_consent_required = false, updated_at = now() where id = true returning call_consent_required::text$$, 'call_compliance_settings: support_agent (stand-in) updateCallConsentRequired sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d008';
 select is_empty($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: signed-in non-staff getRegistryConnectionStatus sees or changes no row');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d008';
-select is_empty($$select call_consent_required::text from public.call_compliance_settings where id = true$$, 'call_compliance_settings: signed-in non-staff getVoximplantChannelConfig sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d008';
 select is_empty($$update public.call_compliance_settings set dnc_registry_gate_enabled = true, updated_at = now() where id = true returning dnc_registry_gate_enabled::text$$, 'call_compliance_settings: signed-in non-staff setRegistryGateEnabled sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d008';
-select is_empty($$update public.call_compliance_settings set call_consent_required = false, updated_at = now() where id = true returning call_consent_required::text$$, 'call_compliance_settings: signed-in non-staff updateCallConsentRequired sees or changes no row');
 reset role;
-select results_eq($$select dnc_registry_gate_enabled::text || '/' || call_consent_required::text from public.call_compliance_settings where id$$, array['false/true'], 'call_compliance_settings: both switches intact after the refusals');
+select results_eq($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id$$, array['false'], 'call_compliance_settings: the registry gate intact after the refusals');
 set local role anon;
 select throws_ok($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, '42501', 'permission denied for table call_compliance_settings', 'call_compliance_settings: anon getRegistryConnectionStatus refused (no grant)');
 set local role anon;
@@ -285,142 +243,20 @@ set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d001';
 select results_eq($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, array['false'], 'call_compliance_settings: owner getRegistryConnectionStatus reads the gate');
 set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d001';
-select results_eq($$select call_consent_required::text from public.call_compliance_settings where id = true$$, array['true'], 'call_compliance_settings: owner getVoximplantChannelConfig reads the consent switch');
-set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
 select results_eq($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, array['false'], 'call_compliance_settings: ops_engineer getRegistryConnectionStatus reads the gate');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
-select results_eq($$select call_consent_required::text from public.call_compliance_settings where id = true$$, array['true'], 'call_compliance_settings: ops_engineer getVoximplantChannelConfig reads the consent switch');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
 select results_eq($$select dnc_registry_gate_enabled::text from public.call_compliance_settings where id = true$$, array['false'], 'call_compliance_settings: holder of manage_voice only getRegistryConnectionStatus reads the gate');
 set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
-select results_eq($$select call_consent_required::text from public.call_compliance_settings where id = true$$, array['true'], 'call_compliance_settings: holder of manage_voice only getVoximplantChannelConfig reads the consent switch');
-set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d001';
 select results_eq($$update public.call_compliance_settings set dnc_registry_gate_enabled = true, updated_at = now() where id = true returning dnc_registry_gate_enabled::text$$, array['true'], 'call_compliance_settings: owner setRegistryGateEnabled writes the gate');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d001';
-select results_eq($$update public.call_compliance_settings set call_consent_required = false, updated_at = now() where id = true returning call_consent_required::text$$, array['false'], 'call_compliance_settings: owner updateCallConsentRequired writes the consent switch');
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
 select results_eq($$update public.call_compliance_settings set dnc_registry_gate_enabled = true, updated_at = now() where id = true returning dnc_registry_gate_enabled::text$$, array['true'], 'call_compliance_settings: ops_engineer setRegistryGateEnabled writes the gate');
 set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
-select results_eq($$update public.call_compliance_settings set call_consent_required = false, updated_at = now() where id = true returning call_consent_required::text$$, array['false'], 'call_compliance_settings: ops_engineer updateCallConsentRequired writes the consent switch');
-set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
 select results_eq($$update public.call_compliance_settings set dnc_registry_gate_enabled = true, updated_at = now() where id = true returning dnc_registry_gate_enabled::text$$, array['true'], 'call_compliance_settings: holder of manage_voice only setRegistryGateEnabled writes the gate');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
-select results_eq($$update public.call_compliance_settings set call_consent_required = false, updated_at = now() where id = true returning call_consent_required::text$$, array['false'], 'call_compliance_settings: holder of manage_voice only updateCallConsentRequired writes the consent switch');
-
--- voice_purposes: listVoicePurposesForAdmin, createVoicePurpose, updateVoicePurpose (read is_builtin, then update by key).
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d007';
-select is_empty($$select key from public.voice_purposes order by sort_order$$, 'voice_purposes: holder of manage_settings only listVoicePurposesForAdmin sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d007';
-select throws_ok($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_refused', 'RLS created', null, null, false, false) returning key$$, '42501', 'new row violates row-level security policy for table "voice_purposes"', 'voice_purposes: holder of manage_settings only createVoicePurpose refused (with check)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d007';
-select is_empty($$select is_builtin::text from public.voice_purposes where key = 'rls_paths'$$, 'voice_purposes: holder of manage_settings only updateVoicePurpose read sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d007';
-select is_empty($$update public.voice_purposes set display_name = 'RLS edited', description = null, rule_id = null, enabled = false, active = true where key = 'rls_paths' returning key$$, 'voice_purposes: holder of manage_settings only updateVoicePurpose sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
-select is_empty($$select key from public.voice_purposes order by sort_order$$, 'voice_purposes: billing_clerk listVoicePurposesForAdmin sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
-select throws_ok($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_refused', 'RLS created', null, null, false, false) returning key$$, '42501', 'new row violates row-level security policy for table "voice_purposes"', 'voice_purposes: billing_clerk createVoicePurpose refused (with check)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
-select is_empty($$select is_builtin::text from public.voice_purposes where key = 'rls_paths'$$, 'voice_purposes: billing_clerk updateVoicePurpose read sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
-select is_empty($$update public.voice_purposes set display_name = 'RLS edited', description = null, rule_id = null, enabled = false, active = true where key = 'rls_paths' returning key$$, 'voice_purposes: billing_clerk updateVoicePurpose sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
-select is_empty($$select key from public.voice_purposes order by sort_order$$, 'voice_purposes: auditor listVoicePurposesForAdmin sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
-select throws_ok($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_refused', 'RLS created', null, null, false, false) returning key$$, '42501', 'new row violates row-level security policy for table "voice_purposes"', 'voice_purposes: auditor createVoicePurpose refused (with check)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
-select is_empty($$select is_builtin::text from public.voice_purposes where key = 'rls_paths'$$, 'voice_purposes: auditor updateVoicePurpose read sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
-select is_empty($$update public.voice_purposes set display_name = 'RLS edited', description = null, rule_id = null, enabled = false, active = true where key = 'rls_paths' returning key$$, 'voice_purposes: auditor updateVoicePurpose sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
-select is_empty($$select key from public.voice_purposes order by sort_order$$, 'voice_purposes: support_agent (stand-in) listVoicePurposesForAdmin sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
-select throws_ok($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_refused', 'RLS created', null, null, false, false) returning key$$, '42501', 'new row violates row-level security policy for table "voice_purposes"', 'voice_purposes: support_agent (stand-in) createVoicePurpose refused (with check)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
-select is_empty($$select is_builtin::text from public.voice_purposes where key = 'rls_paths'$$, 'voice_purposes: support_agent (stand-in) updateVoicePurpose read sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
-select is_empty($$update public.voice_purposes set display_name = 'RLS edited', description = null, rule_id = null, enabled = false, active = true where key = 'rls_paths' returning key$$, 'voice_purposes: support_agent (stand-in) updateVoicePurpose sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d008';
-select is_empty($$select key from public.voice_purposes order by sort_order$$, 'voice_purposes: signed-in non-staff listVoicePurposesForAdmin sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d008';
-select throws_ok($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_refused', 'RLS created', null, null, false, false) returning key$$, '42501', 'new row violates row-level security policy for table "voice_purposes"', 'voice_purposes: signed-in non-staff createVoicePurpose refused (with check)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d008';
-select is_empty($$select is_builtin::text from public.voice_purposes where key = 'rls_paths'$$, 'voice_purposes: signed-in non-staff updateVoicePurpose read sees or changes no row');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d008';
-select is_empty($$update public.voice_purposes set display_name = 'RLS edited', description = null, rule_id = null, enabled = false, active = true where key = 'rls_paths' returning key$$, 'voice_purposes: signed-in non-staff updateVoicePurpose sees or changes no row');
-reset role;
-select results_eq($$select display_name from public.voice_purposes where key = 'rls_paths'$$, array['RLS paths'], 'voice_purposes: the purpose is intact after the refusals');
-set local role anon;
-select throws_ok($$select key from public.voice_purposes order by sort_order$$, '42501', 'permission denied for table voice_purposes', 'voice_purposes: anon listVoicePurposesForAdmin refused (no grant)');
-set local role anon;
-select throws_ok($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_anon', 'RLS created', null, null, false, false) returning key$$, '42501', 'permission denied for table voice_purposes', 'voice_purposes: anon createVoicePurpose refused (no grant)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d001';
-select set_eq($$select key from public.voice_purposes order by sort_order$$, $$select key from s3_expected_purposes$$, 'voice_purposes: owner listVoicePurposesForAdmin returns every purpose');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
-select set_eq($$select key from public.voice_purposes order by sort_order$$, $$select key from s3_expected_purposes$$, 'voice_purposes: ops_engineer listVoicePurposesForAdmin returns every purpose');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
-select set_eq($$select key from public.voice_purposes order by sort_order$$, $$select key from s3_expected_purposes$$, 'voice_purposes: holder of manage_voice only listVoicePurposesForAdmin returns every purpose');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d001';
-select results_eq($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_created_0', 'RLS created', null, null, false, false) returning key$$, array['rls_created_0'], 'voice_purposes: owner createVoicePurpose');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d001';
-select results_eq($$select is_builtin::text from public.voice_purposes where key = 'rls_paths'$$, array['false'], 'voice_purposes: owner updateVoicePurpose reads is_builtin');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d001';
-select results_eq($$update public.voice_purposes set display_name = 'RLS edited', description = null, rule_id = null, enabled = false, active = true where key = 'rls_paths' returning key$$, array['rls_paths'], 'voice_purposes: owner updateVoicePurpose');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
-select results_eq($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_created_1', 'RLS created', null, null, false, false) returning key$$, array['rls_created_1'], 'voice_purposes: ops_engineer createVoicePurpose');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
-select results_eq($$select is_builtin::text from public.voice_purposes where key = 'rls_paths'$$, array['false'], 'voice_purposes: ops_engineer updateVoicePurpose reads is_builtin');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
-select results_eq($$update public.voice_purposes set display_name = 'RLS edited', description = null, rule_id = null, enabled = false, active = true where key = 'rls_paths' returning key$$, array['rls_paths'], 'voice_purposes: ops_engineer updateVoicePurpose');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
-select results_eq($$insert into public.voice_purposes (key, display_name, description, rule_id, enabled, is_builtin) values ('rls_created_2', 'RLS created', null, null, false, false) returning key$$, array['rls_created_2'], 'voice_purposes: holder of manage_voice only createVoicePurpose');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
-select results_eq($$select is_builtin::text from public.voice_purposes where key = 'rls_paths'$$, array['false'], 'voice_purposes: holder of manage_voice only updateVoicePurpose reads is_builtin');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
-select results_eq($$update public.voice_purposes set display_name = 'RLS edited', description = null, rule_id = null, enabled = false, active = true where key = 'rls_paths' returning key$$, array['rls_paths'], 'voice_purposes: holder of manage_voice only updateVoicePurpose');
 
 -- provider_numbers, provider_number_roles: listProviderNumbers (embedded roles), upsert_provider_number on each of its paths,
 -- deactivateMissingMetaNumbers, assignRole (PostgREST upsert on role), clearRole; listOwnerAgentNumbers (owner).
@@ -697,45 +533,6 @@ select results_eq($$insert into public.provider_number_roles (role, number_id, u
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
 select results_eq($$delete from public.provider_number_roles where role = 'voice_inbound_did' returning role::text$$, array['voice_inbound_did'], 'provider_number_roles: holder of manage_voice only clearRole removes the assignment');
-
--- voice_purpose_attempts: closed. Every user session is refused, the manage_voice holders included; the server's statements run as
--- service_role and return their row.
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
-select throws_ok($$select purpose_key from public.voice_purpose_attempts where access_token = 'rls-s3-access-token'$$, '42501', 'permission denied for table voice_purpose_attempts', 'voice_purpose_attempts: ops_engineer the ctx route''s select refused (no grant)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d003';
-select throws_ok($$select purpose_key from public.voice_purpose_attempts where access_token = 'rls-s3-access-token'$$, '42501', 'permission denied for table voice_purpose_attempts', 'voice_purpose_attempts: billing_clerk the ctx route''s select refused (no grant)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d004';
-select throws_ok($$select purpose_key from public.voice_purpose_attempts where access_token = 'rls-s3-access-token'$$, '42501', 'permission denied for table voice_purpose_attempts', 'voice_purpose_attempts: auditor the ctx route''s select refused (no grant)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d005';
-select throws_ok($$select purpose_key from public.voice_purpose_attempts where access_token = 'rls-s3-access-token'$$, '42501', 'permission denied for table voice_purpose_attempts', 'voice_purpose_attempts: support_agent (stand-in) the ctx route''s select refused (no grant)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d006';
-select throws_ok($$select purpose_key from public.voice_purpose_attempts where access_token = 'rls-s3-access-token'$$, '42501', 'permission denied for table voice_purpose_attempts', 'voice_purpose_attempts: holder of manage_voice only the ctx route''s select refused (no grant)');
-set local role authenticated;
-set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000d002';
-select throws_ok($$update public.voice_purpose_attempts set finish_reason = finish_reason where access_token = 'rls-s3-access-token'$$, '42501', 'permission denied for table voice_purpose_attempts', 'voice_purpose_attempts: ops_engineer a terminal update refused (no grant)');
-set local role service_role;
-select results_eq($$insert into public.voice_purpose_attempts (purpose_key, event_id, contact_id, run_id, node_id, access_token, token_expires_at, rule_id, caller_id, agent_id) values ('rls_paths_vpa', '00000000-0000-4000-8000-00000000e901', '00000000-0000-4000-8000-00000000e902', '00000000-0000-4000-8000-00000000e903', 'rls-node', 'rls-s3-access-token', now() + interval '2 hours', null, null, null) returning access_token$$, array['rls-s3-access-token'], 'voice_purpose_attempts: service_role: voice-purpose-dispatch.ts inserts the attempt');
-set local role service_role;
-select results_eq($$select access_token from public.voice_purpose_attempts where contact_id = '00000000-0000-4000-8000-00000000e902' and run_id = '00000000-0000-4000-8000-00000000e903' and node_id = 'rls-node'$$, array['rls-s3-access-token'], 'voice_purpose_attempts: service_role: voice-purpose-dispatch.ts reads the attempt of a replayed step');
-set local role service_role;
-select results_eq($$update public.voice_purpose_attempts set dispatch_status = 'confirmed', vox_call_session_history_id = 911 where id = (select id from public.voice_purpose_attempts where access_token = 'rls-s3-access-token') returning dispatch_status$$, array['confirmed'], 'voice_purpose_attempts: service_role: voice-purpose-dispatch.ts records the started call');
-set local role service_role;
-select results_eq($$select node_id from public.voice_purpose_attempts where access_token = 'rls-s3-access-token'$$, array['rls-node'], 'voice_purpose_attempts: service_role: voice-purpose-attempts.ts finds the attempt by access_token');
-set local role service_role;
-select results_eq($$select purpose_key from public.voice_purpose_attempts where access_token = 'rls-s3-access-token'$$, array['rls_paths_vpa'], 'voice_purpose_attempts: service_role: the ctx route reads the attempt by access_token');
-set local role service_role;
-select results_eq($$update public.voice_purpose_attempts set dispatch_status = 'concluded', finish_reason = 'rls', call_duration_sec = 12, updated_at = now() where id = (select id from public.voice_purpose_attempts where access_token = 'rls-s3-access-token') and dispatch_status in ('pending', 'confirmed', 'unknown') returning dispatch_status$$, array['concluded'], 'voice_purpose_attempts: service_role: voice-purpose-attempts.ts records the terminal report');
-set local role service_role;
-select results_eq($$update public.voice_purpose_attempts set el_conversation_id = 'rls-conv', updated_at = now() where id = (select id from public.voice_purpose_attempts where access_token = 'rls-s3-access-token') returning el_conversation_id$$, array['rls-conv'], 'voice_purpose_attempts: service_role: voice-purpose-attempts.ts records the conversation id');
-set local role service_role;
-select results_eq($$select event_id::text from public.voice_purpose_attempts where el_conversation_id = 'rls-conv'$$, array['00000000-0000-4000-8000-00000000e901'], 'voice_purpose_attempts: service_role: elevenlabs-analysis.ts links the post-call analysis');
-set local role service_role;
-select results_eq($$select dispatch_status from public.voice_purpose_attempts where run_id = '00000000-0000-4000-8000-00000000e903' and node_id = 'rls-node' order by created_at desc limit 1$$, array['concluded'], 'voice_purpose_attempts: service_role: voice-purpose-attempts.ts reads the step''s latest result');
 
 select * from finish();
 rollback;

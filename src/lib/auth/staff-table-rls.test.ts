@@ -263,10 +263,10 @@ describe('renderPgTapTests: behaviour comes from the rules, not from the SQL', (
   });
 
   it('refuses to render a per-permission table without a row fixture', () => {
-    expect(() => renderPgTapTests(['faq_items', 'voice_purposes'], {}, COLUMNS)).toThrow(/no row fixture for: faq_items, voice_purposes/);
+    expect(() => renderPgTapTests(['faq_items', 'ops_alerts'], {}, COLUMNS)).toThrow(/no row fixture for: faq_items, ops_alerts/);
   });
 
-  it('renders all 25 tables', () => {
+  it('renders every table in the map', () => {
     expect(() => renderPgTapTests(ALL, FIXTURES, COLUMNS)).not.toThrow();
   });
 });
@@ -312,9 +312,9 @@ describe('writing into files the Supabase CLI created', () => {
 });
 
 describe('renderServiceRoleGuard (task 1.4)', () => {
-  it('reads every one of the 25 tables as service_role and checks its four privileges', () => {
+  it('reads every one of the 19 tables as service_role and checks its four privileges', () => {
     const r = renderServiceRoleGuard(ALL);
-    expect(r.plan).toBe(50);
+    expect(r.plan).toBe(38);
     expect(r.sql.startsWith('set local role service_role;')).toBe(true);
     for (const t of ALL) {
       expect(r.sql).toContain(`'${t}: service_role reads'`);

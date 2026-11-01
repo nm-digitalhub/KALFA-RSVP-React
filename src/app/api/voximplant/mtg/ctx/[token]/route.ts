@@ -36,16 +36,14 @@ const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE }
  * what it already carries; each string is copied VERBATIM from its writer:
  *   `console-calls.ts`  missed inbound call
  *   `console-calls.ts`  call-me-now with no agent
- *   `guest-actions.ts`  the workflow's callback node
  *
- * A new writer that invents a fourth stand-in will reintroduce the bug — which
+ * A new writer that invents a third stand-in will reintroduce the bug — which
  * is why `callback-request-placeholders.test.ts` pins this set against the
  * literals actually present in those files.
  */
 const PLACEHOLDER_NAMES = new Set([
   'מתקשר לא מזוהה',
   'מבקש/ת "התקשרו אליי עכשיו"',
-  'אורח',
 ]);
 
 function spokenDuration(durationMs: number): string {
@@ -114,8 +112,8 @@ export async function GET(
   // ⚠️ AND A PLACEHOLDER IS NOT A NAME. `callback_requests.full_name` is NOT
   // NULL, so every writer that has only a phone number stores a stand-in:
   // 'מתקשר לא מזוהה' from a missed inbound call, 'מבקש/ת "התקשרו אליי עכשיו"'
-  // from call-me-now, 'אורח' from the workflow node. Taking the first token of
-  // those yields "מתקשר" / "מבקש/ת" / "אורח" — and the agent's own waypoint 1
+  // from call-me-now. Taking the first token of
+  // those yields "מתקשר" / "מבקש/ת" — and the agent's own waypoint 1
   // then asks, verbatim, "מדבר עם מתקשר?".
   //
   // MEASURED: session 8429772552 on 2026-09-14 was dispatched with
@@ -123,7 +121,7 @@ export async function GET(
   //
   // Empty is the honest answer, and the agent already has a rule for it —
   // "שדה ריק פירושו שאין לך את המידע הזה — אל תמציא". Matched EXACTLY rather
-  // than by prefix: someone genuinely called אורח must not be blanked.
+  // than by prefix: a real name that starts with those letters must not be blanked.
   const rawName = ctx.request.full_name.trim();
   const leadName = PLACEHOLDER_NAMES.has(rawName) ? '' : rawName.split(/\s+/)[0] || '';
 

@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 
 import { hasPlatformPermission, requirePlatformPermission } from '@/lib/auth/dal';
-import { listVoicePurposesForAdmin } from '@/lib/data/admin/voice-purposes';
 import { getVoximplantChannelConfig } from '@/lib/data/admin/voximplant-channel';
 import { getOutreachMasterState } from '@/lib/data/admin/outreach-master';
 import { getVoiceBalanceTile, getVoximplantWiringTile } from '@/lib/data/admin/voice-ops';
@@ -60,13 +59,9 @@ export default async function VoximplantIntegrationPage() {
   await requirePlatformPermission('manage_voice');
 
   const canManageSettings = await hasPlatformPermission('manage_settings');
-  const [voximplant, voicePurposes, master, balance, wiring, voxCtxBase, voxCbBase] =
+  const [voximplant, master, balance, wiring, voxCtxBase, voxCbBase] =
     await Promise.all([
       getVoximplantChannelConfig(),
-      // Joins the SAME parallel load rather than adding a serial await: this page
-      // already makes six round trips and a seventh in sequence would be a
-      // visible pause for one small list.
-      listVoicePurposesForAdmin(),
       canManageSettings ? getOutreachMasterState() : Promise.resolve(null),
       getVoiceBalanceTile(),
       getVoximplantWiringTile(),

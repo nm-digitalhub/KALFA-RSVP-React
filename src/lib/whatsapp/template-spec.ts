@@ -85,7 +85,7 @@ export type TemplateParamsResult = { params: TemplateParams } | { missing: Missi
 // a wrong personal one.
 export const GUEST_FIRST_NAME_FALLBACK = 'משפחה וחברים יקרים';
 
-// Shared {{1}} derivation for every send path (manual, worker engine, workflow): the
+// Shared {{1}} derivation for every send path (manual, worker engine): the
 // first whitespace token of the linked guest's full name, except household
 // rows ("משפחת כהן") whose bare first token would greet "שלום משפחת," — those
 // return null so buildTemplateParams falls back to the generic greeting.

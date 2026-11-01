@@ -61,10 +61,8 @@ async function resolveStaging(
   //     case where minimisation is obviously right.
   //
   // What the removal was actually reaching for — "let me see what arrived" — is a
-  // different need, and it is served properly by `workflow_run_steps.output`:
-  // `action.import_guest_list` returns the rows, so a run log says what came in,
-  // when, and what the automation did with it. That is a deliberate audit in one
-  // place, rather than an undeleted work item in another.
+  // different need. If it is ever wanted, it belongs in a deliberate audit record,
+  // not in an undeleted work item here.
   const admin = createAdminClient();
   await admin
     .from('guest_import_staging')

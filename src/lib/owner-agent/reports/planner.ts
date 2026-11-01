@@ -13,9 +13,6 @@
 //     carry the same key (local_date, slot_time), and the run table's UNIQUE
 //     key keeps it to one run;
 //   - midnight, the owner's 00:00 slot, always exists (the switch is at 02:00).
-// src/lib/workflow/schedule.ts formats the same way but may not be imported
-// here: the `owner-agent-no-client-or-ui-modules` rule fences src/lib/workflow
-// off from src/lib/owner-agent.
 //
 // The KEY is what makes a report go out at most once: (subscription,
 // local_date, slot_time), the table's unique constraint. local_date is the

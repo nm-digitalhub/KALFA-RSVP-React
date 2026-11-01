@@ -24,9 +24,8 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 // exactly the same way as the fleet"; plans/owner-agent-free-read-plan.md §3:
 // free read-only SQL).
 //
-// ⚠️ THE FLEET'S METHOD, ON PURPOSE. `.claude/fleet/bin/run-role.sh` and the
-// workflow engine's `ai` port (src/lib/workflow/enqueue.ts) already drive the
-// installed CLI with the long-lived CLAUDE_CODE_OAUTH_TOKEN from
+// ⚠️ THE FLEET'S METHOD, ON PURPOSE. `.claude/fleet/bin/run-role.sh` already
+// drives the installed CLI with the long-lived CLAUDE_CODE_OAUTH_TOKEN from
 // .claude/fleet/.token.env. Mirrored from them:
 // HOME and PATH pinned exactly as run-role.sh pins them;
 // `--permission-mode dontAsk --setting-sources project --settings <file>`;
@@ -56,8 +55,7 @@ import { OWNER_AGENT_PERMISSIONS, type OwnerAgentPermission } from '@/lib/owner-
 //     --allowedTools, --mcp-config) swallowing a trailing argument, and the
 //     kernel's 128 KiB limit on a single argument.
 //  4. THE ENVIRONMENT IS BUILT, NOT INHERITED. run-role.sh inherits the
-//     scheduler's environment and pins HOME/PATH; the workflow port passes
-//     the whole worker environment. The consumer of this runner holds
+//     scheduler's environment and pins HOME/PATH. The consumer of this runner holds
 //     the Supabase service-role key, and the CLI has no use for it — so the
 //     CLI gets HOME, PATH, NODE_ENV and TZ (as a fleet run has them), the
 //     Supabase access token, and nothing else. Our MCP server loads its own
@@ -321,7 +319,7 @@ export const KILL_AFTER_MS = 10_000;
 const MAX_SYSTEM_PROMPT_CHARS = 32_000;
 const MAX_PROMPT_CHARS = 100_000;
 const MAX_TURNS_CEILING = 20;
-// The workflow port's AI_TIMEOUT_MS: longer than any sane single answer.
+// Longer than any sane single answer.
 const MAX_TIMEOUT_MS = 10 * 60 * 1000;
 
 // An alias or a full model name (`sonnet`, `claude-sonnet-5`,

@@ -21,11 +21,11 @@ export function buildCallAnalysisInsert(
   link: CallAnalysisLink = {},
 ): CallAnalysisInsert {
   const callAttemptId = link.callAttemptId ?? null;
-  // ⚠️ `linked_at` follows the PAIR, not the foreign key. Four of the five
+  // ⚠️ `linked_at` follows the PAIR, not the foreign key. Three of the four
   // attempt tables can never fill `call_attempt_id` — it is a FK to
   // `call_attempts` — so keying "is this linked" off that column alone would
-  // report every Meeting-Confirm, Sales-Close, customer-service and
-  // voice-purpose call as an orphan for ever.
+  // report every Meeting-Confirm, Sales-Close and customer-service call as an
+  // orphan for ever.
   const attemptId = link.attemptId ?? callAttemptId;
   return {
     provider: 'elevenlabs',
@@ -87,16 +87,12 @@ async function upsertCallAnalysis(row: CallAnalysisInsert): Promise<'stored' | '
  *
  * ORDER MATTERS. `call_attempts` is first because it is the only one reachable
  * by BOTH vectors and the only one with a real foreign key on the far side.
- * `voice_purpose_attempts` is last and is the reason this is a list rather than
- * four more `if`s: a purpose added from the admin panel gets linked with no code
- * change at all.
  */
 const ATTEMPT_TABLES = [
   { table: 'call_attempts', hasNonce: true, eventCol: 'event_id', guestCol: 'guest_id' },
   { table: 'callback_request_attempts', hasNonce: false, eventCol: null, guestCol: null },
   { table: 'sales_call_attempts', hasNonce: false, eventCol: null, guestCol: null },
   { table: 'inbound_agent_attempts', hasNonce: false, eventCol: 'event_id', guestCol: 'guest_id' },
-  { table: 'voice_purpose_attempts', hasNonce: false, eventCol: 'event_id', guestCol: null },
 ] as const;
 
 export type AttemptTable = (typeof ATTEMPT_TABLES)[number]['table'];
@@ -131,12 +127,11 @@ async function resolveAttempt(
     // `el_conversation_id` (written by that same fragile cb) is not the single
     // way in.
     //
-    // The sales, meeting-confirm and voice-purpose ctx routes send the attempt's
+    // The sales and meeting-confirm ctx routes send the attempt's
     // own PRIMARY KEY as the token, so matching it against `id` costs one
     // indexed lookup and needs no schema change. `sales_call_attempts` already
     // did exactly this by hand (getSalesAttemptIdByConversationId, "Voximplant
-    // misses the terminal cb"); this generalises that one-off to every table,
-    // `voice_purpose_attempts` included.
+    // misses the terminal cb"); this generalises that one-off to every table.
     //
     // The UUID guard is not cosmetic: `.eq('id', <non-uuid>)` raises 22P02, and
     // `call_attempts` sends a nonce here, not a key.
@@ -260,7 +255,7 @@ export async function storeCallAnalysis(a: NormalizedCallAnalysis): Promise<'sto
 }
 
 // Every persona that is NOT RSVP lands here: sales-close, meeting-confirm, the
-// customer-service agent, and any voice purpose. The rsvp_persisted check stays
+// customer-service agent. The rsvp_persisted check stays
 // out — it compares a guest row against a reported RSVP status and means
 // nothing for these calls — but the LINK does not.
 //

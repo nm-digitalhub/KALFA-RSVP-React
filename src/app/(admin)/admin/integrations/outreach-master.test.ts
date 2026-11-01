@@ -11,13 +11,6 @@ vi.mock('@/lib/data/admin/channels', () => ({
   updateWhatsAppChannelConfig: vi.fn(),
   testWhatsAppConnection: vi.fn(),
 }));
-// `./actions` imports this DAL, and it is `server-only` — an unstubbed
-// server-only import fails the whole FILE at import time, not one test.
-vi.mock('@/lib/data/admin/voice-purposes', () => ({
-  createVoicePurpose: vi.fn(),
-  updateVoicePurpose: vi.fn(),
-  listVoicePurposesForAdmin: vi.fn(),
-}));
 vi.mock('@/lib/data/admin/voximplant-channel', () => ({
   getVoximplantChannelConfig: vi.fn(),
   updateVoximplantChannelConfig: vi.fn(),

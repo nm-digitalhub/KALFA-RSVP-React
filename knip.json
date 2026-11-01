@@ -105,8 +105,6 @@
     // writes the vendor's whole API surface, and a hand edit is lost on the next run.
     "src/lib/{sumit,cardcom,dnc,sms}/generated/**": ["exports", "types"],
     "**/*.generated.ts": ["exports", "types"],
-    // Third-party source copied verbatim (src/lib/workflow/vendor/workflowbuilder/README.md).
-    "src/lib/workflow/vendor/**": ["exports", "types"],
     // Deno: imports resolve through each function's deno.json import map, not package.json.
     "supabase/functions/**": ["unlisted"]
   },

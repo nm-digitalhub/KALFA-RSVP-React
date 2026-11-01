@@ -14,10 +14,8 @@ import {
 // The provider's technical values on a payment operation (CardCom's enum names, our own `provider` and `source` keys), in
 // the viewer's language. The staff facts of the payments list showed them raw — "Receipt", "Debit", "Standard", "app".
 //
-// Through i18next, already a dependency (the workflow editor's SDK uses it), so English and French are a resource each
-// when the app gets them. Its OWN instance (createInstance), never the shared default: that one belongs to the workflow
-// SDK, which switches it to Hebrew in the browser (lib/workflow/i18n-he.ts), and a module-global language is not something
-// a server render for one request may change. `initAsync: false` makes `t` usable the moment this module loads.
+// Through i18next, so English and French are a resource each when the app gets them. Its OWN instance (createInstance),
+// never the shared default: a module-global language is not something a server render for one request may change. `initAsync: false` makes `t` usable the moment this module loads.
 //
 // Each map is keyed by the generated CardCom enum it translates, so a value CardCom adds fails type-checking here until
 // it has a name. A value with no entry — a SUMIT numeric brand/issuer code, a provider value nobody mapped — is shown as

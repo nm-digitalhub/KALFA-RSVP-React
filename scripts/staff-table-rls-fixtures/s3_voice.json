@@ -15,15 +15,6 @@
     "probeValue": "true",
     "update": "dnc_registry_gate_enabled = dnc_registry_gate_enabled"
   },
-  "voice_purposes": {
-    "seed": "insert into public.voice_purposes (key, display_name) values ('rls_fixture', 'RLS fixture')",
-    "row": "key = 'rls_fixture'",
-    "probe": "key",
-    "probeValue": "rls_fixture",
-    "insert": "(key, display_name) values ('rls_insert', 'RLS insert')",
-    "insertValue": "rls_insert",
-    "update": "display_name = 'RLS updated'"
-  },
   "provider_numbers": {
     "seed": "insert into public.provider_numbers (id, provider, e164, source) values ('00000000-0000-4000-8000-00000000c001', 'company', '+97230000901', 'admin')",
     "row": "id = '00000000-0000-4000-8000-00000000c001'",

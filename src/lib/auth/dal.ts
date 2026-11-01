@@ -50,13 +50,12 @@ export const requireUser = cache(async () => {
 //   since 2026-09-10 (20260910090301): user_roles, has_role and app_role are dropped
 //   (20261015114659, 20261015134735) and requireAdmin()/isAdmin() are deleted. Do not
 //   reintroduce a second axis.
-// - CLOSED TABLES. The 11 tables only the server reaches (otp_challenges,
-//   agreement_documents, webhook_inbox, workflows and its three run tables,
-//   webhook_deliveries, outreach_template_failures, vox_log_exports,
-//   voice_purpose_attempts) keep RLS on with no policy and no grant for anon or
+// - CLOSED TABLES. The 6 tables only the server reaches (otp_challenges,
+//   agreement_documents, webhook_inbox, webhook_deliveries,
+//   outreach_template_failures, vox_log_exports) keep RLS on with no policy and no grant for anon or
 //   authenticated: a user session gets 42501; the service role is untouched.
-// - PER-PERMISSION POLICIES. The 14 tables staff reach with their own session (packages,
-//   call_dnc_list, call_compliance_settings, voice_purposes, provider_numbers,
+// - PER-PERMISSION POLICIES. The 13 tables staff reach with their own session (packages,
+//   call_dnc_list, call_compliance_settings, provider_numbers,
 //   provider_number_roles, message_templates, channels, faq_items,
 //   callback_schedule_policies, ops_alerts and the three fleet tables) have one policy
 //   per operation their module performs, `to authenticated`, calling

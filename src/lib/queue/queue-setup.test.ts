@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { completedRetentionSeconds, PGBOSS_SEND_IT_QUEUE } from '@/lib/ops/queue-schedule';
 
 import { ensureQueues } from './queue-setup';
-import { QUEUES, RETIRED_QUEUES, WORKFLOW_RUN_EXPIRE_SECONDS } from './queues';
+import { QUEUES, RETIRED_QUEUES } from './queues';
 
 // A stand-in for the pg-boss calls ensureQueues makes, recording each one in order.
 type Existing = { name: string; expireInSeconds: number; deleteAfterSeconds: number };
@@ -43,7 +43,6 @@ describe('ensureQueues', () => {
       expireInSeconds: 300,
       deleteAfterSeconds: completedRetentionSeconds(QUEUES.callbackSweep),
     });
-    expect(made.get(QUEUES.workflowRun)).toMatchObject({ expireInSeconds: WORKFLOW_RUN_EXPIRE_SECONDS });
     expect(calls.some(([c]) => c === 'updateQueue')).toBe(false);
   });
 

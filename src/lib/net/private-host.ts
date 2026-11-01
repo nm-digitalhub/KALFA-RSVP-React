@@ -2,11 +2,9 @@ import ipaddr from 'ipaddr.js';
 
 // Is a hostname one that must never be reached from a server-side fetch?
 //
-// Shared by `voximplant/recording-url.ts` (written against the OWASP SSRF
-// Prevention Cheat Sheet) and the outgoing-webhook workflow node
-// (`workflow/webhook-url.ts`), which unlike that one actually FETCHES the URL.
-// It is one list rather than a copy per caller, because two lists of private
-// ranges would drift apart.
+// Used by `voximplant/recording-url.ts` (written against the OWASP SSRF
+// Prevention Cheat Sheet). Any new caller reuses this one list rather than a
+// copy, because two lists of private ranges would drift apart.
 //
 // Pure; also used by the pg-boss worker.
 //

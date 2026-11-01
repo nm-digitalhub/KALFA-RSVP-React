@@ -17,7 +17,7 @@ import { PgBoss, type Job, type JobWithMetadata } from 'pg-boss';
 import { Client as PgClient } from 'pg';
 
 import { QUEUES, isFinalDelivery, type OutreachCallRequest, type OutreachStepJob,
-  type WorkflowRunJob, CALENDAR_PRESENCE_SWEEP_KEY, type CalendarPresenceSyncJob,
+  CALENDAR_PRESENCE_SWEEP_KEY, type CalendarPresenceSyncJob,
 } from '@/lib/queue/queues';
 import { ensureQueues } from '@/lib/queue/queue-setup';
 import { supabaseDbPort, supabaseDbSsl } from '@/lib/relocation/env-validation';
@@ -57,20 +57,10 @@ import {
   markWebhookEventProcessed,
   recordWebhookEventFailure,
 } from '@/lib/data/webhooks';
-import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import {
   createWebhookBatchContext,
   processWebhookEvent,
 } from '@/lib/data/webhook-processing';
-import {
-  enqueueWorkflowRun,
-  handleWorkflowRun,
-  redeliverStuckWaitingRuns,
-  rescueOrphanedWaitingSteps,
-} from '@/lib/workflow/enqueue';
-import { createRunsForInboundMessage } from '@/lib/workflow/inbound';
-import { createScheduledRuns } from '@/lib/workflow/schedule-runner';
-import { listUndeliveredRuns } from '@/lib/workflow/store';
 import { runThankyouSweep } from '@/lib/data/auto-thankyou';
 import { runInquiryFollowupSweep, getInquiryFollowupEnabled } from '@/lib/data/inquiry-followup';
 import { runAgreementArchiveSweep, getAgreementArchiveEnabled } from '@/lib/data/agreement-archive';
@@ -573,30 +563,6 @@ async function handleDead(job: { data: OutreachStepJob }): Promise<void> {
   });
 }
 
-// Create and enqueue the workflow runs an inbound message starts.
-//
-// Fully swallowed. The run rows are created first and the enqueue follows, so
-// the worst case of a failure here is a run row sitting 'pending' with no job —
-// visible in /admin, recoverable, and harmless. The alternative (letting this
-// throw) would mark a perfectly-processed webhook row as failed and re-run the
-// billing path on the next drain.
-async function startWorkflowRuns(boss: PgBoss, row: WebhookInboxRow): Promise<void> {
-  try {
-    const runIds = await createRunsForInboundMessage(row);
-    for (const runId of runIds) await enqueueWorkflowRun(boss, runId);
-  } catch (e) {
-    await sendSlackAlert({
-      level: 'warn',
-      title: 'workflow enqueue failed',
-      detail: errorDetail(e),
-      source: 'workflow',
-      // Row id only — the message text is guest content and never logged.
-      fields: { rowId: row.id },
-      category: 'errors',
-    });
-  }
-}
-
 // Drain webhook_inbox: claim the oldest unprocessed rows and run the economic
 // logic out-of-band. Each row is independent — a failure on one bumps its attempt
 // counter (and keeps last_error) without blocking the rest; the DB-level dedupe
@@ -611,12 +577,6 @@ async function handleWebhook(boss: PgBoss): Promise<void> {
   for (const row of rows) {
     try {
       await processWebhookEvent(row, ctx);
-      // Workflows are an ADDITIONAL consumer of the same inbound event, and a
-      // deliberately subordinate one: they run only after the economic logic
-      // above has succeeded, and they are wrapped so that a broken automation
-      // can never fail the webhook row it belongs to. Billing and opt-out are
-      // not allowed to depend on a graph an admin drew.
-      await startWorkflowRuns(boss, row);
       await markWebhookEventProcessed(row.id);
     } catch (e) {
       // Logged and kept in last_error WITH its cause (the Supabase/Postgres code
@@ -1083,80 +1043,6 @@ async function main(): Promise<void> {
       for (const job of jobs) await handleSalesCallDispatch(boss, job);
     }),
   );
-  // The clock's half of the workflow engine. Cheap by construction: it reads the
-  // armed workflows and creates rows for the ones whose minute matched, and does
-  // nothing at all on the overwhelming majority of ticks.
-  //
-  // Enqueued HERE rather than inside the planner, for the same reason the inbound
-  // path does it: `boss` lives in this process, and threading it into the data
-  // layer would put queue concerns inside a module that is pure today.
-  await boss.work(
-    QUEUES.workflowSchedule,
-    guardedWorker(QUEUES.workflowSchedule, async () => {
-      const runIds = await createScheduledRuns();
-      for (const runId of runIds) await enqueueWorkflowRun(boss, runId);
-
-      // The same tick also delivers runs that exist but were never enqueued.
-      //
-      // Two sources: a fan-out's children, which are created by a step handler
-      // that has no queue handle by design; and the older accident of a crash
-      // between `createRunIfNew` and `enqueueWorkflowRun`, which used to leave a
-      // row pending for ever. Both are the same fix, so they share a tick rather
-      // than getting a queue each.
-      for (const runId of await listUndeliveredRuns()) {
-        await enqueueWorkflowRun(boss, runId);
-      }
-
-      // …and parked runs whose wake-up never came. The body lives in
-      // `redeliverStuckWaitingRuns` rather than here, because the `resumeAt` it
-      // passes is load-bearing and this file has no tests.
-      await redeliverStuckWaitingRuns(boss);
-      // The other half of the same rescue: a park whose RUN ROW never got
-      // written, which the sweep above cannot see because it reads that very
-      // column. See rescueOrphanedWaitingSteps.
-      await rescueOrphanedWaitingSteps(boss);
-    }),
-  );
-
-  // One job runs one whole workflow graph. The vendored runner has no
-  // pause/resume seam, so there is no per-node job; the unique (run_id, node_id)
-  // ledger in workflow_run_steps (claimed per step under a lease) is what makes
-  // a retry safe — not the job's singletonKey, which constrains nothing on this
-  // queue. See src/lib/workflow/engine/activity-runner.ts.
-  await boss.work(
-    QUEUES.workflowRun,
-    guardedWorker(QUEUES.workflowRun, async (jobs: Job<WorkflowRunJob>[]) => {
-      for (const job of jobs) {
-        // `boss` is passed so a run that parks at a `logic.wait` can schedule
-        // its own wake-up — pg-boss holds the delay, no sweep required.
-        //
-        // `job.signal` is pg-boss's own abort for this batch. It fires when the
-        // handler outlives `expireInSeconds` — at which point the job has been
-        // re-queued and this run belongs to a retry — and on shutdown after
-        // `failWip()`. The engine checks it before every node claim, so a
-        // delivery that lost its job stops instead of walking the graph beside
-        // the one that now owns it.
-        const outcome = await handleWorkflowRun(job.data, boss, job.signal);
-        // A failed run does NOT throw — the failure is recorded on the row and
-        // the graph stopped cleanly. guardedWorker only alerts on a throw, so
-        // without this an armed workflow that fails on every single message
-        // would write failed rows quietly forever: discoverable in /admin,
-        // noticed by nobody.
-        if (outcome.status === 'failed') {
-          await sendSlackAlert({
-            level: 'warn',
-            title: 'workflow run failed',
-            // The message is the adapter's own Hebrew validation text or a step
-            // error — never guest content.
-            detail: outcome.message,
-            source: 'workflow',
-            fields: { runId: job.data.runId },
-            category: 'errors',
-          });
-        }
-      }
-    }),
-  );
   await boss.work(
     QUEUES.webhook,
     POLL_MINUTE_CRON,
@@ -1507,9 +1393,6 @@ async function main(): Promise<void> {
   // (src/lib/data/webhooks.ts nudgeWebhookProcessing), so this cron just drains
   // anything a failed nudge left behind.
   await boss.schedule(QUEUES.webhook, '*/5 * * * *');
-  // Every minute: the resolution `trigger.schedule` offers is a minute, so a
-  // coarser tick would mean a 09:00 schedule firing at 09:05.
-  await boss.schedule(QUEUES.workflowSchedule, '* * * * *');
   await boss.schedule(QUEUES.thankyouSweep, '*/5 * * * *');
   await boss.schedule(QUEUES.inquiryFollowupSweep, '*/5 * * * *');
   // Every 5 minutes: close enough that "מחר בערב" lands when the guest expects,

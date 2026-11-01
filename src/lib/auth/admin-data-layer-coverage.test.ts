@@ -140,10 +140,6 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/users.ts': 'manage_staff',
   'src/lib/data/admin/webhook-inbox.ts': 'view_webhooks',
   'src/lib/data/admin/access-log-view.ts': 'manage_staff',
-  // The live ElevenLabs agent list, for the call node's picker. Same key as
-  // every other voice reader: naming the agents an account owns is the same
-  // authority as naming its rules.
-  'src/lib/data/admin/elevenlabs-agents.ts': 'manage_voice',
   'src/lib/data/admin/alerts.ts': 'manage_settings',
   'src/lib/data/admin/channel-catalog.ts': 'manage_settings',
   'src/lib/data/admin/cookie-consent.ts': 'manage_settings',
@@ -153,9 +149,6 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   'src/lib/data/admin/campaigns.ts': 'manage_billing',
   'src/lib/data/admin/cancellation-money.ts': 'manage_billing',
   'src/lib/data/admin/call-dnc.ts': 'manage_voice',
-  // A row here decides which agent telephones a guest — it belongs with the
-  // other dialling controls, not with general configuration.
-  'src/lib/data/admin/voice-purposes.ts': 'manage_voice',
   'src/lib/data/admin/voximplant-channel.ts': 'manage_voice',
   'src/lib/data/admin/support.ts': 'view_customer_data',
   // The staff side of the remote-desktop approval flow: asking for access, cancelling, ending it and downloading the
@@ -182,11 +175,6 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // voice permission, and hearing a recording needs its own on top.
   'src/lib/data/admin/console-history.ts': ['manage_voice', 'view_recordings'],
   'src/lib/data/admin/voice-ops.ts': ['manage_voice', 'view_recordings'],
-  // Split by what the function does, not by which page it serves. See the header
-  // of workflows.ts for why the manual run additionally needs manage_voice.
-  'src/lib/data/admin/workflows.ts': ['manage_settings', 'view_customer_data'],
-  // Registers workflow triggers in SUMIT and lists its folders — workflow configuration.
-  'src/lib/data/admin/sumit-trigger-subscriptions.ts': 'manage_settings',
   // Two keys because the module gates on WHAT A ROLE CONTROLS, not on one floor for
   // the whole file: reads span every provider under manage_settings, while pointing
   // voice_caller_id_* or voice_inbound_did at a different line is voice configuration
@@ -213,37 +201,15 @@ const EXPECTED_PERMISSION: Record<string, string | string[]> = {
   // direction is not gated by permission at all — parseSendPolicy refuses to widen
   // past the ceilings no matter who is asking.
   'src/lib/data/admin/integrations/send-policy.ts': 'manage_settings',
-  // TWO keys, and the asymmetry is the point: reading answers "is a provider
-  // configured, and by whom" and is safe for an auditor; writing replaces the
-  // OAuth client secret every future authorization depends on. Pinning both is
-  // what stops the save from quietly sliding onto the read key.
-  //
-  // NOT `manage_settings`, deliberately. Reusing it would permanently couple
-  // "may change system settings" to "may manage provider credentials" — see the
-  // reasoning in 20260916005200.
-  'src/lib/data/admin/integrations/oauth-provider-config.ts': [
-    'integrations.read',
-    'integrations.manage',
-  ],
-  // The CardCom connection (the pilot): the same two keys, for the same reason as the OAuth config above. Reading answers
-  // "is it set up, and is the pilot on" (the API password is only ever reported as a boolean); writing replaces the credentials
-  // and flips the switch that sends package purchases to CardCom.
+  // The CardCom connection (the pilot): TWO keys, and the asymmetry is the point. Reading answers "is it set up, and is the
+  // pilot on" (the API password is only ever reported as a boolean) and is safe for an auditor; writing replaces the
+  // credentials and flips the switch that sends package purchases to CardCom. Pinning both is what stops the save from
+  // quietly sliding onto the read key. NOT `manage_settings`, deliberately: reusing it would permanently couple "may change
+  // system settings" to "may manage provider credentials" — see the reasoning in 20260916005200.
   'src/lib/data/admin/integrations/cardcom-config.ts': [
     'integrations.read',
     'integrations.manage',
   ],
-  // Both projections are read-only and return deliberately narrow DTOs: the
-  // editor receives label/value options, while the admin page receives safe
-  // status timestamps plus a Mail.Send-ready boolean. Credential material and
-  // full connection rows never leave the module.
-  'src/lib/data/admin/integrations/workflow-connections.ts': 'integrations.read',
-  // ⚠️ `manage`, NOT `read` — and the split from the module above is the point.
-  // `workflow-connections.ts` is gated on `read` so a workflow author who may
-  // not administer integrations can still PICK an account. This module ends a
-  // connection, renames it, or removes it — operations that affect every other
-  // workflow using it, and that the person who triggered them cannot undo. The
-  // two live apart so the weaker gate is never the one copied.
-  'src/lib/data/admin/integrations/connection-lifecycle.ts': 'integrations.manage',
   // Outside src/lib/data/admin, pinned because they reach a staff table with the staff session
   // (staff-table-permissions.ts): the RLS keys of those tables are checked against these pins below.
   'src/lib/data/message-templates.ts': 'manage_settings',
@@ -301,8 +267,6 @@ const COARSE_GATE_ALLOWED: Record<string, string> = {
     'Badge counts for the nav. Read-only (verified 2026-09-10), and already calls hasPlatformPermission internally so a viewer is never counted what they may not see. Uses createAdminClient, so it bypasses RLS — acceptable for counts.',
   'src/lib/data/admin/integrations/index.ts':
     'The /admin/integrations index. Read-only: it composes getIntegrationsStatus (itself credential-free since the flags RPC) with per-card hasPlatformPermission checks and returns booleans plus hrefs. Its floor is requirePlatformStaff because the page is navigation + status; the CARDS carry the permission each destination enforces, and the write surfaces it links to keep their own gates. Naming one key for the whole module would be the mistake the header of that file documents. Its one direct table read is two app_settings columns (owner_agent_enabled, owner_agent_phone_number_id) for the owner-agent card, through the cookie client and the staff policy — a switch and a Meta object id, no phone, no allow-list, no customer data.',
-  'src/lib/data/admin/voice-node-arm-check.ts':
-    'Arm-time validation of a workflow definition the CALLER ALREADY HOLDS. Read-only (no insert/update/rpc/enqueue), and its single caller is setWorkflowActive, which gates on manage_settings (verified at workflows.ts:236) before reading the row this is handed. Gating again here would answer a question about a definition the caller just proved they may read — and the only table it touches, voice_purposes, is the same list the editor already renders to them.',
   'src/lib/data/admin/nav-visibility.ts':
     'Which sidebar links to show. Read-only and touches no table at all — it returns nine booleans about the CALLER\'s own role. Naming a finer permission would be circular: answering "which permissions do you hold" cannot itself require one of them. Nav visibility is convenience, never authorization; the page keeps the gate.',
   'src/lib/data/admin/labels.ts': 'Pure label maps. No I/O at all.',
@@ -520,8 +484,8 @@ describe('every admin data-layer module is accounted for', () => {
     }
   });
 
-  // The rule the workflows.ts gap broke: a module that WRITES must name what it
-  // is allowed to write, not lean on "is this person staff at all".
+  // A module that WRITES must name what it is allowed to write, not lean on "is
+  // this person staff at all" (the gap a since-removed admin module once had).
   it('no module that writes to the database gates on requireAdmin alone', () => {
     for (const relPath of MODULES) {
       const source = readFileSync(join(ROOT, relPath), 'utf8');
@@ -576,7 +540,7 @@ describe('pinned modules enforce exactly the permission they are pinned to', () 
   //
   // It used to be nested, which meant a module pinned here but absent from EXEMPT
   // was never actually asserted — pinning it did nothing. Caught 2026-09-10 by
-  // downgrading workflows.ts back to requireAdmin() and watching the suite stay
+  // downgrading a pinned module back to requireAdmin() and watching the suite stay
   // green; the two other injected faults fired, this one did not.
   for (const [relPath, expectedKey] of Object.entries(EXPECTED_PERMISSION)) {
     const source = readFileSync(join(ROOT, relPath), 'utf8');
@@ -981,10 +945,10 @@ describe('the staff-table map (RLS keys) equals the data-layer pins', () => {
     return pin === undefined ? [] : Array.isArray(pin) ? pin : [pin];
   };
 
-  it('lists exactly the 25 tables of the change: 11 closed, 14 per permission', () => {
-    expect(tables).toHaveLength(25);
+  it('lists exactly the 19 tables of the change: 6 closed, 13 per permission', () => {
+    expect(tables).toHaveLength(19);
     const closed = tables.filter((t) => STAFF_TABLE_PERMISSIONS[t].group === 'closed');
-    expect(closed).toHaveLength(11);
+    expect(closed).toHaveLength(6);
   });
 
   for (const table of tables) {

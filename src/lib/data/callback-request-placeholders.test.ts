@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 // "am I speaking with caller?".
 //
 // This pins the set against the literals actually present in the writers. A new
-// writer inventing a fourth stand-in reintroduces the bug silently, and nothing
+// writer inventing a third stand-in reintroduces the bug silently, and nothing
 // else in the suite would notice: the ctx route would simply speak it aloud.
 
 const CTX_ROUTE = 'src/app/api/voximplant/mtg/ctx/[token]/route.ts';
@@ -25,10 +25,10 @@ function read(rel: string): string {
 describe('callback_requests placeholder names', () => {
   it('⚠️ every stand-in a writer stores is known to the ctx route', () => {
     const ctx = read(CTX_ROUTE);
-    const writers = [read('src/lib/data/console-calls.ts'), read('src/lib/workflow/guest-actions.ts')];
+    const writers = [read('src/lib/data/console-calls.ts')];
 
     // The literals as their writers spell them, verbatim.
-    const placeholders = ['מתקשר לא מזוהה', 'מבקש/ת "התקשרו אליי עכשיו"', 'אורח'];
+    const placeholders = ['מתקשר לא מזוהה', 'מבקש/ת "התקשרו אליי עכשיו"'];
 
     for (const p of placeholders) {
       expect(
@@ -40,8 +40,8 @@ describe('callback_requests placeholder names', () => {
   });
 
   it('⚠️ the ctx route matches them EXACTLY, never by prefix', () => {
-    // A prefix or `includes` test would blank a real person called אורח, and a
-    // caller whose name genuinely starts with those letters.
+    // A prefix or `includes` test would blank a caller whose name genuinely
+    // starts with those letters.
     const ctx = read(CTX_ROUTE);
     expect(ctx).toContain('PLACEHOLDER_NAMES.has(rawName)');
     expect(ctx).not.toMatch(/PLACEHOLDER_NAMES[^\n]*(startsWith|includes)\(/);

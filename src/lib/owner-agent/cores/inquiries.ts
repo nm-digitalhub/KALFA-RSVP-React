@@ -10,8 +10,8 @@ import { upTo, type CoreWindow } from './window';
 //
 // Same split as message-templates-resolve.ts: this module reaches no DAL and
 // no next/headers|navigation|cache (the `owner-agent-request-free` rule in
-// .dependency-cruiser.cjs), and nothing under src/app, src/components,
-// src/hooks or src/lib/workflow, where every 'use client' module lives
+// .dependency-cruiser.cjs), and nothing under src/app, src/components or
+// src/hooks, where every 'use client' module lives
 // (`owner-agent-no-client-or-ui-modules`; the directive itself is invisible to
 // dependency-cruiser, measured 2026-09-24). So a non-request process can call
 // it. Authorization is NOT here — the caller holds it:

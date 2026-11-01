@@ -402,7 +402,7 @@ export async function testVoximplantConnection(): Promise<ConnectionTestResult> 
 // typing an id from memory.
 //
 // WHY THIS EXISTS. Admin fields take a raw Voximplant rule id (four in
-// app_settings, plus a custom voice purpose's), and a wrong number there is
+// app_settings), and a wrong number there is
 // silent: the call still dials, it just runs a different
 // scenario. The failure mode is real — a stale comment in this repo described
 // rule 1494311 (`OutCall`, the legacy DTMF flow) as "RSVPAgent's rule", and the

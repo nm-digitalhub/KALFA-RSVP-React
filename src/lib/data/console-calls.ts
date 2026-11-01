@@ -653,7 +653,7 @@ const CALLBACK_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000;
 export type HoursGate = 'apply' | 'skip_consumer_initiated';
 
 // Exported for the AI dispatchers (meeting-confirm-dispatch.ts,
-// sales-call-dispatch.ts, voice-purpose-dispatch.ts — not console/human
+// sales-call-dispatch.ts — not console/human
 // dials): they need the exact same DNC/opt-out/Shabbat/hours gates the
 // DIAL_GATE_POLICY rows already state (meeting-confirm-dispatch.ts and
 // sales-call-dispatch.ts use DIAL_GATE_POLICY.callback), and duplicating this

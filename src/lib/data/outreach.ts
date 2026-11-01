@@ -34,7 +34,7 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 // the classified DeliveryOutcome (accepted / definitely_not_sent / unknown) so
 // the serial-flow worker can drive retry/advance; the manual batch just checks
 // `kind === 'accepted'`. Never logs the token/phone/body. Shared by the batch
-// send below, the per-contact outreach engine and the workflow template send.
+// send below and the per-contact outreach engine.
 export async function sendOneWhatsApp(
   admin: AdminClient,
   campaign: { id: string; event_id: string },

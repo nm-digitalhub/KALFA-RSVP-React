@@ -24,15 +24,8 @@ import {
   setOutreachEnabled,
 } from '@/lib/data/admin/outreach-master';
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
-import { saveOAuthProviderConfig } from '@/lib/data/admin/integrations/oauth-provider-config';
-import { resolveProvider } from '@/lib/integrations/registry';
 import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { sendSlackAlert } from '@/lib/alerts/slack';
-import {
-  createVoicePurpose,
-  listVoicePurposesForAdmin,
-  updateVoicePurpose,
-} from '@/lib/data/admin/voice-purposes';
 import { ruleIdAssignmentError, type RuleIdClaim } from '@/lib/validation/admin';
 import type { VoximplantRulesResult } from '@/lib/data/admin/voximplant-channel';
 import { actionClient, returnUserError } from '@/lib/safe-action';
@@ -49,30 +42,16 @@ import { sendPolicyFromFormData } from '@/lib/validation/send-policy-form';
 //
 // This module lives at /admin/integrations/actions.ts rather than beside one
 // provider because its actions span WhatsApp, Voximplant, the global outreach
-// switch, the channel catalog, the send policy, voice purposes and workflow
-// OAuth. Next derives Server Action ids from module path + export name, so
-// moving this module invalidates every action id in it — which is what the
-// .deploy-id version-skew guard exists to catch.
+// switch, the channel catalog and the send policy. Next derives Server Action
+// ids from module path + export name, so moving this module invalidates every
+// action id in it — which is what the .deploy-id version-skew guard exists to
+// catch.
 const INDEX = '/admin/integrations';
 const META_WHATSAPP = '/admin/integrations/meta-whatsapp';
 const VOXIMPLANT = '/admin/integrations/voximplant';
-const WORKFLOW_OAUTH = '/admin/integrations/workflow-oauth';
-// ⚠️ A DYNAMIC ROUTE, REVALIDATED BY ITS PATTERN. The workflow editor reads this
-// provider's configuration to decide whether a node can offer "connect an
-// account", so a save has to be reflected there too.
-// `'page'` is required: with a bracketed segment, `revalidatePath` treats the
-// first argument as a literal path unless the type is given, and would match
-// nothing.
-const WORKFLOW_EDITOR = '/admin/workflows/[id]';
 
 function revalidateAll(...paths: string[]): void {
   for (const path of paths) revalidatePath(path);
-}
-
-/** Every surface that reads the workflow OAuth provider, editor included. */
-function revalidateWorkflowOAuth(): void {
-  revalidateAll(WORKFLOW_OAUTH, INDEX);
-  revalidatePath(WORKFLOW_EDITOR, 'page');
 }
 
 // Form-friendly: every field is an optional string. Trimmed; '' is an
@@ -306,13 +285,6 @@ async function readRuleIdClaims(): Promise<RuleIdClaim[]> {
       label: 'חייג אליי עכשיו',
       ruleId: cfg.voximplant_call_me_now_rule_id,
     },
-    ...purposes
-      .filter((p) => !p.isBuiltin)
-      .map((p) => ({
-        field: `voice_purpose:${p.key}`,
-        label: `ייעוד השיחה "${p.displayName}"`,
-        ruleId: p.ruleId,
-      })),
   ];
 }
 
@@ -513,172 +485,4 @@ export const updateSendPolicyAction = actionClient
 
     revalidateAll(META_WHATSAPP);
     return { notice: 'מדיניות השליחה נשמרה' };
-  });
-
-// ---------------------------------------------------------------------------
-// Voice purposes — the registry that lets a NEW agent be used without new code
-// ---------------------------------------------------------------------------
-//
-// ⚠️ A ROW HERE CAN TELEPHONE PEOPLE, which is why both actions are narrow. The
-// key is validated against the same shape the table's CHECK enforces, a new
-// purpose is always created switched OFF, and the rule id is trimmed and length
-// bounded before it can ever reach `StartScenarios`.
-
-// The schema's own message also answers a missing key or name.
-const VOICE_PURPOSE_KEY_ERROR = 'המזהה חייב להיות באנגלית קטנה, ספרות וקו תחתון';
-const voicePurposeKeySchema = z
-  .string({ error: VOICE_PURPOSE_KEY_ERROR })
-  .trim()
-  .regex(/^[a-z][a-z0-9_]{1,48}$/, VOICE_PURPOSE_KEY_ERROR);
-const voicePurposeDisplayNameSchema = z
-  .string({ error: 'נא למלא שם' })
-  .trim()
-  .min(2, 'נא למלא שם')
-  .max(120);
-
-const createVoicePurposeInput = zfd.formData({
-  key: voicePurposeKeySchema,
-  displayName: voicePurposeDisplayNameSchema,
-  description: z.string().trim().max(500).default(''),
-  ruleId: z.string().trim().max(64).default(''),
-});
-
-// A failed write throws the data layer's own Hebrew message (a duplicate key, for one), which reaches the form as it
-// is (src/lib/safe-action.ts).
-export const createVoicePurposeAction = actionClient
-  .inputSchema(createVoicePurposeInput)
-  .stateAction(async ({ parsedInput }) => {
-    const createClaimError = ruleIdAssignmentError(
-      parsedInput.ruleId,
-      `voice_purpose:${parsedInput.key}`,
-      await readRuleIdClaims(),
-    );
-    if (createClaimError) {
-      return returnValidationErrors(createVoicePurposeInput, {
-        ruleId: { _errors: [createClaimError] },
-      });
-    }
-
-    await createVoicePurpose(parsedInput);
-
-    revalidateAll(VOXIMPLANT);
-    return { notice: 'הייעוד נוצר — כבוי. הפעילו אותו אחרי שווידאתם את ה-Rule ID.' };
-  });
-
-const updateVoicePurposeInput = zfd.formData({
-  key: voicePurposeKeySchema,
-  displayName: voicePurposeDisplayNameSchema,
-  description: z.string().trim().max(500).default(''),
-  ruleId: z.string().trim().max(64).default(''),
-  enabled: zfd.checkbox(),
-  active: zfd.checkbox(),
-});
-
-export const updateVoicePurposeAction = actionClient
-  .inputSchema(updateVoicePurposeInput)
-  .stateAction(async ({ parsedInput }) => {
-    // ⚠️ FAIL CLOSED ON "ENABLE WITHOUT A RULE", the same rule the persona
-    // switches already follow. An enabled purpose with no rule cannot dial, and
-    // the failure would arrive as a run-log line hours later instead of here.
-    if (parsedInput.enabled && parsedInput.ruleId === '') {
-      return returnUserError('לא ניתן להפעיל ייעוד ללא Rule ID של תרחיש Voximplant.');
-    }
-
-    // Own field is keyed by the purpose key, so re-saving a purpose with the rule
-    // it already holds is allowed; taking another purpose's rule is not.
-    const updateClaimError = ruleIdAssignmentError(
-      parsedInput.ruleId,
-      `voice_purpose:${parsedInput.key}`,
-      await readRuleIdClaims(),
-    );
-    if (updateClaimError) {
-      return returnValidationErrors(updateVoicePurposeInput, {
-        ruleId: { _errors: [updateClaimError] },
-      });
-    }
-
-    await updateVoicePurpose(parsedInput);
-
-    revalidateAll(VOXIMPLANT);
-    return {
-      notice: parsedInput.enabled ? 'הייעוד מופעל — שיחות אמיתיות מותרות' : 'הייעוד עודכן',
-    };
-  });
-
-// ---------------------------------------------------------------------------
-// Workflow integration OAuth — this deployment's client registration.
-// ---------------------------------------------------------------------------
-
-const UNKNOWN_OAUTH_PROVIDER = 'ספק לא ידוע או שאינו משתמש ב-OAuth.';
-const MISSING_CLIENT_ID = 'יש להזין Client ID.';
-
-// Every field is parsed together, so the form reports a bad provider and a missing client id at once.
-const workflowOAuthProviderInput = zfd.formData({
-  // ⚠️ `provider` IS VALIDATED AGAINST THE REGISTRY, NOT HARDCODED AND NOT
-  // TRUSTED. Hardcoding one vendor here would mean a second action per provider,
-  // which is the coupling this whole layer exists to avoid; trusting the field
-  // would let a browser create a configuration row for an id nothing can ever
-  // use. The registry is the list of providers that exist, so it is the list a
-  // configuration may name — and a provider with no `oauth` block has no client
-  // to configure at all. The parsed value is the registry's definition itself.
-  provider: z
-    .string({ error: UNKNOWN_OAUTH_PROVIDER })
-    .trim()
-    .transform((provider, ctx) => {
-      const definition = provider ? resolveProvider(provider) : undefined;
-      if (!definition?.oauth) {
-        ctx.addIssue({ code: 'custom', message: UNKNOWN_OAUTH_PROVIDER, input: provider });
-        return z.NEVER;
-      }
-      return definition;
-    }),
-  clientId: z.string({ error: MISSING_CLIENT_ID }).trim().min(1, { error: MISSING_CLIENT_ID }),
-  clientSecret: z.string().trim().default(''),
-  enabled: zfd.checkbox(),
-});
-
-/**
- * Save the OAuth client a workflow integration authorizes against.
- *
- * NO OAUTH LOGIC LIVES HERE. This reads a form, validates it, and hands over —
- * the flow, the scopes, PKCE and the state row are all in `src/lib/integrations`,
- * and the write itself is in the data module so that this stays the thin layer
- * the project's other actions are.
- *
- * ⚠️ AN EMPTY CLIENT SECRET IS VALID AND IS NOT VALIDATED AGAINST. The RPC's
- * contract is that '' on an existing row KEEPS the stored secret, and that a
- * first write without one is refused. Rejecting a blank secret here would look
- * like a safety check while actually breaking the ordinary case — correcting a
- * client id, or flipping `enabled` — for an operator who no longer holds a
- * secret that was only ever displayed once by the provider.
- *
- * The first-write case is left to the database, which is the only place that
- * knows whether a row already exists at the moment of writing. A local check
- * would be a guess made one round-trip earlier.
- */
-export const saveWorkflowOAuthProviderAction = actionClient
-  .inputSchema(workflowOAuthProviderInput)
-  .stateAction(async ({ parsedInput: { provider: definition, clientId, clientSecret, enabled } }) => {
-    try {
-      // `requirePlatformPermission('integrations.manage')` runs INSIDE, and its
-      // refusal is a redirect() — a throw that `unstable_rethrow` below lets back
-      // out rather than converting into a form error.
-      // `definition.id`, not the raw field — the registry's own spelling is what
-      // every other layer looks a provider up by.
-      await saveOAuthProviderConfig({
-        provider: definition.id,
-        clientId,
-        clientSecret,
-        enabled,
-      });
-    } catch (error) {
-      unstable_rethrow(error);
-      return returnUserError('לא ניתן היה לשמור את הגדרות ה-OAuth. בדקו את הפרטים ונסו שוב.');
-    }
-
-    revalidateWorkflowOAuth();
-    // Neutral on purpose. The RPC returns void, so "created" and "updated" are not
-    // distinguishable — and inventing the distinction would mean widening a
-    // contract to phrase a sentence.
-    return { notice: 'הגדרות ה-OAuth נשמרו.' };
   });

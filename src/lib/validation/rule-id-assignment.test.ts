@@ -14,8 +14,7 @@ const CLAIMS: RuleIdClaim[] = [
   { field: 'voximplant_rule_id', label: 'שיחות RSVP', ruleId: '1520915' },
   { field: 'voximplant_meeting_confirm_rule_id', label: 'שיחות אישור פגישה', ruleId: '1523903' },
   { field: 'voximplant_sales_call_rule_id', label: 'שיחות סגירת מכירה', ruleId: '1523906' },
-  { field: 'voximplant_call_me_now_rule_id', label: 'חייג אליי עכשיו', ruleId: '1523124' },
-  { field: 'voice_purpose:feedback', label: 'ייעוד השיחה "משוב"', ruleId: null },
+  { field: 'voximplant_call_me_now_rule_id', label: 'חייג אליי עכשיו', ruleId: null },
 ];
 
 describe('ruleIdAssignmentError', () => {
@@ -41,7 +40,7 @@ describe('ruleIdAssignmentError', () => {
   });
 
   it('allows an unclaimed rule', () => {
-    expect(ruleIdAssignmentError('1530001', 'voice_purpose:feedback', CLAIMS)).toBeNull();
+    expect(ruleIdAssignmentError('1530001', 'voximplant_call_me_now_rule_id', CLAIMS)).toBeNull();
   });
 
   it('allows clearing a field — empty is a deliberate unset, not a clash', () => {

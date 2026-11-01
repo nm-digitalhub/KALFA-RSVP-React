@@ -3,8 +3,7 @@ import { KILL_AFTER_MS } from '@/lib/owner-agent/runner';
 // The reply consumer's time budgets, as one chain. Each value must be larger
 // than the one before it, and budgets.test.ts asserts that — including the pm2
 // kill_timeout in ecosystem.owner-agent.config.cjs (its own file, not an entry
-// in ecosystem.config.cjs) — rather than leaving four files to agree by hand
-// (the workflow engine's workflow-budgets.test.ts is the model).
+// in ecosystem.config.cjs) — rather than leaving four files to agree by hand.
 //
 //   one answer   = the model run + its SIGKILL grace + gates, audit and sends
 //   < expireInSeconds  — pg-boss takes a job away from a handler only after

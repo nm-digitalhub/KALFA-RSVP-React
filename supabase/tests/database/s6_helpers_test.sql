@@ -137,6 +137,8 @@ insert into public.platform_staff (user_id, role_id, granted_by) values
   ('00000000-0000-4000-8000-00000000e602', '00000000-0000-4000-8000-00000000e691', '00000000-0000-4000-8000-00000000e602'),
   ('00000000-0000-4000-8000-00000000e603', '00000000-0000-4000-8000-00000000e692', '00000000-0000-4000-8000-00000000e603');
 -- e604: signed in, not staff.
+-- A row in a manage_voice table, for the policy check below.
+insert into public.call_dnc_list (normalized_phone, reason) values ('+972500000611', 'rls s6');
 
 set local role authenticated;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000e601';
@@ -155,9 +157,9 @@ select is(public.is_platform_staff(), false, 'signed-in non-staff: is_platform_s
 select is(public.has_platform_permission('manage_voice'), false, 'signed-in non-staff: has_platform_permission(manage_voice) is false');
 -- A policy that calls the helper still decides: a manage_voice table read by its holder and by staff without the key.
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000e602';
-select isnt_empty($$select key from public.voice_purposes$$, 'manage_voice holder: voice_purposes rows are visible through the helper');
+select isnt_empty($$select normalized_phone from public.call_dnc_list$$, 'manage_voice holder: call_dnc_list rows are visible through the helper');
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-00000000e603';
-select is_empty($$select key from public.voice_purposes$$, 'staff holding no key: voice_purposes rows are hidden by the helper');
+select is_empty($$select normalized_phone from public.call_dnc_list$$, 'staff holding no key: call_dnc_list rows are hidden by the helper');
 set local role anon;
 select throws_ok(
   $$select public.has_platform_permission('manage_voice')$$,

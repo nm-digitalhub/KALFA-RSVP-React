@@ -255,7 +255,6 @@ export type Database = {
           voximplant_service_account_json: string | null
           whatsapp_access_token: string | null
           whatsapp_app_secret: string | null
-          whatsapp_consent_required: boolean
           whatsapp_phone_number_id: string | null
           whatsapp_send_policy: Json | null
           whatsapp_verify_token: string | null
@@ -355,7 +354,6 @@ export type Database = {
           voximplant_service_account_json?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
-          whatsapp_consent_required?: boolean
           whatsapp_phone_number_id?: string | null
           whatsapp_send_policy?: Json | null
           whatsapp_verify_token?: string | null
@@ -455,7 +453,6 @@ export type Database = {
           voximplant_service_account_json?: string | null
           whatsapp_access_token?: string | null
           whatsapp_app_secret?: string | null
-          whatsapp_consent_required?: boolean
           whatsapp_phone_number_id?: string | null
           whatsapp_send_policy?: Json | null
           whatsapp_verify_token?: string | null
@@ -951,19 +948,16 @@ export type Database = {
       }
       call_compliance_settings: {
         Row: {
-          call_consent_required: boolean
           dnc_registry_gate_enabled: boolean
           id: boolean
           updated_at: string
         }
         Insert: {
-          call_consent_required?: boolean
           dnc_registry_gate_enabled?: boolean
           id?: boolean
           updated_at?: string
         }
         Update: {
-          call_consent_required?: boolean
           dnc_registry_gate_enabled?: boolean
           id?: boolean
           updated_at?: string
@@ -2837,7 +2831,6 @@ export type Database = {
       }
       contacts: {
         Row: {
-          call_consent_at: string | null
           created_at: string
           event_id: string
           id: string
@@ -2845,10 +2838,8 @@ export type Database = {
           op_status: Database["public"]["Enums"]["contact_op_status"]
           removal_requested: boolean
           updated_at: string
-          whatsapp_consent_at: string | null
         }
         Insert: {
-          call_consent_at?: string | null
           created_at?: string
           event_id: string
           id?: string
@@ -2856,10 +2847,8 @@ export type Database = {
           op_status?: Database["public"]["Enums"]["contact_op_status"]
           removal_requested?: boolean
           updated_at?: string
-          whatsapp_consent_at?: string | null
         }
         Update: {
-          call_consent_at?: string | null
           created_at?: string
           event_id?: string
           id?: string
@@ -2867,7 +2856,6 @@ export type Database = {
           op_status?: Database["public"]["Enums"]["contact_op_status"]
           removal_requested?: boolean
           updated_at?: string
-          whatsapp_consent_at?: string | null
         }
         Relationships: [
           {
@@ -4202,78 +4190,6 @@ export type Database = {
           refresh_lease_until?: string | null
           scopes?: string[]
           status?: string
-          updated_at?: string
-          vault_secret_id?: string | null
-        }
-        Relationships: []
-      }
-      integration_oauth_states: {
-        Row: {
-          code_verifier: string
-          consumed_at: string | null
-          created_at: string
-          created_by: string
-          expires_at: string
-          id: string
-          provider: string
-          redirect_to: string
-          requested_scopes: string[]
-          state_hash: string
-        }
-        Insert: {
-          code_verifier: string
-          consumed_at?: string | null
-          created_at?: string
-          created_by: string
-          expires_at: string
-          id?: string
-          provider: string
-          redirect_to: string
-          requested_scopes?: string[]
-          state_hash: string
-        }
-        Update: {
-          code_verifier?: string
-          consumed_at?: string | null
-          created_at?: string
-          created_by?: string
-          expires_at?: string
-          id?: string
-          provider?: string
-          redirect_to?: string
-          requested_scopes?: string[]
-          state_hash?: string
-        }
-        Relationships: []
-      }
-      integration_provider_configs: {
-        Row: {
-          client_id: string
-          created_at: string
-          created_by: string | null
-          enabled: boolean
-          extra: Json
-          provider: string
-          updated_at: string
-          vault_secret_id: string | null
-        }
-        Insert: {
-          client_id: string
-          created_at?: string
-          created_by?: string | null
-          enabled?: boolean
-          extra?: Json
-          provider: string
-          updated_at?: string
-          vault_secret_id?: string | null
-        }
-        Update: {
-          client_id?: string
-          created_at?: string
-          created_by?: string | null
-          enabled?: boolean
-          extra?: Json
-          provider?: string
           updated_at?: string
           vault_secret_id?: string | null
         }
@@ -6860,149 +6776,6 @@ export type Database = {
         }
         Relationships: []
       }
-      voice_purpose_attempts: {
-        Row: {
-          access_token: string
-          agent_id: string | null
-          call_duration_sec: number | null
-          call_status: string | null
-          caller_id: string | null
-          contact_id: string
-          created_at: string
-          dispatch_status: string
-          el_conversation_id: string | null
-          event_id: string | null
-          finish_reason: string | null
-          id: string
-          node_id: string | null
-          purpose_key: string
-          rule_id: string | null
-          run_id: string | null
-          token_expires_at: string
-          updated_at: string
-          vox_call_session_history_id: number | null
-        }
-        Insert: {
-          access_token: string
-          agent_id?: string | null
-          call_duration_sec?: number | null
-          call_status?: string | null
-          caller_id?: string | null
-          contact_id: string
-          created_at?: string
-          dispatch_status?: string
-          el_conversation_id?: string | null
-          event_id?: string | null
-          finish_reason?: string | null
-          id?: string
-          node_id?: string | null
-          purpose_key: string
-          rule_id?: string | null
-          run_id?: string | null
-          token_expires_at: string
-          updated_at?: string
-          vox_call_session_history_id?: number | null
-        }
-        Update: {
-          access_token?: string
-          agent_id?: string | null
-          call_duration_sec?: number | null
-          call_status?: string | null
-          caller_id?: string | null
-          contact_id?: string
-          created_at?: string
-          dispatch_status?: string
-          el_conversation_id?: string | null
-          event_id?: string | null
-          finish_reason?: string | null
-          id?: string
-          node_id?: string | null
-          purpose_key?: string
-          rule_id?: string | null
-          run_id?: string | null
-          token_expires_at?: string
-          updated_at?: string
-          vox_call_session_history_id?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "voice_purpose_attempts_contact_id_fkey"
-            columns: ["contact_id"]
-            isOneToOne: false
-            referencedRelation: "contacts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "voice_purpose_attempts_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "console_events"
-            referencedColumns: ["event_id"]
-          },
-          {
-            foreignKeyName: "voice_purpose_attempts_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "events"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "voice_purpose_attempts_purpose_key_fkey"
-            columns: ["purpose_key"]
-            isOneToOne: false
-            referencedRelation: "voice_purposes"
-            referencedColumns: ["key"]
-          },
-        ]
-      }
-      voice_purposes: {
-        Row: {
-          active: boolean
-          created_at: string
-          description: string | null
-          display_name: string
-          enabled: boolean
-          is_builtin: boolean
-          key: string
-          lead_ms: number
-          min_delay_ms: number
-          rule_id: string | null
-          sort_order: number
-          token_ttl_sec: number
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          description?: string | null
-          display_name: string
-          enabled?: boolean
-          is_builtin?: boolean
-          key: string
-          lead_ms?: number
-          min_delay_ms?: number
-          rule_id?: string | null
-          sort_order?: number
-          token_ttl_sec?: number
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          description?: string | null
-          display_name?: string
-          enabled?: boolean
-          is_builtin?: boolean
-          key?: string
-          lead_ms?: number
-          min_delay_ms?: number
-          rule_id?: string | null
-          sort_order?: number
-          token_ttl_sec?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
       vox_log_exports: {
         Row: {
           attempt_created_at: string | null
@@ -7303,206 +7076,6 @@ export type Database = {
             columns: ["whatsapp_template_id"]
             isOneToOne: true
             referencedRelation: "whatsapp_message_templates"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workflow_run_events: {
-        Row: {
-          created_at: string
-          node_id: string | null
-          payload: Json | null
-          run_id: string
-          seq: number
-          type: string
-        }
-        Insert: {
-          created_at?: string
-          node_id?: string | null
-          payload?: Json | null
-          run_id: string
-          seq?: number
-          type: string
-        }
-        Update: {
-          created_at?: string
-          node_id?: string | null
-          payload?: Json | null
-          run_id?: string
-          seq?: number
-          type?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workflow_run_events_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "workflow_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workflow_run_steps: {
-        Row: {
-          error_message: string | null
-          finished_at: string | null
-          id: string
-          node_id: string
-          node_type: string
-          output: Json | null
-          run_id: string
-          started_at: string
-          status: string
-          wait_until: string | null
-        }
-        Insert: {
-          error_message?: string | null
-          finished_at?: string | null
-          id?: string
-          node_id: string
-          node_type: string
-          output?: Json | null
-          run_id: string
-          started_at?: string
-          status?: string
-          wait_until?: string | null
-        }
-        Update: {
-          error_message?: string | null
-          finished_at?: string | null
-          id?: string
-          node_id?: string
-          node_type?: string
-          output?: Json | null
-          run_id?: string
-          started_at?: string
-          status?: string
-          wait_until?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workflow_run_steps_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "workflow_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workflow_runs: {
-        Row: {
-          created_at: string
-          dedupe_key: string | null
-          definition_snapshot: Json | null
-          error_message: string | null
-          event_id: string | null
-          finished_at: string | null
-          id: string
-          resume_at: string | null
-          resume_correlation_id: string | null
-          status: string
-          trigger_payload: Json
-          trigger_source: string
-          workflow_id: string
-        }
-        Insert: {
-          created_at?: string
-          dedupe_key?: string | null
-          definition_snapshot?: Json | null
-          error_message?: string | null
-          event_id?: string | null
-          finished_at?: string | null
-          id?: string
-          resume_at?: string | null
-          resume_correlation_id?: string | null
-          status?: string
-          trigger_payload?: Json
-          trigger_source: string
-          workflow_id: string
-        }
-        Update: {
-          created_at?: string
-          dedupe_key?: string | null
-          definition_snapshot?: Json | null
-          error_message?: string | null
-          event_id?: string | null
-          finished_at?: string | null
-          id?: string
-          resume_at?: string | null
-          resume_correlation_id?: string | null
-          status?: string
-          trigger_payload?: Json
-          trigger_source?: string
-          workflow_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workflow_runs_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "console_events"
-            referencedColumns: ["event_id"]
-          },
-          {
-            foreignKeyName: "workflow_runs_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "events"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "workflow_runs_workflow_id_fkey"
-            columns: ["workflow_id"]
-            isOneToOne: false
-            referencedRelation: "workflows"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workflows: {
-        Row: {
-          created_at: string
-          definition: Json
-          event_id: string | null
-          id: string
-          is_active: boolean
-          name: string
-          updated_at: string
-          version: number
-        }
-        Insert: {
-          created_at?: string
-          definition?: Json
-          event_id?: string | null
-          id?: string
-          is_active?: boolean
-          name: string
-          updated_at?: string
-          version?: number
-        }
-        Update: {
-          created_at?: string
-          definition?: Json
-          event_id?: string | null
-          id?: string
-          is_active?: boolean
-          name?: string
-          updated_at?: string
-          version?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workflows_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "console_events"
-            referencedColumns: ["event_id"]
-          },
-          {
-            foreignKeyName: "workflows_event_id_fkey"
-            columns: ["event_id"]
-            isOneToOne: false
-            referencedRelation: "events"
             referencedColumns: ["id"]
           },
         ]
@@ -7892,6 +7465,19 @@ export type Database = {
       admin_reschedule_event: {
         Args: { _event_date: string; _event_id: string }
         Returns: string
+      }
+      admit_contacts_by_order: {
+        Args: {
+          p_actor: string
+          p_campaign: string
+          p_event: string
+          p_limit: number
+          p_prev?: string
+          p_prev_for?: string
+          p_reason: string
+          p_size: number
+        }
+        Returns: number
       }
       approve_package_terms: {
         Args: {
@@ -8342,19 +7928,6 @@ export type Database = {
         Args: { p_campaign: string; p_contact: string }
         Returns: boolean
       }
-      integrations_claim_credential_refresh: {
-        Args: {
-          p_connection_id: string
-          p_expected_kind: string
-          p_expected_provider: string
-          p_lease_seconds?: number
-        }
-        Returns: {
-          lease_id: string
-          lease_until: string
-          outcome: string
-        }[]
-      }
       integrations_configured_flags: {
         Args: never
         Returns: {
@@ -8389,19 +7962,6 @@ export type Database = {
         }
         Returns: string
       }
-      integrations_read_provider_secret: {
-        Args: { p_provider: string }
-        Returns: string
-      }
-      integrations_release_credential_refresh: {
-        Args: {
-          p_connection_id: string
-          p_last_error?: string
-          p_lease_id: string
-          p_next_status?: string
-        }
-        Returns: boolean
-      }
       integrations_rename_credential: {
         Args: { p_connection_id: string; p_label: string }
         Returns: boolean
@@ -8416,17 +7976,6 @@ export type Database = {
           p_secret: string
         }
         Returns: boolean
-      }
-      integrations_upsert_provider_config: {
-        Args: {
-          p_client_id: string
-          p_created_by: string
-          p_enabled: boolean
-          p_extra: Json
-          p_provider: string
-          p_secret: string
-        }
-        Returns: undefined
       }
       integrations_write_credential: {
         Args: {
@@ -8771,7 +8320,6 @@ export type Database = {
         Args: {
           _adults: number
           _answers?: Json
-          _call_consent?: boolean
           _kids: number
           _meal: string
           _note: string
@@ -8828,10 +8376,6 @@ export type Database = {
           _staff_reason: string
         }
         Returns: Json
-      }
-      wake_parked_workflow_run: {
-        Args: { p_correlation_id: string; p_node_id: string; p_run_id: string }
-        Returns: boolean
       }
     }
     Enums: {

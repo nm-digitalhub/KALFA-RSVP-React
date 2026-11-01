@@ -42,7 +42,6 @@ import {
   UserSearch,
   Voicemail,
   Webhook,
-  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -170,7 +169,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: '/admin/payments', label: 'תשלומים לבדיקה', icon: CreditCard, permission: 'manage_billing' },
       { href: '/admin/voice', label: 'מוקד שיחות AI', icon: Bot, permission: 'manage_voice' },
       { href: '/admin/templates', label: 'תבניות פנייה', icon: Megaphone, permission: 'manage_settings' },
-      { href: '/admin/workflows', label: 'תהליכי אוטומציה', icon: Workflow, permission: 'manage_settings' },
       { href: '/admin/recordings', label: 'הקלטות שיחות', icon: Voicemail, permission: 'view_recordings' },
       // Placed beside recordings — the page's own header comment distinguishes
       // it from both /admin/recordings (call_attempts, the AI ledger) and

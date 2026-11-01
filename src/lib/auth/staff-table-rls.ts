@@ -38,7 +38,6 @@ export const HAND_WRITTEN = [
   'the public and signed-in reads kept by KEEP_POLICIES (anon and customer SELECT; channels_auth_read for any user)',
   'the upsert_provider_number RPC, called by each key holder and by a non-holder (provider_numbers)',
   'the six fleet_* RPCs, holder and non-holder',
-  'the service-role statement shapes of voice_purpose_attempts',
   'cases for the seeded roles (owner, billing_clerk, auditor, ops_engineer, support_agent) beyond the generated actors',
   'the ROLLBACK header of each migration (prior grants and policy text read from the live catalog)',
   'the row fixture of each per-permission table (RowFixture)',

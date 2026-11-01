@@ -21,7 +21,6 @@ const ATTEMPT_TABLES_UNDER_TEST = [
   'callback_request_attempts',
   'sales_call_attempts',
   'inbound_agent_attempts',
-  'voice_purpose_attempts',
 ];
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
@@ -132,8 +131,8 @@ describe('storeCallAnalysis (dual-link + QA persist)', () => {
 
 describe('storeSalesCallAnalysis', () => {
   // THE INVARIANT THAT PROTECTS THE STORE. `call_analysis.call_attempt_id` is a
-  // FOREIGN KEY to `call_attempts`. Four of the five attempt tables can never
-  // fill it, so writing a meeting-confirm or purpose attempt id there would
+  // FOREIGN KEY to `call_attempts`. Three of the four attempt tables can never
+  // fill it, so writing a meeting-confirm attempt id there would
   // raise a constraint violation and fail the store on exactly the calls the
   // linker was widened to capture. The polymorphic attempt_table/attempt_id
   // pair is what carries them.
@@ -308,14 +307,13 @@ describe('buildCallAnalysisInsert — the polymorphic link', () => {
   });
 
   it('⚠️ counts a non-RSVP link as LINKED', () => {
-    // `linked_at` used to follow `call_attempt_id`, which four of the five
+    // `linked_at` used to follow `call_attempt_id`, which three of the four
     // tables can never fill — so every Meeting-Confirm and Sales-Close call
     // would have read as an orphan for ever.
     for (const table of [
       'callback_request_attempts',
       'sales_call_attempts',
       'inbound_agent_attempts',
-      'voice_purpose_attempts',
     ] as const) {
       const row = buildCallAnalysisInsert(analysis, { attemptTable: table, attemptId: 'x-1' });
       expect(row.linked_at, table).toBeTruthy();
@@ -341,7 +339,7 @@ describe('buildCallAnalysisInsert — the polymorphic link', () => {
 });
 
 describe('the attempt-table list', () => {
-  it('⚠️ still names all FIVE — one agent per table, and one that was forgotten', () => {
+  it('⚠️ still names all FOUR — one agent per table', () => {
     // Each entry is an agent that would otherwise never link a call. The list
     // read `call_attempts` alone until 2026-09-14, and three of four agents had
     // 0 links between them for two months.
@@ -359,7 +357,6 @@ describe('the attempt-table list', () => {
       'callback_request_attempts', // Meeting-Confirm
       'sales_call_attempts', // Sales-Close
       'inbound_agent_attempts', // RSVP customer service
-      'voice_purpose_attempts', // any purpose added from the admin panel
     ]) {
       expect(src, table).toContain(`table: '${table}'`);
     }
@@ -378,7 +375,6 @@ describe('the attempt-table list', () => {
       'callback_request_attempts',
       'sales_call_attempts',
       'inbound_agent_attempts',
-      'voice_purpose_attempts',
     ]) {
       expect(src, table).toMatch(new RegExp(`table: '${table}', hasNonce: false`));
     }

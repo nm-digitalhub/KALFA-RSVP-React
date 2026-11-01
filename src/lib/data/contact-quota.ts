@@ -9,7 +9,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // seat is membership of the campaign's authorized list (campaign_authorized_contacts).
 // The list itself is what the campaign send path and the outreach engine already read, so
 // they need no check. This function is for every path that does NOT go through that list:
-// workflow template sends and AI calls.
+// AI calls.
 //
 // A campaign WITHOUT a quota (contact_quota IS NULL) is not subject to the model at all:
 // everything is allowed, which is what every campaign does today.

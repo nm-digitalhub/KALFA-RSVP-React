@@ -66,14 +66,9 @@ export const STAFF_TABLE_PERMISSIONS = {
   otp_challenges: { group: 'closed' },
   agreement_documents: { group: 'closed' },
   webhook_inbox: { group: 'closed' },
-  workflows: { group: 'closed' },
-  workflow_runs: { group: 'closed' },
-  workflow_run_events: { group: 'closed' },
-  workflow_run_steps: { group: 'closed' },
   webhook_deliveries: { group: 'closed' },
   outreach_template_failures: { group: 'closed' },
   vox_log_exports: { group: 'closed' },
-  voice_purpose_attempts: { group: 'closed' },
 
   // Group B: per operation.
   packages: {
@@ -90,7 +85,7 @@ export const STAFF_TABLE_PERMISSIONS = {
   call_compliance_settings: {
     group: 'permission',
     ops: { SELECT: VOICE, UPDATE: VOICE },
-    modules: ['src/lib/data/admin/call-dnc.ts', 'src/lib/data/admin/voximplant-channel.ts'],
+    modules: ['src/lib/data/admin/call-dnc.ts'],
   },
   provider_numbers: {
     group: 'permission',
@@ -131,11 +126,6 @@ export const STAFF_TABLE_PERMISSIONS = {
     group: 'permission',
     ops: { SELECT: SETTINGS },
     modules: ['src/lib/data/admin/alerts.ts'],
-  },
-  voice_purposes: {
-    group: 'permission',
-    ops: { SELECT: VOICE, INSERT: VOICE, UPDATE: VOICE },
-    modules: ['src/lib/data/admin/voice-purposes.ts'],
   },
 } as const satisfies Partial<Record<PublicTable, StaffTableRule>>;
 

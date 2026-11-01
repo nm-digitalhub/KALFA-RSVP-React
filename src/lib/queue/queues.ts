@@ -21,11 +21,15 @@ import { deterministicJobId } from './deterministic-id';
 //   queue. Retired 2026-09-30 (576 rows/day).
 //   sumit-hold-reconcile — synced SUMIT card-hold releases into campaigns.release_status for the pay-per-result model,
 //   which was retired 11.10.2026 (no hold can be placed any more). Retired 11.10.2026.
+//   workflow-run, workflow-schedule-sweep — the admin workflow (automation builder) engine, removed with the whole
+//   workflow system (owner, 01.11.2026). Retired 01.11.2026.
 export const RETIRED_QUEUES = [
   'outreach-sweeper',
   'voximplant-callback-dispatch-reconcile',
   'voximplant-sales-dispatch-reconcile',
   'sumit-hold-reconcile',
+  'workflow-run',
+  'workflow-schedule-sweep',
 ] as const;
 
 export const QUEUES = {
@@ -241,31 +245,6 @@ export const QUEUES = {
   // when they change. Slack only when something actually happened.
   // See src/lib/ops/supabase-cli-update.ts + scripts/update-supabase-cli.sh.
   supabaseCliUpdate: 'supabase-cli-update',
-  // One admin-authored workflow execution. Event-driven, enqueued by the
-  // webhook drain the moment an inbound message matches an armed workflow —
-  // never a periodic scan. The payload is the run id and nothing else: the row
-  // already exists (created with its dedupe_key, so a Meta retry of the same
-  // delivery yields one run) and the handler reads the definition and the
-  // trigger payload fresh from it.
-  //
-  // The whole graph runs inside ONE job, and a retry replays every node —
-  // workflow_run_steps' unique (run_id, node_id) is what stops the second side
-  // effect. See src/lib/workflow/engine/activity-runner.ts.
-  //
-  // Since `logic.wait`, a run may also park mid-graph. There is still
-  // no per-node job: the run re-enqueues ITSELF with `startAfter`, replays from
-  // the start, and the ledger short-circuits everything that already finished.
-  // The vendored runGraph is untouched.
-  workflowRun: 'workflow-run',
-
-  // Every minute: which armed workflows does the clock start right now.
-  //
-  // The tick is cheap and does nothing by itself — it reads the armed workflows
-  // and creates run rows for the ones whose time matches. A minute is the
-  // resolution the config offers, so anything coarser would mean a schedule set
-  // for 09:00 firing at 09:05.
-  workflowSchedule: 'workflow-schedule-sweep',
-
   // Owner WhatsApp business-data agent (plans/owner-whatsapp-agent-plan.md §2.2,
   // stage 4). Event-driven: the WhatsApp webhook enqueues ONE job per diverted,
   // gate-passing staff question, with id deterministicJobId(wamid), so a Meta
@@ -386,56 +365,6 @@ export const MARKETING_CONTACT_SYNC_RETRY = {
 // The owner-agent-report job payload. The run id ONLY — never a phone, never
 // report content.
 export type OwnerAgentReportJob = {
-  runId: string;
-};
-
-// workflow-run retry policy. Deliberately NO `deadLetter`, for the same reason
-// CALL_RETRY omits it: QUEUES.dead's consumer (handleDead) hard-assumes an
-// OutreachStepJob shape and would crash on a payload of any other kind. A
-// workflow job is { runId }, so routing it there would turn a failed run into a
-// crashed dead-letter worker. guardedWorker already Slack-alerts on the final
-// throw, and the run row carries status='failed' with its message.
-//
-// Two retries, not three: a workflow's steps are claimed in an idempotent
-// ledger, so a retry re-runs only what genuinely did not finish — but every
-// retry still walks the whole graph, and a permanently broken graph should stop
-// being walked quickly.
-/**
- * How long ONE delivery of a workflow run may hold its job.
- *
- * ⚠️ SET EXPLICITLY, because the inherited value was the same number as the step
- * lease and that is the one value it must not be. pg-boss defaults
- * `expireInSeconds` to 900 (dist/plans.js `QUEUE_DEFAULTS`), `STEP_LEASE_MS` is
- * 15 minutes, and `workflowRun` is not in the worker's sweep-expiry list — so
- * both timers sat at 900s by inheritance rather than by choice.
- *
- * What that collision does: at 900s `failJobsByTimeout` DELETES the active job
- * and re-inserts it as `retry`, with `GREATEST(retry_delay,1)` putting the next
- * attempt ~1-2s later. The step row claimed at t=0 becomes reclaimable at that
- * exact moment too, so the retry takes over a node the first handler may still
- * be inside. Nothing stops it: `singletonKey` constrains nothing under the
- * `standard` policy this queue uses.
- *
- * 600 < 900 breaks it: a retry now meets a step row still inside its lease,
- * reads `in_flight`, and comes back as `contended` instead of re-running the
- * node. And 600 sits above every node budget (`MAX_NODE_TIMEOUT_MS`, 300s), so
- * a node always times out on its own terms before the job is taken from it.
- *
- * node budget (≤300s) < this (600s) < STEP_LEASE_MS (900s) — asserted in
- * `workflow-budgets.test.ts`, not left to these three files agreeing by hand.
- */
-export const WORKFLOW_RUN_EXPIRE_SECONDS = 600;
-
-export const WORKFLOW_RETRY = {
-  retryLimit: 2,
-  retryBackoff: true,
-  retryDelayMax: 120,
-} as const;
-
-// The workflow-run job payload. The run id ONLY — never the message, never a
-// phone, never a name. Everything the handler needs is on the row, which keeps
-// guest PII out of pg-boss's own job table and out of its retry history.
-export type WorkflowRunJob = {
   runId: string;
 };
 

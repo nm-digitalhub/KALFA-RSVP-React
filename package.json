@@ -25,7 +25,7 @@
     "pm2:status": "pm2 status kalfa-beta",
     "pm2:logs": "pm2 logs kalfa-beta --lines 100",
     "lint": "eslint",
-    "worker:deps": "depcruise --config .dependency-cruiser.cjs worker/main.ts scripts src/lib/workflow src/lib/data src/lib/owner-agent",
+    "worker:deps": "depcruise --config .dependency-cruiser.cjs worker/main.ts scripts src/lib/data src/lib/owner-agent",
     "sync:voximplant-sa": "esbuild scripts/sync-voximplant-sa.ts --bundle --platform=node --format=cjs --target=node26 --outfile=dist/sync-voximplant-sa.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/sync-voximplant-sa.cjs",
     "set:voximplant-callback-secret": "esbuild scripts/set-voximplant-callback-secret.ts --bundle --platform=node --format=cjs --target=node26 --outfile=dist/set-voximplant-callback-secret.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/set-voximplant-callback-secret.cjs",
     "bridge:call": "esbuild scripts/voximplant/bridge-call.ts --bundle --platform=node --format=cjs --target=node26 --outfile=dist/bridge-call.cjs --tsconfig=tsconfig.json --alias:server-only=./worker/empty.js --alias:next/headers=./worker/empty.js --alias:next/navigation=./worker/empty.js --alias:next/cache=./worker/empty.js --external:pg-native && node --env-file=.env.local dist/bridge-call.cjs",
@@ -155,10 +155,7 @@
     "@uiw/react-json-view": "^2.0.0-alpha.43",
     "@voximplant/voxengine-ci": "^36.0.0",
     "@voximplant/websdk": "5.3.0",
-    "@workflowbuilder/sdk": "^3.0.0",
-    "@workflowbuilder/ui": "file:vendor/workflowbuilder-ui-0.1.0.tgz",
     "@xstate/react": "^6.1.0",
-    "@xyflow/react": "^12.12.0",
     "@zxcvbn-ts/core": "^4.1.2",
     "@zxcvbn-ts/language-common": "^4.1.2",
     "ai": "^7.0.141",
@@ -294,18 +291,12 @@
     "i18next": {
       "typescript": "$typescript"
     },
-    "@workflowbuilder/sdk": {
-      "i18next": "$i18next"
-    },
     "@voximplant/apiclient-nodejs": {
       "axios": "0.33.0",
       "form-data": "2.5.6"
     },
     "@voximplant/voxengine-ci": {
       "yaml": "1.10.3"
-    },
-    "@workflowbuilder/ui": {
-      "@base-ui/react": "$@base-ui/react"
     },
     "@pnp/cli-microsoft365": {
       "csv-parse": "^7.0.2",
@@ -314,7 +305,6 @@
     }
   },
   "patchedDependencies": {
-    "@workflowbuilder/sdk@3.0.0": "patches/@workflowbuilder/sdk@3.0.0.patch",
     "@statelyai/inspect@0.7.2": "patches/@statelyai/inspect@0.7.2.patch"
   }
 }

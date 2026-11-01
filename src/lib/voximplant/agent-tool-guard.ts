@@ -3,14 +3,13 @@ import 'server-only';
 import { getCallAttemptByAccessToken } from '@/lib/data/call-attempts';
 import { getCallbackAttemptByAccessToken } from '@/lib/data/callback-request-attempts';
 import { getSalesAttemptByAccessToken } from '@/lib/data/sales-call-attempts';
-import { getVoicePurposeAttemptByAccessToken } from '@/lib/data/voice-purpose-attempts';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 // Shared request guard for the ElevenLabs agent-tool endpoints
 // (/api/voximplant/agent-tool/*/{token}, /api/voximplant/{mtg,sls}/tool/*/{token})
 // and the per-surface terminal-report endpoints
-// (/api/voximplant/{mtg,sls}/cb/{token}, /api/voximplant/purpose/{purpose}/cb/{token}).
+// (/api/voximplant/{mtg,sls}/cb/{token}).
 // One canonical implementation of the cb-route auth model: fail-closed rate
 // limit → body-size caps → opaque per-call access-token resolution (identity =
 // the resolved attempt row, NEVER the body) → expiry check → capped body read.
@@ -18,8 +17,8 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 //
 // Thin named exports, one shared core: guardAgentToolRequest (call_attempts, the
 // original RSVP surface), guardMeetingToolRequest
-// (callback_request_attempts, the meeting-booking surface), and the sales and
-// purpose guards below — kept as SEPARATE
+// (callback_request_attempts, the meeting-booking surface), and the sales
+// guard below — kept as SEPARATE
 // named functions rather than one generic parameterized export, so a route
 // import (`guardAgentToolRequest` vs `guardMeetingToolRequest`) states which
 // table it authorizes against just by its name, matching this table's own
@@ -34,28 +33,12 @@ export type AgentToolGuardResult =
       ok: true;
       attemptId: string;
       raw: string;
-      /**
-       * The workflow run and node this attempt belongs to, when the surface
-       * records them — only `voice_purpose_attempts` does today.
-       *
-       * Carried through rather than re-read: the callback route needs them to
-       * wake a parked run, and the guard has already fetched the row. Absent
-       * (undefined) on the three surfaces whose lookups do not select them, and
-       * null on a purpose attempt that no workflow started.
-       */
-      runId?: string | null;
-      nodeId?: string | null;
     }
   | { ok: false; status: number };
 
-// Optional on purpose: three of the four lookups do not select these columns, so
-// the shared guard reads whatever the surface happens to carry rather than
-// forcing every surface to grow a workflow concept it has no use for.
 type AttemptRef = {
   id: string;
   token_expires_at: string | null;
-  run_id?: string | null;
-  node_id?: string | null;
 };
 
 async function guardTokenGatedToolRequest(
@@ -96,13 +79,7 @@ async function guardTokenGatedToolRequest(
     return { ok: false, status: 413 };
   }
 
-  return {
-    ok: true,
-    attemptId: ref.id,
-    raw,
-    ...(ref.run_id !== undefined ? { runId: ref.run_id } : {}),
-    ...(ref.node_id !== undefined ? { nodeId: ref.node_id } : {}),
-  };
+  return { ok: true, attemptId: ref.id, raw };
 }
 
 export function guardAgentToolRequest(
@@ -130,17 +107,4 @@ export function guardSalesToolRequest(
   opts: { scope: string; maxBodyBytes: number },
 ): Promise<AgentToolGuardResult> {
   return guardTokenGatedToolRequest(req, token, opts, getSalesAttemptByAccessToken);
-}
-
-// guardPurposeToolRequest (voice_purpose_attempts, the registry-driven surface)
-// — fourth named export, same "state which table by the function name" reasoning
-// as the other three. The lookup returns run_id/node_id alongside the guard's
-// own fields, so the route that already has the attempt does not need a second
-// read to find the workflow run waiting on it.
-export function guardPurposeToolRequest(
-  req: Request,
-  token: string,
-  opts: { scope: string; maxBodyBytes: number },
-): Promise<AgentToolGuardResult> {
-  return guardTokenGatedToolRequest(req, token, opts, getVoicePurposeAttemptByAccessToken);
 }

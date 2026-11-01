@@ -258,8 +258,8 @@ export async function dispatchOutreachCall(
 
   // 4a. Contact-quota seat. A campaign with a package quota may approach only the contacts
   //     that hold a seat (plan 2026-09-30-contact-quota-package.md §4.1). The outreach
-  //     engine only ever dispatches seated contacts, but the console, the ops script and the
-  //     workflows reach this function directly, so the check lives HERE and covers every
+  //     engine only ever dispatches seated contacts, but the console and the ops script
+  //     reach this function directly, so the check lives HERE and covers every
   //     caller. A campaign without a quota is unaffected.
   //
   //     A callback the guest asked for is exempt, like the already-reached gate above and by
