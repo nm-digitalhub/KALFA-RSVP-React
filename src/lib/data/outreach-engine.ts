@@ -196,27 +196,8 @@ export async function isContactReached(
   return (count ?? 0) > 0;
 }
 
-// Opt-out gate for the AI-call channel (C2): true when the contact asked not to be
-// contacted (removal_requested). No prior consent is required to call a guest
-// about their RSVP (owner, 01.11.2026). Fail-CLOSED: a missing contact or any
-// read error reads as opted out (no call).
-export async function isContactOptedOut(contactId: string): Promise<boolean> {
-  try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('contacts')
-      .select('removal_requested')
-      .eq('id', contactId)
-      .maybeSingle();
-    if (error || !data) return true;
-    return data.removal_requested;
-  } catch {
-    return true;
-  }
-}
-
-// Do-Not-Call suppression for the AI-call channel. True when the number is on the
-// call_dnc_list. Fail-CLOSED: on error treat as listed (suppress the call).
+// Do-Not-Call suppression for the non-RSVP dial paths (sales, meeting, call-me-now,
+// console). True when the number is on the call_dnc_list. Fail-CLOSED: on error treat as listed (suppress the call).
 export async function isDncListed(normalizedPhone: string): Promise<boolean> {
   try {
     const admin = createAdminClient();
@@ -293,7 +274,7 @@ export async function claimStep(
 export async function setOutreachStatus(
   campaignId: string,
   contactId: string,
-  status: 'reached' | 'stopped' | 'exhausted' | 'not_eligible',
+  status: 'reached' | 'stopped' | 'exhausted',
   stopReason?: string,
 ): Promise<void> {
   const admin = createAdminClient();
@@ -373,10 +354,10 @@ export async function executeStep(
 
   const { data: contact } = await admin
     .from('contacts')
-    .select('id, normalized_phone, removal_requested')
+    .select('id, normalized_phone')
     .eq('id', contactId)
     .maybeSingle();
-  if (!contact || contact.removal_requested) return { action: 'skipped' };
+  if (!contact) return { action: 'skipped' };
   if (tp.channel === 'call' && !ctx.allowed_channels.includes('call')) {
     return { action: 'skipped' };
   }
@@ -606,44 +587,11 @@ export async function loadOutreachRow(
   return data ?? null;
 }
 
-// The terminal-precheck condition for one step as a PURE function — the SINGLE
-// source of truth shared by prepareAndSendStep (its first gate) and the
-// crash-recovery re-check. A contact who asked not to be
-// contacted (removal_requested) is terminal on ANY channel.
-export function terminalReasonFor(
-  contact: { removal_requested: boolean | null },
-): string | null {
-  return contact.removal_requested ? 'removal_requested' : null;
-}
-
-// Read-only terminal re-check for the crash-recovery path: NO send. Lets
-// runStepExecution re-terminalize an opted-out contact instead of blindly
-// advancing a failed terminalize. null → not terminal (a prior real send may
-// have happened → advance once, at-most-once).
-export async function checkStepTerminal(
-  ctx: CampaignContext,
-  contactId: string,
-  stepIndex: number,
-): Promise<{ reason: string } | null> {
-  const tp = ctx.schedule[stepIndex];
-  if (!tp) return null;
-  const admin = createAdminClient();
-  const { data: contact } = await admin
-    .from('contacts')
-    .select('removal_requested')
-    .eq('id', contactId)
-    .maybeSingle();
-  if (!contact) return null;
-  const reason = terminalReasonFor(contact);
-  return reason ? { reason } : null;
-}
-
 // Build + send the WhatsApp/call for the CURSOR step, classified into a
 // StepSendResult. It does NOT reserve/advance (the RPCs own that) — it only
 // performs the external, non-idempotent side effect and reports the outcome:
 //   accepted/definitely_not_sent/unknown — the WhatsApp delivery classification.
 //   skip{reason}     — config/template integrity (advance-skip; schedule covers).
-//   terminal{reason} — opt-out (terminalize the contact).
 //   advance{reason}  — a call request was dispatched (advance the cursor).
 // On accepted it bumps whatsapp_sent_count + op status adjacent to the send (a
 // resolve failure after accept ⇒ possible sent-count under-count, never resend).
@@ -661,12 +609,10 @@ export async function prepareAndSendStep(
 
   const { data: contact } = await admin
     .from('contacts')
-    .select('id, normalized_phone, removal_requested')
+    .select('id, normalized_phone')
     .eq('id', contactId)
     .maybeSingle();
   if (!contact) return { kind: 'skip', reason: 'contact_missing' };
-  const terminal = terminalReasonFor(contact);
-  if (terminal) return { kind: 'terminal', reason: terminal };
 
   // P0-1 (A6): a contact PINNED in the authorized set (exposed/billed) but no
   // longer referenced by a live guest keeps its billing legitimacy for a late

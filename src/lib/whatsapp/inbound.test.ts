@@ -4,14 +4,12 @@ import {
   classifyMessagePayload,
   extractReplyId,
   isBillableMessageType,
-  isRemovalIntent,
 } from './inbound';
 
 describe('classifyMessagePayload', () => {
   it('treats an inbound text message as billable (one reached signal)', () => {
     expect(classifyMessagePayload({ type: 'text' })).toEqual({
       billable: true,
-      removal: false,
       replyId: null,
     });
   });
@@ -19,7 +17,6 @@ describe('classifyMessagePayload', () => {
   it('does NOT bill a system/unsupported message', () => {
     expect(classifyMessagePayload({ type: 'system' })).toEqual({
       billable: false,
-      removal: false,
       replyId: null,
     });
   });
@@ -29,38 +26,22 @@ describe('classifyMessagePayload', () => {
     expect(classifyMessagePayload({ type: 'interactive' }).billable).toBe(true);
   });
 
-  it('flags a removal/opt-out text body as removal (still billable)', () => {
+  it('a text asking to be removed is an ordinary billable reply (owner, 01.11.2026)', () => {
     expect(
       classifyMessagePayload({
         type: 'text',
         text: { body: 'אנא הסירו אותי מהרשימה' },
       }),
-    ).toEqual({ billable: true, removal: true, replyId: null });
+    ).toEqual({ billable: true, replyId: null });
   });
 
-  it('flags removal from an interactive button reply title', () => {
-    expect(
-      classifyMessagePayload({
-        type: 'interactive',
-        interactive: { button_reply: { title: 'STOP' } },
-      }).removal,
-    ).toBe(true);
-  });
-
-  it('does NOT flag a normal RSVP reply as removal (billable, removal=false)', () => {
+  it('a normal RSVP reply is billable', () => {
     expect(
       classifyMessagePayload({
         type: 'text',
         text: { body: 'אני מגיע, תודה רבה!' },
       }),
-    ).toEqual({ billable: true, removal: false, replyId: null });
-  });
-
-  it('never flags removal on a non-billable type even if text matches', () => {
-    // removal is only inspected when billable — a system message can't bill or opt out.
-    expect(
-      classifyMessagePayload({ type: 'system', text: { body: 'הסר' } }),
-    ).toEqual({ billable: false, removal: false, replyId: null });
+    ).toEqual({ billable: true, replyId: null });
   });
 
   it('surfaces the opaque reply id of a template quick-reply button (billable)', () => {
@@ -69,7 +50,7 @@ describe('classifyMessagePayload', () => {
         type: 'button',
         button: { payload: 'rsvp_attending', text: 'אני מגיע' },
       }),
-    ).toEqual({ billable: true, removal: false, replyId: 'rsvp_attending' });
+    ).toEqual({ billable: true, replyId: 'rsvp_attending' });
   });
 
   it('surfaces the opaque id of an interactive button reply (billable)', () => {
@@ -78,17 +59,17 @@ describe('classifyMessagePayload', () => {
         type: 'interactive',
         interactive: { button_reply: { id: 'rsvp_declined', title: 'לא מגיע' } },
       }),
-    ).toEqual({ billable: true, removal: false, replyId: 'rsvp_declined' });
+    ).toEqual({ billable: true, replyId: 'rsvp_declined' });
   });
 
   it('never surfaces a reply id on a non-billable type', () => {
-    // replyId is only inspected when billable — symmetric with `removal`.
+    // replyId is only inspected when billable.
     expect(
       classifyMessagePayload({
         type: 'system',
         button: { payload: 'rsvp_attending' },
       }),
-    ).toEqual({ billable: false, removal: false, replyId: null });
+    ).toEqual({ billable: false, replyId: null });
   });
 });
 
@@ -131,20 +112,5 @@ describe('isBillableMessageType', () => {
     for (const t of ['system', 'unsupported', undefined, null, '']) {
       expect(isBillableMessageType(t)).toBe(false);
     }
-  });
-});
-
-describe('isRemovalIntent', () => {
-  it('matches explicit opt-out keywords (Hebrew + English, any case)', () => {
-    expect(isRemovalIntent('הסר')).toBe(true);
-    expect(isRemovalIntent('להסיר אותי בבקשה')).toBe(true);
-    expect(isRemovalIntent('Please STOP')).toBe(true);
-    expect(isRemovalIntent('unsubscribe')).toBe(true);
-  });
-
-  it('does not match ordinary replies or empty text', () => {
-    expect(isRemovalIntent('')).toBe(false);
-    expect(isRemovalIntent('אני מגיע')).toBe(false);
-    expect(isRemovalIntent('כמה אורחים אפשר להביא?')).toBe(false);
   });
 });

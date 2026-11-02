@@ -318,11 +318,6 @@ export function WebhookDetail({ detail }: { detail: AdminWebhookDetailView }) {
                   </span>
                 )}
               </Field>
-              {outcome.inbound.removalRequested ? (
-                <Field label="הסרה">
-                  <Badge variant="warning">איש הקשר מסומן כמבקש הסרה</Badge>
-                </Field>
-              ) : null}
             </>
           ) : outcome.staging ? null : (
             <Field label="שיוך">

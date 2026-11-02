@@ -38,7 +38,7 @@
 | `campaign_status` | `draft`, `pending_approval`, `approved`, `scheduled`, `active`, `paused`, `closed`, `awaiting_invoice`, `billed`, `paid`, `cancelled` |
 | `campaign_channel` | `whatsapp`, `call` |
 | `billing_route` | `saved_token` (מסלול B — טוקן שמור), `hold_j5` (מסלול A — תפיסת מסגרת J5) |
-| `contact_op_status` | `pending_contact`, `not_eligible`, `whatsapp_sent`, `whatsapp_delivered`, `whatsapp_read`, `whatsapp_responded`, `pending_call`, `call_dialed`, `no_answer`, `voicemail`, `human_interaction_call`, `wrong_number`, `removal_requested`, `reached_billed`, `not_reached` |
+| `contact_op_status` | `pending_contact`, `whatsapp_sent`, `pending_call`, `call_dialed`, `no_answer`, `human_interaction_call`, `wrong_number`, `reached_billed` |
 | `agreement_status` | `draft`, `approved` |
 
 הרחבות enum בוצעו רק פעם אחת: `campaign_status` קיבל את `awaiting_invoice`, `billed` ו‑`paid` במיגרציה `202606240007` (בקובץ נפרד כי `ALTER TYPE ... ADD VALUE` מוגבל בתוך טרנזקציה).
@@ -416,7 +416,6 @@
 | `event_id` | `uuid` | לא | FK → `events` ON DELETE CASCADE |
 | `normalized_phone` | `text` | לא | E.164; **UNIQUE** ‏`(event_id, normalized_phone)` |
 | `op_status` | `contact_op_status` | לא | default `'pending_contact'` — הסטטוס התפעולי (§11 במפרט) |
-| `removal_requested` | `boolean` | לא | default `false` — opt‑out; חוסם חיוב ב‑RPC |
 | `whatsapp_consent_at` | `timestamptz` | כן | **הסכמה שיווקית ספציפית‑ערוץ** (מיגרציה 0028) |
 | `created_at`, `updated_at` | `timestamptz` | לא | `now()`; טריגר `contacts_set_updated_at` |
 
@@ -446,12 +445,12 @@
 |---|---|---|---|
 | `id` | `uuid` | לא | PK |
 | `event_id` / `campaign_id` / `contact_id` | `uuid` | לא | FK → events/campaigns/contacts, כולן ON DELETE CASCADE |
-| `status` | `text` | לא | default `'active'` — ‏active/reached/stopped/exhausted/not_eligible |
+| `status` | `text` | לא | default `'active'` — ‏active/reached/stopped/exhausted |
 | `current_step_index` | `integer` | לא | default `0` |
 | `whatsapp_sent_count`, `call_request_count` | `integer` | לא | default `0` |
 | `next_run_at`, `reached_at` | `timestamptz` | כן | |
 | `reached_channel` | `campaign_channel` | כן | |
-| `stop_reason` | `text` | כן | reached/closed/removal_requested/consent_revoked |
+| `stop_reason` | `text` | כן | reached/closed |
 | `created_at`, `updated_at` | `timestamptz` | לא | `now()`; טריגר `set_outreach_state_updated_at` |
 
 - **UNIQUE**: `(campaign_id, contact_id)`. **אינדקס**: `(campaign_id, status)`.
@@ -682,7 +681,7 @@
 | `accept_invitation` | `_token text` | `uuid` | ✔ | PUBLIC | קבלת הזמנה: בתוקף, לא‑מבוטלת, חד‑פעמית, מותאמת‑email; נועלת `FOR UPDATE` |
 | `get_rsvp_by_token` | `_token text` | `jsonb` | ✔ | **service_role בלבד** | השער הציבורי היחיד לקריאת RSVP: מאמתת טוקן לא‑מבוטל + אירוע `active`; מחזירה guest+event+questions+`can_respond` (משוקלל גם מול יום האירוע וגם מול ה‑deadline, בלוח שנה Asia/Jerusalem). נקראת רק מהשרת אחרי rate limiter |
 | `submit_rsvp` | `_token text, _status text, _adults int, _kids int, _meal text, _note text, _answers jsonb default '{}'` | `jsonb` | ✔ | **service_role בלבד** | ההגשה האטומית: whitelist סטטוס, נעילת guest, שערי אירוע (active, לא‑עבר‑יומו, deadline), ולידציית counts מול `expected_count`, ולידציית תשובות מול `event_questions`, אידמפוטנטיות, append ל‑`rsvp_responses` + הקרנה על `guests`. סיבות כשל: `invalid_status`/`not_found`/`closed`/`deadline_passed`/`invalid_count`/`invalid_answers`/`missing_required` |
-| `try_record_billed_result` | `p_event uuid, p_campaign uuid, p_contact uuid, p_channel campaign_channel, p_attempt text, p_evidence text, p_provider_ref text` | `text` | ✔ | **service_role בלבד** (ננעל ב‑0038 אחרי שממצא P0 הוכיח שanon הריץ אותה) | **נקודת הכניסה היחידה לחיוב** — טרנזקציה נעולה אחת: אימות קמפיין (`FOR UPDATE`), התאמת אירוע (`event_mismatch`), סטטוס `active|paused`, חלון `start_at`/`close_at`, ‏`event_passed` (יום האירוע עבר בישראל), ‏`event_not_active` (R9), ‏opt‑out ‏(`removal_requested`), **חברות ב‑SET הקפוא** (`not_authorized`), תקרת ספירה (`ceiling_reached`), ואז INSERT עם `ON CONFLICT (event_id, contact_id) DO NOTHING` ‏(`already_billed`). מחזירה `billed` בהצלחה. ה‑event_id הנכתב נגזר מהקמפיין — לא מהקורא |
+| `try_record_billed_result` | `p_event uuid, p_campaign uuid, p_contact uuid, p_channel campaign_channel, p_attempt text, p_evidence text, p_provider_ref text` | `text` | ✔ | **service_role בלבד** (ננעל ב‑0038 אחרי שממצא P0 הוכיח שanon הריץ אותה) | **נקודת הכניסה היחידה לחיוב** — טרנזקציה נעולה אחת: אימות קמפיין (`FOR UPDATE`), התאמת אירוע (`event_mismatch`), סטטוס `active|paused`, חלון `start_at`/`close_at`, ‏`event_passed` (יום האירוע עבר בישראל), ‏`event_not_active` (R9), **חברות ב‑SET הקפוא** (`not_authorized`), תקרת ספירה (`ceiling_reached`), ואז INSERT עם `ON CONFLICT (event_id, contact_id) DO NOTHING` ‏(`already_billed`). מחזירה `billed` בהצלחה. ה‑event_id הנכתב נגזר מהקמפיין — לא מהקורא |
 | `campaign_billing_summary` | `p_campaign uuid` | `table(reached_count int, accrued numeric, ceiling numeric, max_contacts int)` | ✔ | **service_role בלבד** (0038) | סיכום מדויק: ‏`accrued = Σ locked_price` |
 | `cancel_campaign` | `p_campaign uuid` | `text` | ✔ | **service_role בלבד** | ביטול R8: מותר רק מ‑`draft|pending_approval|approved` ללא מחויבות פיננסית (`capture_status` לא authorized/pending/hold_review, ‏`charge_status IS NULL`, אפס `billed_results`); מחזירה `cancelled`/`already_cancelled`/`not_cancellable`/`no_campaign` |
 | `claim_webhook_events` | `_limit int` | `setof webhook_inbox` | ✔ | **service_role בלבד** | טעינת שורות לא‑מעובדות (`attempts < 5`) בסדר קבלה עם `FOR UPDATE SKIP LOCKED` — קוראים מקבילים מקבלים סטים זרים |
@@ -744,7 +743,7 @@
 
 1. **`events.event_date` הוא `timestamptz` — לא `date`; ‏`events.rsvp_deadline` הוא כן `date`.** כל השוואת "יום" נעשית במפורש ב‑Asia/Jerusalem (סשן ה‑DB הוא UTC). בקוד ה‑UI חותכים `slice(0,10)` לתצוגת/קלט תאריך של `event_date`.
 2. **טוקני RSVP**: ‏`guests.rsvp_token` — bearer secret ציבורי; ‏default ב‑DB ‏(`encode(gen_random_bytes(16),'hex')`, ‏128 ביט, ‏CSPRNG) הוא הנקודה היחידה שמייצרת אותו (הקוד בכוונה לא קובע ערך). ‏`rsvp_token_revoked_at` מאפשר ביטול/רוטציה — טוקן מבוטל שקוף כ"לא נמצא" (ללא אות enumeration). מיגרציה 0034 ציינה שרוטציית טוקנים ישנים (קצרים מ‑32 hex) היא תיקון‑דאטה נפרד ומותנה‑אישור, לא חלק מהסכמה.
-3. **הסכמה (consent)**: ‏`contacts.whatsapp_consent_at` — הסכמה שיווקית מפורשת פר‑ערוץ עם חותמת זמן; ‏`contacts.removal_requested` — ‏opt‑out שנאכף גם בשער החיוב; ההסכם החתום מתועד ב‑`signed_agreements` עם ראיות (IP, ‏user agent, ‏OTP, ‏hash).
+3. **הסכמה (consent)**: ‏`contacts.whatsapp_consent_at` — הסכמה שיווקית מפורשת פר‑ערוץ עם חותמת זמן; אין opt‑out לאורח (פניות אישור הגעה אינן שיווק, 01.11.2026); ההסכם החתום מתועד ב‑`signed_agreements` עם ראיות (IP, ‏user agent, ‏OTP, ‏hash).
 4. **PII ורגישות**: ‏`signed_agreements` ו‑`otp_challenges` הם admin‑only ללא קריאת owner; ‏`webhook_inbox.payload` מכיל PII גולמי ולכן admin‑only ולעולם לא נרשם ללוג; ‏`campaigns.card_citizen_id` (ת"ז) הוא PII שהצדקתו ותקופת שמירתו מעוגנות בהסכם; ‏`app_settings` מחזיק סודות ספקים ולכן אין בו קריאת authenticated.
 5. **אידמפוטנטיות ודה‑דופליקציה ברמת DB**: ‏`billed_results (event_id, contact_id)` — חיוב יחיד פר איש‑קשר; ‏`contact_interactions (channel, provider_id)` — ‏retry של Meta לא מכפיל; ‏`webhook_inbox (provider, dedupe_key)`; ‏`contacts (event_id, normalized_phone)` — איש קשר יחיד פר טלפון; ‏`outreach_state (campaign_id, contact_id)` — סמן יחיד.
 6. **"קמפיין אחד לאירוע"** הוא אילוץ אפליקטיבי (DAL) — אין UNIQUE על `campaigns.event_id` ב‑DB.

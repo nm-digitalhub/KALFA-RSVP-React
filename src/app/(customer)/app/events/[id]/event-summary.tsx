@@ -276,7 +276,6 @@ export function EventSummary({
             <Metric label="נקראו" value={count(delivery.read)} />
             <Metric label="נכשלו" value={count(delivery.failed)} tone="destructive" />
             <Metric label="מספר שגוי" value={count(delivery.wrongNumber)} tone="warning" />
-            <Metric label="ביקשו הסרה" value={count(delivery.optedOut)} />
           </dl>
         </section>
       ) : null}

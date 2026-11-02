@@ -26,9 +26,8 @@ import type {
 // operation, not worth a shared processing module.
 
 // `mark_dnc`: upserts into call_dnc_list — the SAME table/key
-// processCallDnc (RSVP) and processMeetingOptOut (meeting-confirm) already
-// use. Durably queued by the route (webhook_inbox), same real spam-law
-// weight as those two.
+// processMeetingOptOut (meeting-confirm) uses. Durably queued by the route
+// (webhook_inbox), same real spam-law weight.
 export async function processSalesOptOut(attemptId: string): Promise<{ ok: boolean }> {
   const ref = await getSalesRequestForAttempt(attemptId);
   if (!ref) return { ok: false };

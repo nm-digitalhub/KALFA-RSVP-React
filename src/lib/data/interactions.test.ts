@@ -13,7 +13,6 @@ import { createClient } from '@/lib/supabase/server';
 import { requireEventAccess } from '@/lib/data/events';
 import {
   insertInteraction,
-  markContactRemovalRequested,
   recordRsvpFromWhatsapp,
   resolveInboundContact,
   setContactOpStatus,
@@ -149,22 +148,6 @@ describe('setContactOpStatus', () => {
   });
 });
 
-describe('markContactRemovalRequested', () => {
-  it('sets removal_requested=true for the contact (leaves op_status alone)', async () => {
-    const { builder } = mockAdmin({ data: null, error: null });
-    await markContactRemovalRequested('k1');
-    expect(builder.update).toHaveBeenCalledWith({ removal_requested: true });
-    expect(builder.eq).toHaveBeenCalledWith('id', 'k1');
-  });
-
-  it('throws a safe error when the update fails', async () => {
-    mockAdmin({ data: null, error: { message: 'boom' } });
-    await expect(markContactRemovalRequested('k1')).rejects.toThrow(
-      'עדכון בקשת ההסרה נכשל',
-    );
-  });
-});
-
 describe('listInteractionsForContact', () => {
   it('lists the contact timeline oldest-first, scoped to event + contact', async () => {
     const rows: Row[] = [
@@ -223,7 +206,7 @@ describe('listInteractionsForContact', () => {
 });
 
 describe('getGuestOutreachSummary', () => {
-  it("returns the op_status + opt-out from the guest's linked contact", async () => {
+  it("returns the op_status from the guest's linked contact", async () => {
     const { client, builder } = mockCookie({ data: null, error: null });
     let call = 0;
     builder.then = (onFulfilled) => {
@@ -232,7 +215,7 @@ describe('getGuestOutreachSummary', () => {
         return onFulfilled({ data: { contact_id: 'k1' }, error: null });
       }
       return onFulfilled({
-        data: { op_status: 'reached_billed', removal_requested: true },
+        data: { op_status: 'reached_billed' },
         error: null,
       });
     };
@@ -245,7 +228,6 @@ describe('getGuestOutreachSummary', () => {
     expect(r).toEqual({
       contactId: 'k1',
       opStatus: 'reached_billed',
-      removalRequested: true,
     });
   });
 

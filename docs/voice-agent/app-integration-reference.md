@@ -83,7 +83,7 @@ guest_id · event_id · guest_name · dialable · phone · rsvp_status · has_ac
 reached_at · callback_scheduled_at · can_start_outreach_call · call_block_reason
 ```
 
-- `dialable` — יש טלפון **וגם** לא ביקש הסרה
+- `dialable` — יש טלפון
 - `phone` — `null` בלי `view_customer_data`
 - `has_active_campaign` — משקף את גייט ה-409 של נתיב החיוג
 - `reached_at` — מתי נוצר קשר עם איש הקשר **באירוע הזה** (`null` = טרם).

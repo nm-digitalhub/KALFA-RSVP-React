@@ -257,10 +257,6 @@ export default async function EventStatsPage({
                   <dt className="text-muted-foreground">מספר שגוי</dt>
                   <dd className="font-medium text-warning">{stats.campaign.delivery.wrongNumber}</dd>
                 </div>
-                <div>
-                  <dt className="text-muted-foreground">ביקש הסרה</dt>
-                  <dd className="font-medium">{stats.campaign.delivery.optedOut}</dd>
-                </div>
               </dl>
             ) : null}
             {/* The money that moved, from the payment ledger (behind billing.view). */}

@@ -11,8 +11,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // events.ts → auth/dal → next/headers|navigation into the worker bundle: the send
 // path stays statically request-scoped-free (enforced by .dependency-cruiser.cjs).
 //
-// Contacts eligible for a WhatsApp send: not removal-requested. When a campaignId
-// is given, membership is ADDITIONALLY bound to that campaign's authorized set
+// Contacts eligible for a WhatsApp send: every contact of the event. When a
+// campaignId is given, membership is bound to that campaign's authorized set
 // (campaign_authorized_contacts) via an INNER JOIN — so the outreach path can
 // never target a contact outside the set: reached ⊆ authorized BY CONSTRUCTION
 // (the Phase-2 money-leak guard, §7/0024). The no-campaign overload is kept for
@@ -39,7 +39,6 @@ export async function resolveSendableContacts(
         'id, normalized_phone, campaign_authorized_contacts!inner(campaign_id)',
       )
       .eq('event_id', eventId)
-      .eq('removal_requested', false)
       .eq('campaign_authorized_contacts.campaign_id', campaignId);
     if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה', { cause: error });
     return (data ?? []).map((c) => ({
@@ -51,8 +50,7 @@ export async function resolveSendableContacts(
   const { data, error } = await admin
     .from('contacts')
     .select('id, normalized_phone')
-    .eq('event_id', eventId)
-    .eq('removal_requested', false);
+    .eq('event_id', eventId);
   if (error) throw new Error('טעינת אנשי הקשר לשליחה נכשלה', { cause: error });
   return (data ?? []).map((c) => ({
     id: c.id,

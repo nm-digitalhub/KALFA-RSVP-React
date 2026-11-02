@@ -125,12 +125,11 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
     expect((await inbound(f)).map((r) => r.billing_outcome)).toEqual(['not_authorized']);
   });
 
-  it('a removal reply bills the reach first, then sets removal_requested', async () => {
+  it('a reply asking to be removed is an ordinary reply: billed once, recorded as billed (owner, 01.11.2026)', async () => {
     const f = await fixture();
     await processRow(await inbox(f, text(f, 'הסר')));
     expect(await billed(f)).toBe(1);
-    const c = await pool.query(`select removal_requested from public.contacts where id = $1`, [f.contactId]);
-    expect(c.rows[0].removal_requested).toBe(true);
+    expect((await inbound(f)).map((r) => r.billing_outcome)).toEqual(['billed']);
   });
 
   it('fail-closed: a reply to an unknown message from an unknown number writes nothing and charges nothing', async () => {

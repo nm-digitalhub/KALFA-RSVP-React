@@ -9,7 +9,6 @@ vi.mock('@/lib/data/interactions', () => ({
   resolveByContextId: vi.fn(),
   resolveInboundContact: vi.fn(),
   insertInteraction: vi.fn(),
-  markContactRemovalRequested: vi.fn(),
   setContactOpStatus: vi.fn(),
   setDeliveryStatus: vi.fn(),
   setInteractionBillingOutcome: vi.fn(),
@@ -63,7 +62,6 @@ import type { WebhookInboxRow } from '@/lib/data/webhooks';
 import {
   getGuestsForContact,
   insertInteraction,
-  markContactRemovalRequested,
   recordRsvpFromWhatsapp,
   resolveByContextId,
   resolveInboundContact,
@@ -164,7 +162,6 @@ beforeEach(() => {
   vi.mocked(resolveInboundContact).mockResolvedValue(null);
   vi.mocked(insertInteraction).mockResolvedValue(true);
   vi.mocked(recordReached).mockResolvedValue('billed');
-  vi.mocked(markContactRemovalRequested).mockResolvedValue();
   vi.mocked(setContactOpStatus).mockResolvedValue();
   vi.mocked(setDeliveryStatus).mockResolvedValue({ contactId: 'k1' });
   // Default: exactly one guest behind the contact → the auto-record path runs.
@@ -202,7 +199,6 @@ describe('processWebhookEvent — message', () => {
     );
     // Context resolved → the phone fallback is never consulted.
     expect(resolveInboundContact).not.toHaveBeenCalled();
-    expect(markContactRemovalRequested).not.toHaveBeenCalled();
     // A plain typed reply carries no button id → it never records an RSVP.
     expect(submitRsvp).not.toHaveBeenCalled();
     expect(getGuestsForContact).not.toHaveBeenCalled();
@@ -241,33 +237,15 @@ describe('processWebhookEvent — message', () => {
     });
   });
 
-  it('a removal reply bills FIRST, then sets removal_requested', async () => {
+  it('a reply asking to be removed is an ordinary reply: billed with the plain inbound evidence (owner, 01.11.2026)', async () => {
     await processWebhookEvent(
       messageRow({ payload: { type: 'text', text: { body: 'אנא הסירו אותי' } } }),
     );
 
-    expect(recordReached).toHaveBeenCalledWith(
-      expect.objectContaining({ evidence: 'whatsapp_inbound_removal' }),
-    );
-    expect(markContactRemovalRequested).toHaveBeenCalledWith('k1');
-    expect(
-      vi.mocked(recordReached).mock.invocationCallOrder[0],
-    ).toBeLessThan(
-      vi.mocked(markContactRemovalRequested).mock.invocationCallOrder[0],
-    );
-  });
-
-  it('honors removal on a deduped re-process; the replayed billing RPC is idempotent (already_billed)', async () => {
-    vi.mocked(insertInteraction).mockResolvedValue(false);
-    vi.mocked(recordReached).mockResolvedValue('already_billed');
-
-    await processWebhookEvent(
-      messageRow({ payload: { type: 'text', text: { body: 'הסר' } } }),
-    );
-
     expect(recordReached).toHaveBeenCalledTimes(1);
-    expect(setInteractionBillingOutcome).not.toHaveBeenCalled();
-    expect(markContactRemovalRequested).toHaveBeenCalledWith('k1');
+    expect(recordReached).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: 'k1', evidence: 'whatsapp_inbound_message' }),
+    );
   });
 
   it('falls back to the sender phone and bills when the reply carries no context', async () => {
@@ -317,26 +295,6 @@ describe('processWebhookEvent — message', () => {
     expect(resolveByContextId).toHaveBeenCalledWith('wamid.out');
     expect(resolveInboundContact).toHaveBeenCalledWith('972501234567');
     expect(recordReached).toHaveBeenCalled();
-  });
-
-  it('honors a context-less opt-out via the phone fallback (bills FIRST, then removes)', async () => {
-    vi.mocked(resolveInboundContact).mockResolvedValue({
-      eventId: 'e1',
-      campaignId: 'c1',
-      contactId: 'k1',
-    });
-
-    await processWebhookEvent(
-      messageRow({
-        context_message_id: null,
-        payload: { type: 'text', from: '972501234567', text: { body: 'הסר' } },
-      }),
-    );
-
-    expect(recordReached).toHaveBeenCalledWith(
-      expect.objectContaining({ evidence: 'whatsapp_inbound_removal' }),
-    );
-    expect(markContactRemovalRequested).toHaveBeenCalledWith('k1');
   });
 
   it('does NOT bill a non-billable message type (e.g. system)', async () => {
@@ -841,7 +799,6 @@ describe('processMessage — inbound routing by phone_number_id', () => {
     expect(resolveInboundContact).not.toHaveBeenCalled();
     expect(insertInteraction).not.toHaveBeenCalled();
     expect(recordReached).not.toHaveBeenCalled();
-    expect(markContactRemovalRequested).not.toHaveBeenCalled();
   });
 
   it('split: free text sent to the import number is dropped, not billed', async () => {
@@ -853,7 +810,6 @@ describe('processMessage — inbound routing by phone_number_id', () => {
       }),
     );
     expect(insertInteraction).not.toHaveBeenCalled();
-    expect(markContactRemovalRequested).not.toHaveBeenCalled();
   });
 
   it('split: the RSVP number still bills, and lists sent there get a pointer', async () => {
@@ -890,7 +846,6 @@ describe('processMessage — inbound routing by phone_number_id', () => {
     expect(replyImportPointer).not.toHaveBeenCalled();
     expect(resolveByContextId).not.toHaveBeenCalled();
     expect(insertInteraction).not.toHaveBeenCalled();
-    expect(markContactRemovalRequested).not.toHaveBeenCalled();
     expect(sendSlackAlert).toHaveBeenCalledTimes(1);
     const alert = vi.mocked(sendSlackAlert).mock.calls[0][0];
     expect(alert.fields).toMatchObject({ rowId: 'row-1', phoneNumberId: '123456123' });
@@ -911,7 +866,6 @@ describe('processMessage — inbound routing by phone_number_id', () => {
     expect(isEsConnectedPhoneNumber).toHaveBeenCalledWith('555000555');
     expect(sendSlackAlert).not.toHaveBeenCalled();
     expect(insertInteraction).not.toHaveBeenCalled();
-    expect(markContactRemovalRequested).not.toHaveBeenCalled();
     expect(submitRsvp).not.toHaveBeenCalled();
   });
 
@@ -926,7 +880,6 @@ describe('processMessage — inbound routing by phone_number_id', () => {
     );
     expect(stageWhatsAppImport).not.toHaveBeenCalled();
     expect(insertInteraction).not.toHaveBeenCalled();
-    expect(markContactRemovalRequested).not.toHaveBeenCalled();
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 

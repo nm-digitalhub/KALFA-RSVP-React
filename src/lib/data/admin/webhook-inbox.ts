@@ -66,8 +66,8 @@ async function withReadableFields<T extends Pick<WebhookInboxRow, 'processed_at'
 
 // What the worker DID with the event — the inspector's "תוצאה" section.
 // Inbound message: the interaction it became (event / campaign / billable +
-// the RPC verdict + whether a billed_results row exists), the staged import it
-// produced, the opt-out it carried. Status: the outbound interaction it updated.
+// the RPC verdict + whether a billed_results row exists), and the staged import it
+// produced. Status: the outbound interaction it updated.
 export interface WebhookOutcome {
   inbound: {
     eventName: string | null;
@@ -76,7 +76,6 @@ export interface WebhookOutcome {
     billable: boolean;
     billingOutcome: string | null;
     billed: boolean;
-    removalRequested: boolean;
   } | null;
   outbound: {
     eventName: string | null;
@@ -200,7 +199,7 @@ export async function getWebhookInboxDetail(
   const outbound = outboundRes.data;
   const staging = stagingRes.data;
 
-  const [eventNames, campaignRes, contactRes] = await Promise.all([
+  const [eventNames, campaignRes] = await Promise.all([
     loadEventNames(admin, [
       inbound?.event_id ?? '',
       outbound?.event_id ?? '',
@@ -208,13 +207,6 @@ export async function getWebhookInboxDetail(
     ]),
     inbound?.campaign_id
       ? admin.from('campaigns').select('status').eq('id', inbound.campaign_id).maybeSingle()
-      : Promise.resolve({ data: null }),
-    inbound?.contact_id
-      ? admin
-          .from('contacts')
-          .select('removal_requested')
-          .eq('id', inbound.contact_id)
-          .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
 
@@ -261,7 +253,6 @@ export async function getWebhookInboxDetail(
             billable: inbound.billable,
             billingOutcome: inbound.billing_outcome,
             billed: (billedRes.count ?? 0) > 0,
-            removalRequested: contactRes.data?.removal_requested === true,
           }
         : null,
       outbound: outbound

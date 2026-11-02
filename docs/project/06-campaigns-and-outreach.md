@@ -96,7 +96,7 @@
 
 | טבלה | תפקיד | מיגרציה |
 |---|---|---|
-| `contacts` | איש קשר ייחודי לפי `(event_id, normalized_phone)` (E.164); `op_status` תפעולי (§11), `removal_requested`, `whatsapp_consent_at` | `202606240007:70-96`, `202606290028:37` |
+| `contacts` | איש קשר ייחודי לפי `(event_id, normalized_phone)` (E.164); `op_status` תפעולי (§11) | `202606240007:70-96`, `202606290028:37` |
 | `campaign_authorized_contacts` | **המערך המורשה הקפוא** — cap מחייב על reached; `UNIQUE(campaign_id, contact_id)` | `202606290024:19-45` |
 | `outreach_state` | הסמן (cursor) של המנוע לכל `(campaign, contact)`: `status`, `current_step_index`, מוני שליחות; `UNIQUE(campaign_id, contact_id)` | `202606290032` |
 | `contact_interactions` | יומן ניסיונות/אירועי ספק (רשומת ניסיון הודעה): in/out, `provider_id`, `delivery_status`, `billable`; dedup ב‑`UNIQUE(channel, provider_id)` | `202606240007:129-153` |
@@ -115,7 +115,6 @@
 | `reached` | נרשם reach מחויב — עצירה סופית (+`reached_at`) | `reached` |
 | `stopped` | הקמפיין/האירוע נעצר (סגירה, השהיה גלובלית, אירוע עבר) | `closed` |
 | `exhausted` | כל ה‑touchpoints מוצו ללא reach | — |
-| `not_eligible` | לא זכאי (ללא consent / הוסר) | `removal_requested` / `consent_revoked` |
 
 ## 3. יצירה, אישור וחיתום — ה‑workflow המלא
 
@@ -220,7 +219,7 @@ Spec: `plans/outreach-engine-c1-spec.md` (ממומש). חלוקת אחריות:
 
 1. **שער** — `stepGate` (`outreach-engine.ts:134-157`): `outreach_enabled` כבוי → `paused` (re‑enqueue בעוד 5 דקות); קמפיין לא `active` / `close_at` עבר / **יום האירוע עבר לפי ה‑`event_date` החי** (L1) / אירוע לא `active` (R9) → `stopped`; ה‑contact כבר reached → `reached` (עצירה סופית).
 2. **הערכת הצעד (cursor‑first)** — ה‑job תקף רק אם הוא מכוון לסמן הנוכחי, ל‑`planRev` הנוכחי ול‑id הדטרמיניסטי התואם (`detId` / `deferId`); אחרת הוא ישן ונזרק. `evaluateStep` (`send-window.ts`) מחליט `send` / `defer` / `skip` / `terminal`: דחייה או דילוג מתזמנים מחדש את הסמן (`ensureCurrentStep`), ושליחה רצה כ‑reserve → send → resolve. רציפות השרשרת בכשל נשמרת ב‑handler של ה‑dead‑letter; כפילות enqueue היא no‑op (`ON CONFLICT (name,id) DO NOTHING` של pg‑boss).
-3. **ביצוע** — `executeStep` (`outreach-engine.ts:232-294`): שליפת ה‑contact, דילוג אם `removal_requested` או ללא `whatsapp_consent_at` (לערוץ whatsapp) או ערוץ שאינו ב‑`allowed_channels`; ואז `claimStep` — UPDATE אטומי שמקדם את `current_step_index` רק אם הוא עדיין `stepIndex` (`outreach-engine.ts:161-178`); רק המנצח שולח. WhatsApp → `sendOneWhatsApp` (`src/lib/data/outreach.ts:23-61`, רישום interaction יוצא לא‑billable עם dedup); `call` → enqueue ל‑`outreach-call-request`.
+3. **ביצוע** — `executeStep` (`outreach-engine.ts:232-294`): שליפת ה‑contact, דילוג אם הערוץ אינו ב‑`allowed_channels`; ואז `claimStep` — UPDATE אטומי שמקדם את `current_step_index` רק אם הוא עדיין `stepIndex` (`outreach-engine.ts:161-178`); רק המנצח שולח. WhatsApp → `sendOneWhatsApp` (`src/lib/data/outreach.ts:23-61`, רישום interaction יוצא לא‑billable עם dedup); `call` → enqueue ל‑`outreach-call-request`.
 4. אם אין touchpoint עתידי — `setOutreachStatus(..., 'exhausted')`.
 
 העיקרון המוצהר: **at‑most‑once** — עדיף nudge שהוחמץ על פני הודעה כפולה; הלו"ז רב‑הנקודות מכסה את עצמו (`outreach-engine.ts:228-231`).
@@ -271,16 +270,16 @@ Spec: `plans/outreach-engine-c1-spec.md` (ממומש). חלוקת אחריות:
 
 ## 8. הסכמה (consent) וציות
 
-- **הסכמה פר‑ערוץ:** `contacts.whatsapp_consent_at` (timestamp; `202606290028:37`). האכיפה fail‑closed בשני הנתיבים: `executeStep` מדלג על contact ללא consent לערוץ whatsapp (`outreach-engine.ts:249-251`), ו‑`listSendableContacts` מסנן `whatsapp_consent_at IS NOT NULL` + `removal_requested=false` (`contacts.ts:280-296`).
+- **אין הסכמה פר‑ערוץ ואין סינון הסרה:** עמודות ההסכמה הוסרו ב‑`20261101134148` ו‑`removal_requested` ב‑`20261101220710`. `listSendableContacts` מחזיר את אנשי הקשר של האירוע, ובקמפיין רק את חברי המערך המורשה.
 - **פער מומש‑חלקית:** פונקציית הרישום `recordWhatsAppConsent` (`contacts.ts:245-256`) קיימת ונבדקת, אך **אין לה caller בקוד הייצור** — טרם חוּוט מסך/תהליך שרושם הסכמה. עד אז, contact ללא consent פשוט לא יקבל הודעות (fail‑closed). — השלמת ה‑UX: מתוכנן, טרם מומש.
-- **Opt‑out:** תשובת הסרה נכנסת **מחויבת קודם** (היא reach אנושי — כלל D4) ורק אחר כך `markContactRemovalRequested` עוצר כל פנייה עתידית (`webhook-processing.ts:120-127`); `removal_requested` נבדק גם ב‑RPC החיוב וגם בכל שליחה.
+- **אין בקשת הסרה:** פניות אישור הגעה אינן שיווק, ולכן אין opt‑out לאורח (החלטת הבעלים, 01.11.2026; מיגרציה `20261101220710`). תשובה שמבקשת הסרה היא תשובה רגילה ומחויבת כמו כל תשובה.
 - **טרנזקציוני מול שיווקי:** הודעות הקמפיין הן תבניות Meta מאושרות, ממוקדות לאירוע ולמוזמניו בלבד, ותחומות במערך המורשה הקפוא של הקמפיין — לא ניתן לפנות לאיש קשר מחוץ לאירוע. הסכמה שיווקית פר‑ערוץ היא דרישת מדיניות מתועדת (`CLAUDE.md`) שהסכימה כבר תומכת בה.
 - **פרטיות:** אין לוג של טוקנים, טלפונים, גוף הודעות או payloads (מוצהר ונאכף לאורך `outreach.ts`, `webhook route`, worker).
 
 ## 9. רישום "reached" לחיוב
 
 - **נקודת כניסה יחידה:** RPC `public.try_record_billed_result(p_event, p_campaign, p_contact, p_channel, p_attempt, p_evidence, p_provider_ref)` — `SECURITY DEFINER`; EXECUTE **נשלל מ‑anon/authenticated/PUBLIC והוענק ל‑service_role בלבד** (`202606300038_lock_billing_rpcs.sql`; אומת שנחשף בעבר anonymously ותוקן — P0). הקוד קורא אליו רק דרך `recordReached` (`src/lib/data/billing.ts:30-47`) בצד השרת/worker; **לעולם לא INSERT ישיר** ל‑`billed_results`.
-- **הגוף הנוכחי** (הגרסה האחרונה, `20260630223635:196-246`) אוכף בטרנזקציה נעולה אחת: קמפיין קיים ונעול (`FOR UPDATE`), התאמת אירוע (`event_mismatch`), סטטוס `active`/`paused` (paused עדיין מחייב תגובה נכנסת — D2), חלון `start_at`/`close_at`, **יום האירוע לא עבר** (L2, `event_passed`), אירוע `active` (R9), לא `removal_requested`, **חברות במערך המורשה הקפוא** (`not_authorized` — fail‑closed: מערך ריק לא מחייב אף אחד), cap כמותי מול `max_contacts`, ולבסוף INSERT עם `locked_price` ו‑`ON CONFLICT (event_id, contact_id) DO NOTHING` → `already_billed`. תוצרים: `billed | already_billed | ceiling_reached | not_active | before_window | closed_window | removal_requested | not_authorized | no_campaign | event_passed | event_not_active | event_mismatch`.
+- **הגוף הנוכחי** (הגרסה האחרונה, `20260630223635:196-246`) אוכף בטרנזקציה נעולה אחת: קמפיין קיים ונעול (`FOR UPDATE`), התאמת אירוע (`event_mismatch`), סטטוס `active`/`paused` (paused עדיין מחייב תגובה נכנסת — D2), חלון `start_at`/`close_at`, **יום האירוע לא עבר** (L2, `event_passed`), אירוע `active` (R9), **חברות במערך המורשה הקפוא** (`not_authorized` — fail‑closed: מערך ריק לא מחייב אף אחד), cap כמותי מול `max_contacts`, ולבסוף INSERT עם `locked_price` ו‑`ON CONFLICT (event_id, contact_id) DO NOTHING` → `already_billed`. תוצרים: `billed | already_billed | ceiling_reached | not_active | before_window | closed_window | not_authorized | no_campaign | event_passed | event_not_active | event_mismatch`.
 - **מי קורא:** ה‑worker בלבד, דרך עיבוד ה‑webhook — הודעת WhatsApp נכנסת billable שמזוהה ל‑contact ממוקד (העדפה ל‑`context.id` המדויק, נפילה לטלפון השולח) נרשמת קודם ב‑`contact_interactions` (dedup) ורק אם היא fresh נקראת `recordReached` (`webhook-processing.ts:79-127`). על `billed` — `op_status='reached_billed'` ועצירת ה‑outreach של ה‑contact.
 - **RSVP מכפתור:** תשובת quick‑reply מזוהה (`RSVP_BUTTON_MAP`, `webhook-processing.ts:27-31`) נרשמת דרך אותו `submit_rsvp` אטומי של הטופס הציבורי — רק כשמאחורי ה‑contact עומד guest יחיד.
 - **גמר חשבון:** `closeCampaignAndCharge` (`src/lib/data/close-charge.ts:40` ואילך) — `amount = max(0, min(Σ locked_price, ceiling) − credits)`; 0 → `nothing_to_charge` בלי קריאת ספק; אחרת capture של הכרטיס התפוס. שגיאת RPC אמיתית מנותבת ל‑`review` — לעולם לא לחיוב ₪0 שגוי. מפורט ב‑`08-billing-and-payments.md`.

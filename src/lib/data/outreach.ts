@@ -190,9 +190,8 @@ export async function recordTemplateFailure(
 // Send an approved WhatsApp template to a campaign's eligible contacts. Every
 // §8.3 precondition is re-checked server-side BEFORE any provider call:
 // outreach enabled + WhatsApp configured (fail-closed), campaign active,
-// 'whatsapp' an allowed channel, a resolvable approved template, and per-contact
-// eligibility (WhatsApp consent unless the admin has lifted that requirement,
-// and not removal-requested, via resolveSendableContacts). Each
+// 'whatsapp' an allowed channel, a resolvable approved template, and the
+// contacts resolved by resolveSendableContacts. Each
 // successful send is logged as an OUTBOUND, non-billable contact_interaction
 // (idempotent on the UNIQUE(channel, provider_id) webhook key). Never log the
 // access token, recipient phone, or message body.

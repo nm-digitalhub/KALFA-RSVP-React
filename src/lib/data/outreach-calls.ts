@@ -19,9 +19,7 @@ import {
 import { countActiveCallsAllSurfaces } from '@/lib/data/voximplant-concurrency';
 import {
   getCampaignContext,
-  isContactOptedOut,
   isContactReached,
-  isDncListed,
 } from '@/lib/data/outreach-engine';
 import { checkContactSeat } from '@/lib/data/contact-quota';
 import {
@@ -60,7 +58,7 @@ const BALANCE_TIMEOUT_MS = 10_000;
 const START_TIMEOUT_MS = 25_000;
 
 export type CallDispatchResult =
-  | { kind: 'skipped'; reason: 'outreach_disabled' | 'outside_dial_window' | 'removal_requested' | 'dnc_listed' | 'already_reached' | 'campaign_not_active' | 'event_closed' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' | 'waiting_for_quota' }
+  | { kind: 'skipped'; reason: 'outreach_disabled' | 'outside_dial_window' | 'already_reached' | 'campaign_not_active' | 'event_closed' | 'concurrent_owner' | 'max_concurrency' | 'campaign_hour_cap' | 'waiting_for_quota' }
   // A scheduled dial refused only for now (call-dispatch-wait.ts): the dial window is closed, every call slot is busy, the
   // campaign's hourly cap is full, or the balance is under the reserve. Nothing was dialled and no attempt row exists; the
   // worker sends the same job again for `notBeforeMs` (null: no such moment exists, e.g. the window does not open in the
@@ -232,9 +230,9 @@ export async function dispatchOutreachCall(
     };
   }
 
-  // 4. Fresh gating (never trust the enqueue-time snapshot).
-  if (await isContactOptedOut(contactId)) return { kind: 'skipped', reason: 'removal_requested' };
-  if (await isDncListed(normalizedPhone)) return { kind: 'skipped', reason: 'dnc_listed' };
+  // 4. Fresh gating (never trust the enqueue-time snapshot). There is no opt-out or
+  // do-not-call check: an RSVP call is not marketing, so a guest is never removed
+  // from it (owner, 01.11.2026).
   // Stop-on-reach — EXCEPT for a callback the guest themselves asked for.
   //
   // Owner decision, 2026-07-21: a callback is the same billable reach
@@ -245,9 +243,8 @@ export async function dispatchOutreachCall(
   // second writeReach returns 'already_billed'.
   //
   // Deliberately one of only two gates a callback skips (the other is the
-  // contact-quota seat, 4a). Opt-out, DNC and the event-closed gate (4b) all
-  // still apply: asking to be called back does not override having opted out,
-  // and a callback into a finished event is as worthless as any other call.
+  // contact-quota seat, 4a). The event-closed gate (4b) still applies: a callback
+  // into a finished event is as worthless as any other call.
   if (!job.isCallback && (await isContactReached(eventId, contactId))) {
     return { kind: 'skipped', reason: 'already_reached' };
   }
@@ -264,7 +261,7 @@ export async function dispatchOutreachCall(
   //
   //     A callback the guest asked for is exempt, like the already-reached gate above and by
   //     the same owner decision: asking to be called back is the guest's own initiative, not
-  //     an approach we open. Opt-out, DNC, dial hours and the rest above still apply to it.
+  //     an approach we open. Dial hours and the rest above still apply to it.
   if (!job.isCallback) {
     const seat = await checkContactSeat(campaignId, contactId);
     if (!seat.allowed) return { kind: 'skipped', reason: seat.reason };

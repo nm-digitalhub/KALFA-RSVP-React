@@ -37,7 +37,6 @@ import {
   loadOutreachRow,
   ensureCurrentStep,
   prepareAndSendStep,
-  checkStepTerminal,
   reserveStep,
   resolveStep,
   type CampaignContext,
@@ -399,7 +398,6 @@ function buildExecutionDeps(
     send: () => prepareAndSendStep(boss, ctx, campaignId, contactId, eventId, stepIndex),
     resolve: (a) => resolveStep(a),
     auditId: (reason) => stepAuditId(campaignId, contactId, stepIndex, planRev, reason),
-    recheckTerminal: () => checkStepTerminal(ctx, contactId, stepIndex),
   };
 }
 

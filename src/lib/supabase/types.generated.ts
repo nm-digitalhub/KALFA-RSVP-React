@@ -2836,7 +2836,6 @@ export type Database = {
           id: string
           normalized_phone: string
           op_status: Database["public"]["Enums"]["contact_op_status"]
-          removal_requested: boolean
           updated_at: string
         }
         Insert: {
@@ -2845,7 +2844,6 @@ export type Database = {
           id?: string
           normalized_phone: string
           op_status?: Database["public"]["Enums"]["contact_op_status"]
-          removal_requested?: boolean
           updated_at?: string
         }
         Update: {
@@ -2854,7 +2852,6 @@ export type Database = {
           id?: string
           normalized_phone?: string
           op_status?: Database["public"]["Enums"]["contact_op_status"]
-          removal_requested?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -8395,20 +8392,13 @@ export type Database = {
         | "cancelled"
       contact_op_status:
         | "pending_contact"
-        | "not_eligible"
         | "whatsapp_sent"
-        | "whatsapp_delivered"
-        | "whatsapp_read"
-        | "whatsapp_responded"
         | "pending_call"
         | "call_dialed"
         | "no_answer"
-        | "voicemail"
         | "human_interaction_call"
         | "wrong_number"
-        | "removal_requested"
         | "reached_billed"
-        | "not_reached"
       contact_status:
         | "not_contacted"
         | "contacted"
@@ -8597,20 +8587,13 @@ export const Constants = {
       ],
       contact_op_status: [
         "pending_contact",
-        "not_eligible",
         "whatsapp_sent",
-        "whatsapp_delivered",
-        "whatsapp_read",
-        "whatsapp_responded",
         "pending_call",
         "call_dialed",
         "no_answer",
-        "voicemail",
         "human_interaction_call",
         "wrong_number",
-        "removal_requested",
         "reached_billed",
-        "not_reached",
       ],
       contact_status: [
         "not_contacted",

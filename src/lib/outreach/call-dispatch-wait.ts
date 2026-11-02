@@ -16,8 +16,7 @@ import { CALL_RETRY, QUEUES, type OutreachCallRequest } from '@/lib/queue/queues
 // No double dial is possible: nothing was dialled, and each re-send has its own deterministic id per wait, so a
 // redelivered job cannot enqueue the same wait twice (same reasoning as src/lib/dnc/registry-wait.ts).
 //
-// Everything else a dispatch can answer is NOT waited out, on purpose: a missing consent, a removal-list number, a guest
-// who already answered, a closed event, a call another worker owns, and the provider outcomes (a failed or ambiguous
+// Everything else a dispatch can answer is NOT waited out, on purpose: a guest who already answered, a closed event, a call another worker owns, and the provider outcomes (a failed or ambiguous
 // start must never be dialled again) are final; the admin's own stops (kill switches, missing configuration, a paused
 // campaign) are an owner decision, not a transient condition.
 

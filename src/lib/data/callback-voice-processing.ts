@@ -67,12 +67,10 @@ export async function processMeetingReschedule(
   return { ok: outcome.ok };
 }
 
-// `mark_opt_out`: upserts into call_dnc_list — the SAME table/key
-// processCallDnc already upserts into for the RSVP agent's mark_dnc, per §4's
-// correction ("לא עמודה חדשה"). Unlike the other 3 meeting tools this one IS
-// also durably queued (webhook_inbox, event_kind='mtg_dnc', its own dedicated
-// drain case — never call_dnc, so it can never touch call_attempts/RSVP/
-// billing code): a lost opt-out is a real spam-law exposure
+// `mark_opt_out`: upserts into call_dnc_list, per §4's correction ("לא עמודה
+// חדשה"). Unlike the other 3 meeting tools this one IS also durably queued
+// (webhook_inbox, event_kind='mtg_dnc', its own dedicated drain case, so it
+// can never touch call_attempts/RSVP/billing code): a lost opt-out is a real spam-law exposure
 // (§30א/§16ג-class risk, same reasoning CLAUDE.md's messaging-consent rules
 // apply), not a merely-inconvenient failure like a lost log entry. The
 // synchronous call below is the fast path; the queued row is the retry

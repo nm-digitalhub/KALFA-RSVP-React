@@ -71,9 +71,8 @@ beforeEach(() => vi.clearAllMocks());
 //
 // createMockSupabase (src/test/supabase-mock.ts) returns ONE static result
 // for every `.from()` call regardless of table — insufficient here because
-// resolveDialTarget's guest_service path queries `contacts` TWICE (once for
-// the linked-contact row, once for the cross-event opt-out check) with
-// different expected results. Each table gets its own FIFO queue of
+// resolveDialTarget's paths query several tables, each with its own
+// expected result. Each table gets its own FIFO queue of
 // results, consumed in the exact order the DAL code issues its queries.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -972,7 +971,6 @@ describe('resolveDialTarget — kind: callback', () => {
         error: null,
       }],
       activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
-      contacts: [{ data: null, error: null }], // opt-out check: no matching row
     });
     vi.mocked(isDncListed).mockResolvedValue(false);
 
@@ -989,7 +987,6 @@ describe('resolveDialTarget — kind: callback', () => {
     wireAdmin({
       callback_requests: [{ data: row, error: null }],
       activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
-      contacts: [{ data: null, error: null }],
     });
     vi.mocked(isDncListed).mockResolvedValue(false);
     vi.mocked(evaluateRegistryGate).mockResolvedValueOnce({ ok: false, reason: 'registry_listed' });
@@ -1063,7 +1060,6 @@ describe('resolveDialTarget — kind: callback', () => {
         error: null,
       }],
       activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
-      contacts: [{ data: null, error: null }],
     });
     vi.mocked(isDncListed).mockResolvedValue(false);
     const shabbatMs = Date.parse('2026-06-06T10:00:00+03:00'); // Saturday
@@ -1075,11 +1071,10 @@ describe('resolveDialTarget — kind: callback', () => {
 describe('resolveDialTarget — kind: guest_service', () => {
   const NOW = Date.parse('2026-06-04T10:00:00+03:00');
 
-  it('GO: an active event, linked guest, non-opted-out contact resolves', async () => {
+  it('GO: an active event and a linked guest resolve', async () => {
     wireAdmin({
       contacts: [
-        { data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567', removal_requested: false }, error: null },
-        { data: null, error: null }, // opt-out sweep: no matching row anywhere
+        { data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567' }, error: null },
       ],
       guests: [{ data: { id: 'guest-1' }, error: null }],
       events: [{ data: { id: 'event-1', status: 'active', event_date: new Date(NOW).toISOString() }, error: null }],
@@ -1094,7 +1089,7 @@ describe('resolveDialTarget — kind: guest_service', () => {
 
   it('NO-GO: contact not linked to any guest of the event', async () => {
     wireAdmin({
-      contacts: [{ data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567', removal_requested: false }, error: null }],
+      contacts: [{ data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567' }, error: null }],
       guests: [{ data: null, error: null }],
     });
     const result = await resolveDialTarget({ kind: 'guest_service', eventId: 'event-1', contactId: 'contact-1' }, NOW);
@@ -1103,7 +1098,7 @@ describe('resolveDialTarget — kind: guest_service', () => {
 
   it('NO-GO: event not active', async () => {
     wireAdmin({
-      contacts: [{ data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567', removal_requested: false }, error: null }],
+      contacts: [{ data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567' }, error: null }],
       guests: [{ data: { id: 'guest-1' }, error: null }],
       events: [{ data: { id: 'event-1', status: 'draft', event_date: new Date(NOW).toISOString() }, error: null }],
     });
@@ -1113,26 +1108,18 @@ describe('resolveDialTarget — kind: guest_service', () => {
 
   it('NO-GO: event day already past (Israel calendar day)', async () => {
     wireAdmin({
-      contacts: [{ data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567', removal_requested: false }, error: null }],
+      contacts: [{ data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567' }, error: null }],
       guests: [{ data: { id: 'guest-1' }, error: null }],
       events: [{ data: { id: 'event-1', status: 'active', event_date: '2026-01-01T00:00:00Z' }, error: null }],
     });
     const result = await resolveDialTarget({ kind: 'guest_service', eventId: 'event-1', contactId: 'contact-1' }, NOW);
     expect(result).toEqual({ ok: false, reason: 'past_event_day' });
   });
-
-  it('NO-GO: the contact row itself is opted out', async () => {
-    wireAdmin({
-      contacts: [{ data: { id: 'contact-1', event_id: 'event-1', normalized_phone: '+972501234567', removal_requested: true }, error: null }],
-    });
-    const result = await resolveDialTarget({ kind: 'guest_service', eventId: 'event-1', contactId: 'contact-1' }, NOW);
-    expect(result).toEqual({ ok: false, reason: 'opted_out' });
-  });
 });
 
 // evaluateCallMeNowConsent — capability A, third design (12.8). Proves it
 // routes through the SAME evaluateSharedConsentGates resolveDialTarget's
-// callback/guest_service kinds already use (DNC -> contacts opt-out ->
+// callback/guest_service kinds already use (DNC ->
 // Shabbat/Yom-Tov -> daily window), not a reimplementation — same
 // fixtures/mocks as resolveDialTarget's own suites above, on a bare phone with
 // no event/contact lookup at all.
@@ -1140,11 +1127,11 @@ describe('resolveDialTarget — kind: guest_service', () => {
 // Yom-Tov is NOT — see evaluateCallMeNowConsent's own header in
 // console-calls.ts for the full basis (two separate conclusions, two
 // separate bases, never collapsed into one).
-describe('evaluateCallMeNowConsent — reuses the shared DNC/opt-out/Shabbat gate; daily window RULED OFF', () => {
+describe('evaluateCallMeNowConsent — reuses the shared DNC/Shabbat gate; daily window RULED OFF', () => {
   const NOW = Date.parse('2026-06-04T10:00:00+03:00'); // Thursday, open hours
 
-  it('GO: a clean, non-DNC, non-opted-out phone in open hours resolves', async () => {
-    wireAdmin({ contacts: [{ data: null, error: null }] }); // opt-out sweep: no matching row
+  it('GO: a clean, non-DNC phone in open hours resolves', async () => {
+    wireAdmin({});
     vi.mocked(isDncListed).mockResolvedValue(false);
     const result = await evaluateCallMeNowConsent('+972501234567', NOW);
     expect(result).toEqual({ ok: true });
@@ -1156,15 +1143,8 @@ describe('evaluateCallMeNowConsent — reuses the shared DNC/opt-out/Shabbat gat
     expect(result).toEqual({ ok: false, reason: 'dnc' });
   });
 
-  it('NO-GO: a phone with an opted-out contacts row anywhere is blocked', async () => {
-    wireAdmin({ contacts: [{ data: { id: 'contact-9' }, error: null }] });
-    vi.mocked(isDncListed).mockResolvedValue(false);
-    const result = await evaluateCallMeNowConsent('+972501234567', NOW);
-    expect(result).toEqual({ ok: false, reason: 'opted_out' });
-  });
-
   it('NO-GO: Shabbat still blocks — the ONE hours gate that survives the ruling (was ALREADY correct before the ruling too; this pins it deliberately rather than leaving it looking coincidental)', async () => {
-    wireAdmin({ contacts: [{ data: null, error: null }] });
+    wireAdmin({});
     vi.mocked(isDncListed).mockResolvedValue(false);
     const saturday = Date.parse('2026-06-06T10:00:00+03:00');
     const result = await evaluateCallMeNowConsent('+972501234567', saturday);
@@ -1172,7 +1152,7 @@ describe('evaluateCallMeNowConsent — reuses the shared DNC/opt-out/Shabbat gat
   });
 
   it('GO: the daily window (late Thursday evening, well past 19:00) does NOT block call-me-now — the ruling\'s actual effect, not just its absence of a Shabbat regression', async () => {
-    wireAdmin({ contacts: [{ data: null, error: null }] });
+    wireAdmin({});
     vi.mocked(isDncListed).mockResolvedValue(false);
     const lateThursday = Date.parse('2026-06-04T22:00:00+03:00');
     const result = await evaluateCallMeNowConsent('+972501234567', lateThursday);
@@ -1201,7 +1181,6 @@ describe('daily-window ruling, paired: callback/guest_service keep it, call-me-n
         error: null,
       }],
       activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
-      contacts: [{ data: null, error: null }],
     });
     vi.mocked(isDncListed).mockResolvedValue(false);
 
@@ -1249,7 +1228,6 @@ describe('daily-window ruling, paired: callback/guest_service keep it, call-me-n
         error: null,
       }],
       activity_log: [{ data: null, error: null, count: 0 } as unknown as QueryResult],
-      contacts: [{ data: null, error: null }],
     });
     vi.mocked(isDncListed).mockResolvedValue(false);
 
@@ -1279,7 +1257,7 @@ describe('daily-window ruling, paired: callback/guest_service keep it, call-me-n
 
   it('resolveDialTarget(guest_service) still refuses at this hour', async () => {
     wireAdmin({
-      contacts: [{ data: { id: 'contact-paired', event_id: 'event-paired', normalized_phone: '+972501234567', removal_requested: false }, error: null }],
+      contacts: [{ data: { id: 'contact-paired', event_id: 'event-paired', normalized_phone: '+972501234567' }, error: null }],
       guests: [{ data: { id: 'guest-paired' }, error: null }],
       events: [{ data: { id: 'event-paired', status: 'active', event_date: new Date(lateThursday).toISOString() }, error: null }],
     });
@@ -1289,7 +1267,7 @@ describe('daily-window ruling, paired: callback/guest_service keep it, call-me-n
   });
 
   it('evaluateCallMeNowConsent does NOT refuse at the identical hour', async () => {
-    wireAdmin({ contacts: [{ data: null, error: null }] });
+    wireAdmin({});
     vi.mocked(isDncListed).mockResolvedValue(false);
     const result = await evaluateCallMeNowConsent('+972501234567', lateThursday);
     expect(result).toEqual({ ok: true });
@@ -2108,7 +2086,6 @@ describe('DIAL_GATE_POLICY', () => {
   it('applies every gate when WE initiate', () => {
     expect(DIAL_GATE_POLICY.guest_service).toEqual({
       dnc: true,
-      optOut: true,
       shabbat: true,
       dailyWindow: 'apply',
       nationalRegistry: 'not_applicable',
@@ -2126,7 +2103,6 @@ describe('DIAL_GATE_POLICY', () => {
   it('does not apply timing or event-scoped gates when returning a call', () => {
     expect(DIAL_GATE_POLICY.returned_call).toEqual({
       dnc: true,
-      optOut: false,
       shabbat: false,
       dailyWindow: 'skip',
       nationalRegistry: 'not_applicable',

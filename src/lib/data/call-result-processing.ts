@@ -4,7 +4,6 @@ import type { Enums, Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/t
 import {
   getCallAttemptById,
   recordRsvpCallRejected,
-  getContactNormalizedPhone,
   getGuestRsvpToken,
   recordCallOutcome,
   setCallAttemptRsvpOutcome,
@@ -18,7 +17,6 @@ import { ownerNoteHash } from '@/lib/voximplant/agent-tool-hash';
 import { validateRecordingUrl } from '@/lib/voximplant/recording-url';
 import {
   voxCallbackSchema,
-  voxMarkDncSchema,
   voxNotifyOwnerSchema,
   voxSaveRsvpSchema,
   voxSaveRsvpStatus,
@@ -280,41 +278,6 @@ export async function processCallRsvp(
     await recordRsvpFromCall(attempt.event_id, attempt.guest_id, status, attemptId);
   }
   return { status: 'saved' };
-}
-
-// `mark_dnc` (conversation-design §4.2, legally critical): the guest asked mid-call
-// not to be called again. Resolves attempt → contact → normalized phone and upserts
-// it into call_dnc_list — the SAME canonical key the dispatcher's isDncListed gate
-// matches on, so the very next dial attempt to this number is skipped. Guest-
-// initiated (no admin session): written via the service-role client; added_by stays
-// null (the reason string marks provenance). Idempotent: re-adding is an upsert.
-//
-// Same contract as processCallRsvp: `{ok:false}` is a TERMINAL answer (no attempt,
-// no phone to list — retrying cannot change it), while a database failure is
-// THROWN, so the drain's retry path re-runs it. Returning ok:false for a DB error
-// would let the drain mark the row processed with nothing written — an opt-out
-// the guest was told had been honoured, silently lost.
-export async function processCallDnc(attemptId: string): Promise<{ ok: boolean }> {
-  const attempt = await getCallAttemptById(attemptId);
-  if (!attempt) return { ok: false };
-  const normalized = await getContactNormalizedPhone(attempt.contact_id);
-  if (!normalized) return { ok: false };
-
-  const admin = createAdminClient();
-  const { error } = await admin.from('call_dnc_list').upsert(
-    { normalized_phone: normalized, reason: 'בקשת אורח בשיחה קולית' },
-    { onConflict: 'normalized_phone' },
-  );
-  // Never the provider message: a DB error can echo the row, i.e. the phone.
-  if (error) throw new Error(`call_dnc_list upsert failed (${error.code ?? 'unknown'})`);
-  return { ok: true };
-}
-
-export async function processCallDncRow(row: WebhookInboxRow): Promise<void> {
-  const parsed = voxMarkDncSchema.safeParse(row.payload);
-  if (!parsed.success) return;
-  if (!row.message_id) return;
-  await processCallDnc(row.message_id);
 }
 
 // `notify_owner` (conversation-design §4.2): relay a guest question/message/flag to

@@ -83,8 +83,6 @@ beforeEach(() => {
 // error first — this list is the runtime witness for the reasons.
 const FINAL_RESULTS: Exclude<CallDispatchResult, { kind: 'transient_error' } | { kind: 'deferred' }>[] = [
   { kind: 'skipped', reason: 'outreach_disabled' },
-  { kind: 'skipped', reason: 'removal_requested' },
-  { kind: 'skipped', reason: 'dnc_listed' },
   { kind: 'skipped', reason: 'already_reached' },
   { kind: 'skipped', reason: 'campaign_not_active' },
   { kind: 'skipped', reason: 'event_closed' },
@@ -275,14 +273,16 @@ describe('vocabulary contract with migration 20260722170740', () => {
   // The reason CHECK was recreated (verbatim + 'outside_dial_window') by
   // 20260907152244 when dial-hours gate 3b landed, again (verbatim +
   // 'waiting_for_quota') by 20261004081706 when the contact-quota seat gate landed,
-  // and again ('no_call_consent' → 'removal_requested') by 20261101134148 when the
-  // consent gates were removed; for `reason` the LATEST recreation is the live
+  // again ('no_call_consent' → 'removal_requested') by 20261101134148 when the
+  // consent gates were removed, and again (minus 'removal_requested' and
+  // 'dnc_listed') by 20261101220710 when the guest opt-out was removed; for
+  // `reason` the LATEST recreation is the live
   // contract, so that is the file the reason test must read. `status` still lives
   // only in the original migration.
   const reasonSql = readFileSync(
     join(
       __dirname,
-      '../../../supabase/migrations/20261101134148_remove_contact_consent.sql',
+      '../../../supabase/migrations/20261101220710_remove_guest_opt_out.sql',
     ),
     'utf8',
   );

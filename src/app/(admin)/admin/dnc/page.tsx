@@ -12,9 +12,9 @@ const TABS: readonly DncTab[] = ['check', 'local', 'status'];
 // Admin: Do-Not-Call — checking a number against the national registry, the local list of removal requests, and the
 // registry connection (openspec/changes/dnc-registry-dial-gate D9). requirePlatformPermission('manage_voice') is
 // enforced in every data-layer function; the call here only redirects early. The local list is governed by the
-// is_platform_staff() RLS policy on call_dnc_list. A number on the local list is blocked on EVERY product dial path —
-// RSVP calls, sales, meeting confirmation, call-me-now and the console — while the national registry applies to
-// marketing calls only.
+// is_platform_staff() RLS policy on call_dnc_list. A number on the local list is blocked on the sales, meeting
+// confirmation, call-me-now and console dial paths; RSVP calls are not marketing and check neither list (owner,
+// 01.11.2026). The national registry applies to marketing calls only.
 export default async function AdminDncPage({
   searchParams,
 }: {

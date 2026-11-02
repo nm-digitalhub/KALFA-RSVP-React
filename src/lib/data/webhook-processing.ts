@@ -10,7 +10,6 @@ import {
 import {
   getGuestsForContact,
   insertInteraction,
-  markContactRemovalRequested,
   recordRsvpFromWhatsapp,
   resolveByContextId,
   resolveInboundContact,
@@ -20,7 +19,6 @@ import {
 } from '@/lib/data/interactions';
 import { recordReached } from '@/lib/data/billing';
 import {
-  processCallDncRow,
   processCallResult,
   processCallRsvpRow,
   processOwnerNoteRow,
@@ -188,24 +186,19 @@ export async function processWebhookEvent(
     await processCallRsvpRow(row);
     return;
   }
-  if (row.event_kind === 'call_dnc') {
-    await processCallDncRow(row);
-    return;
-  }
   if (row.event_kind === 'call_owner_note') {
     await processOwnerNoteRow(row);
     return;
   }
-  // Meeting-booking agent's mark_opt_out (mtg/cb/dnc/[token]) — a SEPARATE
-  // kind from call_dnc on purpose (plan §7: this surface must never enter the
-  // call_attempts/RSVP/billing drain paths above). Its own dedicated
-  // processing function; never processCallDncRow.
+  // Meeting-booking agent's mark_opt_out (mtg/cb/dnc/[token]) — its own kind on
+  // purpose (plan §7: this surface must never enter the call_attempts/RSVP/billing
+  // drain paths above). Its own dedicated processing function.
   if (row.event_kind === 'mtg_dnc') {
     await processMeetingOptOutRow(row);
     return;
   }
   // Sales-closing agent's mark_dnc (sls/tool/dnc/[token]) — its own kind,
-  // same isolation reasoning as mtg_dnc above; never processCallDncRow.
+  // same isolation reasoning as mtg_dnc above.
   if (row.event_kind === 'sls_dnc') {
     await processSalesOptOutRow(row);
     return;
@@ -419,7 +412,7 @@ async function processMessage(
     return;
   }
 
-  const { billable, removal, replyId } = classifyMessagePayload(payload);
+  const { billable, replyId } = classifyMessagePayload(payload);
   if (!billable) return;
 
   const contextId = row.context_message_id;
@@ -452,9 +445,7 @@ async function processMessage(
       contactId: resolved.contactId,
       channel: 'whatsapp',
       attemptId: messageId,
-      evidence: removal
-        ? 'whatsapp_inbound_removal'
-        : 'whatsapp_inbound_message',
+      evidence: 'whatsapp_inbound_message',
       providerRef: messageId,
     });
     // Keep the RPC's verdict next to the classification so the inspector shows
@@ -467,14 +458,6 @@ async function processMessage(
         outcome,
       });
     }
-  }
-
-  // An opt-out reply BILLS (it is a human reach) and only THEN stops future
-  // outreach — never the reverse, or the billing RPC's removal guard would block
-  // the reach that carries the removal. Runs even on a deduped re-process
-  // (idempotent) so an opt-out is never lost.
-  if (removal) {
-    await markContactRemovalRequested(resolved.contactId);
   }
 
   // A recognized RSVP quick-reply BUTTON records the RSVP through the same

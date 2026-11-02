@@ -71,7 +71,7 @@ charge (`charge_status`/`charged_at`/`sumit_charge_document_id`/`charge_document
 `final_invoice_document_id`).
 
 **contacts** (8) — איש קשר ייחודי לפי טלפון. `id`, `event_id`→events, `normalized_phone`,
-`op_status` (contact_op_status), `removal_requested`, `whatsapp_consent_at`,
+`op_status` (contact_op_status),
 `created_at`, `updated_at`.
 
 **campaign_authorized_contacts** (5) — הסט המורשה המוקפא (cap מחייב על reached).
@@ -147,7 +147,7 @@ knobs ל-hold (`reasonable_coverage_contacts`/`extreme_threshold_contacts`), ו�
 | billing_route | saved_token, hold_j5 |
 | order_status | pending, paid, failed, demo, processing, payment_review |
 | agreement_status | draft, approved |
-| contact_op_status | pending_contact, not_eligible, whatsapp_sent, whatsapp_delivered, whatsapp_read, whatsapp_responded, pending_call, call_dialed, no_answer, voicemail, human_interaction_call, wrong_number, removal_requested, reached_billed, not_reached |
+| contact_op_status | pending_contact, whatsapp_sent, pending_call, call_dialed, no_answer, human_interaction_call, wrong_number, reached_billed |
 
 ---
 

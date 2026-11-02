@@ -22,8 +22,6 @@ import {
   DELIVERY_STATUS_LABELS,
   OP_STATUS_LABELS,
   OP_STATUS_VARIANTS,
-  REMOVAL_REQUESTED_LABEL,
-  REMOVAL_REQUESTED_VARIANT,
   deliveryStatusVariant,
 } from '../labels';
 import { RsvpLink } from './rsvp-link';
@@ -117,11 +115,6 @@ export default async function EditGuestPage({ params }: PageProps) {
             <Badge variant={OP_STATUS_VARIANTS[outreach.opStatus]}>
               {OP_STATUS_LABELS[outreach.opStatus]}
             </Badge>
-            {outreach.removalRequested ? (
-              <Badge variant={REMOVAL_REQUESTED_VARIANT}>
-                {REMOVAL_REQUESTED_LABEL}
-              </Badge>
-            ) : null}
           </div>
         ) : null}
 

@@ -251,7 +251,7 @@ Origin; קורא ל-`chargeRaw` ומציג **רק** את ההקרנה הבטוח
 | טבלה | תפקיד | מיגרציה עיקרית |
 |---|---|---|
 | `campaigns` (עמודות חיוב) | מצב הקמפיין: מחיר/תקרה/חלון; ‏hold: ‏`auth_amount/auth_number/authorized_at/auth_expires_at/auth_external_ref/card_token_ref/card_exp_month/card_exp_year/card_citizen_id/capture_status`; חיוב: ‏`charge_status/charged_at/sumit_charge_document_id/charge_document_number/charge_document_url/charge_auth_number/charge_payment_id` | 0007, 0025, 0026, 0027 |
-| `contacts` | טלפון E.164 ייחודי לאירוע + ‏`op_status` + ‏`removal_requested` + ‏`whatsapp_consent_at` | 0007, 0028 |
+| `contacts` | טלפון E.164 ייחודי לאירוע + ‏`op_status` | 0007, 0028 |
 | `billed_results` | **מקור האמת לחיוב**; ‏`UNIQUE(event_id,contact_id)`; ‏`locked_price`, ראיה, ‏provider_ref | 0007 |
 | `campaign_authorized_contacts` | ה-SET של הנמענים (דינמי; אין מגבלת גודל מאז 25.9) | 0024 |
 | `contact_interactions` | יומן אירועי ספק + dedup ‏`UNIQUE(channel,provider_id)` | 0007 |
@@ -271,7 +271,7 @@ Origin; קורא ל-`chargeRaw` ומציג **רק** את ההקרנה הבטוח
   ‏0028 (בסיס) ← 0029 (‏`not_authorized` — כבילה ל-SET) ← ‏`20260630164747` ‏(L2: ‏
   ‏`event_passed` — שומר תאריך-אירוע בלוח ישראל, ו-`event_mismatch` — אימות ש-`p_event` תואם
   לאירוע של הקמפיין; שורות 262-326). ערכי התוצאה: ‏`billed | already_billed |
-  not_active | before_window | closed_window | removal_requested | not_authorized |
+  not_active | before_window | closed_window | not_authorized |
   no_campaign | event_passed | event_mismatch`.
 - **`campaign_billing_summary(p_campaign) → (reached_count, accrued, ceiling, max_contacts)`** —
   הסיכום ש-close-charge צורך (0028).

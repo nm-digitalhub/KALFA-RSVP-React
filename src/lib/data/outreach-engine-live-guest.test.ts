@@ -49,7 +49,7 @@ function mockDb() {
     for (const m of ['select', 'eq', 'maybeSingle', 'order', 'limit']) b[m] = vi.fn(() => b);
     const result =
       table === 'contacts'
-        ? { data: { id: 'k1', normalized_phone: '+972500000001', removal_requested: false }, error: null }
+        ? { data: { id: 'k1', normalized_phone: '+972500000001' }, error: null }
         : { data: null, error: null, count: 0 };
     (b as { then: unknown }).then = (f: (v: unknown) => unknown) => f(result);
     return b;

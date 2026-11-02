@@ -85,15 +85,15 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     return String(res.rows[0].r);
   };
 
-  // An eligible admit target: contact of THIS event, not opted out, with a live guest.
+  // An eligible admit target: contact of THIS event with a live guest.
   async function eligibleContact(
     q: (t: string, v?: unknown[]) => Promise<{ rows: Row[] }>,
     event: string,
   ): Promise<string> {
     const contact = randomUUID();
     await q(
-      `insert into public.contacts (id, event_id, normalized_phone, removal_requested)
-       values ($1,$2,$3,false)`,
+      `insert into public.contacts (id, event_id, normalized_phone)
+       values ($1,$2,$3)`,
       [contact, event, '+9725' + Math.floor(Math.random() * 1e7)],
     );
     await q(
@@ -117,8 +117,8 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
     await withCampaign({ max: 10 }, async ({ event, campaign, q }) => {
       const contact = randomUUID();
       await q(
-        `insert into public.contacts (id, event_id, normalized_phone, removal_requested)
-         values ($1,$2,'+972500000001',false)`,
+        `insert into public.contacts (id, event_id, normalized_phone)
+         values ($1,$2,'+972500000001')`,
         [contact, event],
       );
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', contact, null, null])).toBe(
@@ -226,8 +226,10 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
         await eligibleContact(q, event),
         await eligibleContact(q, event),
       ];
+      // [order] An add with a quota fills the free seats by order of addition (admit_contacts_by_order): the
+      // first add admits c1 AND c2, so c2's own add finds it already on the list, and c3 waits.
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null])).toBe('added');
-      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe('added');
+      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe('noop');
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c3, null, null])).toBe(
         'quota_full',
       );
@@ -254,8 +256,8 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
       await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c1, null, null]);
       const orphan = randomUUID();
       await q(
-        `insert into public.contacts (id, event_id, normalized_phone, removal_requested)
-         values ($1,$2,'+972500000002',false)`,
+        `insert into public.contacts (id, event_id, normalized_phone)
+         values ($1,$2,'+972500000002')`,
         [orphan, event],
       );
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', orphan, null, null])).toBe(
@@ -271,10 +273,13 @@ describe.skipIf(!RUN)('reconcile_authorized_set — rollback-isolated', () => {
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe(
         'quota_full',
       );
+      // The real flow: a guest mutation removed c1's last guest, then the app reconciles with 'delete'.
+      await q(`delete from public.guests where event_id=$1 and contact_id=$2`, [event, c1]);
       expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'delete', c1, null, null])).toBe(
         'removed',
       );
-      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe('added');
+      // [order] The freed seat goes straight to the next waiting contact by order of addition: c2.
+      expect(await rpc(q, 'reconcile_authorized_set', [event, campaign, 'add', c2, null, null])).toBe('noop');
       expect(await setSize(q, campaign)).toBe(1);
     });
   });

@@ -34,7 +34,7 @@ import { CALL_ME_NOW_OTP_PURPOSE, callMeNowVerifyBodySchema } from '@/lib/valida
 //      from "not verified" to the caller (generic refusal, no detail on
 //      WHICH check failed, matching route-inbound/widget/call-intent's own
 //      "never explain the gate that tripped" discipline for a public route).
-//   3. evaluateCallMeNowConsent(phone) — DNC / contacts opt-out / Shabbat-
+//   3. evaluateCallMeNowConsent(phone) — DNC / Shabbat-
 //      Yom-Tov (the daily window is deliberately skipped for this leg — see
 //      that function's own header for the ruling) — the SAME shared gate
 //      resolveDialTarget's two existing kinds already use

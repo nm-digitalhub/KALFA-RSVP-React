@@ -31,8 +31,6 @@ import {
   claimStep,
   executeStep,
   writeReach,
-  isContactOptedOut,
-  terminalReasonFor,
   getCampaignContext,
   isContactReached,
   setOutreachStatus,
@@ -375,7 +373,6 @@ const sequenceRun = (
         data: {
           id: contactId,
           normalized_phone: '972500000001',
-          removal_requested: false,
         },
         error: null,
       }),
@@ -609,69 +606,5 @@ describe('executeStep — send-time parameter binding', () => {
     // Generic family: {{2}} is the event-type label, {{3}} the celebrants text.
     expect(bodyParams?.[1]).toBe('חתונה');
     expect(bodyParams?.[2]).toBe('דוד לוי ו־שרה כהן');
-  });
-});
-
-// isContactOptedOut is the per-contact gate of an AI dial: a guest who asked not
-// to be contacted is never called. No prior consent is required (owner,
-// 01.11.2026). It fails CLOSED — an unknown contact or a failed read is "opted out".
-describe('isContactOptedOut — AI-call opt-out gate', () => {
-  function mockContact(
-    result: { data: Record<string, unknown> | null; error: { message: string } | null } | 'throw',
-  ) {
-    const builder = createMockSupabase({
-      data: result === 'throw' ? null : result.data,
-      error: result === 'throw' ? null : result.error,
-    }).builder;
-    if (result === 'throw') {
-      builder.then = () => {
-        throw new Error('read failed');
-      };
-    }
-    vi.mocked(createAdminClient).mockReturnValue({
-      from: (table: string) => {
-        expect(table).toBe('contacts');
-        return builder;
-      },
-      rpc: vi.fn(),
-    } as unknown as ReturnType<typeof createAdminClient>);
-  }
-
-  it('a contact who asked to be removed → opted out', async () => {
-    mockContact({ data: { removal_requested: true }, error: null });
-    expect(await isContactOptedOut('c1')).toBe(true);
-  });
-
-  it('any other contact → not opted out (no consent record is needed)', async () => {
-    mockContact({ data: { removal_requested: false }, error: null });
-    expect(await isContactOptedOut('c1')).toBe(false);
-  });
-
-  it('unknown contact → opted out (fail-closed)', async () => {
-    mockContact({ data: null, error: null });
-    expect(await isContactOptedOut('c1')).toBe(true);
-  });
-
-  it('read error → opted out (fail-closed)', async () => {
-    mockContact({ data: null, error: { message: 'boom' } });
-    expect(await isContactOptedOut('c1')).toBe(true);
-  });
-
-  it('a thrown read → opted out (fail-closed)', async () => {
-    mockContact('throw');
-    expect(await isContactOptedOut('c1')).toBe(true);
-  });
-});
-
-// terminalReasonFor is the one opt-out rule shared by the engine step and its
-// crash-recovery re-check.
-describe('terminalReasonFor', () => {
-  it('a contact who asked to be removed is terminal', () => {
-    expect(terminalReasonFor({ removal_requested: true })).toBe('removal_requested');
-  });
-
-  it('any other contact is not terminal', () => {
-    expect(terminalReasonFor({ removal_requested: false })).toBeNull();
-    expect(terminalReasonFor({ removal_requested: null })).toBeNull();
   });
 });

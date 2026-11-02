@@ -50,7 +50,6 @@ const REFUSAL_MESSAGE: Record<string, string> = {
   per_phone_rate: 'כבר ביקשתם שיחה חוזרת לאחרונה. נסו שוב מאוחר יותר.',
   daily_breaker: 'הגענו למכסת השיחות היומית. נסו שוב מחר.',
   dnc: 'לא ניתן להתקשר למספר זה.',
-  opted_out: 'לא ניתן להתקשר למספר זה.',
   // Shabbat/Yom-Tov only — this flow skips the daily call window
   // (availability gates the dial, not the clock — see console-calls.ts's
   // evaluateCallMeNowConsent), so this reason surfaces only for that one

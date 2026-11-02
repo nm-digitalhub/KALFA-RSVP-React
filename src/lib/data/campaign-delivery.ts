@@ -10,8 +10,7 @@ import type { Database, Enums } from '@/lib/supabase/types';
 // summary on the campaign board. Every WhatsApp figure is a reflection of an
 // inbound Meta signal:
 //   - `delivery_status` (sent/delivered/read/failed) from the status callbacks,
-//   - `op_status` (reached_billed / wrong_number) from the contact's outcome,
-//   - `removal_requested` from an opt-out reply.
+//   - `op_status` (reached_billed / wrong_number) from the contact's outcome.
 // The AI-call figures are tallied from the contacts' call outcomes (`call` below).
 // Owner-scoped: the owner path reads through the cookie client (org-aware RLS,
 // can_access_event) and the caller's access to the campaign's event is
@@ -39,7 +38,6 @@ export type CampaignDeliveryBreakdown = {
   outcome: {
     reached: number; // op_status = 'reached_billed' (a human reach)
     wrongNumber: number; // op_status = 'wrong_number'
-    optedOut: number; // removal_requested = true (independent of op_status)
   };
   // AI-call family — tallied from the SAME contacts.op_status, one bucket per
   // terminal/near-terminal call state. Owners see counts only; the recording
@@ -47,7 +45,6 @@ export type CampaignDeliveryBreakdown = {
   call: {
     dialed: number; // op_status = 'call_dialed'
     noAnswer: number; // op_status = 'no_answer'
-    voicemail: number; // op_status = 'voicemail'
     humanInteraction: number; // op_status = 'human_interaction_call'
   };
 };
@@ -58,7 +55,6 @@ const REACHED: OpStatus = 'reached_billed';
 const WRONG_NUMBER: OpStatus = 'wrong_number';
 const CALL_DIALED: OpStatus = 'call_dialed';
 const CALL_NO_ANSWER: OpStatus = 'no_answer';
-const CALL_VOICEMAIL: OpStatus = 'voicemail';
 const CALL_HUMAN: OpStatus = 'human_interaction_call';
 
 // Pure aggregation — kept separate from the fetch so it is unit-testable without a
@@ -70,7 +66,7 @@ export function aggregateDeliveryBreakdown(
     delivery_status: string | null;
     created_at: string;
   }>,
-  contacts: ReadonlyArray<{ op_status: OpStatus; removal_requested: boolean }>,
+  contacts: ReadonlyArray<{ op_status: OpStatus }>,
 ): CampaignDeliveryBreakdown {
   // The most-recent outbound message per contact. Each message row holds only its
   // latest delivery state (setDeliveryStatus is last-write-wins per provider_id),
@@ -111,15 +107,13 @@ export function aggregateDeliveryBreakdown(
     }
   }
 
-  const outcome = { reached: 0, wrongNumber: 0, optedOut: 0 };
-  const call = { dialed: 0, noAnswer: 0, voicemail: 0, humanInteraction: 0 };
+  const outcome = { reached: 0, wrongNumber: 0 };
+  const call = { dialed: 0, noAnswer: 0, humanInteraction: 0 };
   for (const c of contacts) {
-    if (c.removal_requested) outcome.optedOut += 1;
     if (c.op_status === REACHED) outcome.reached += 1;
     else if (c.op_status === WRONG_NUMBER) outcome.wrongNumber += 1;
     if (c.op_status === CALL_DIALED) call.dialed += 1;
     else if (c.op_status === CALL_NO_ANSWER) call.noAnswer += 1;
-    else if (c.op_status === CALL_VOICEMAIL) call.voicemail += 1;
     else if (c.op_status === CALL_HUMAN) call.humanInteraction += 1;
   }
 
@@ -169,12 +163,12 @@ export async function fetchDeliveryBreakdown(
     ),
   );
 
-  // Outcome (op_status + opt-out) for the campaign's contacts — one batched query.
-  let contacts: { op_status: OpStatus; removal_requested: boolean }[] = [];
+  // Outcome (op_status) for the campaign's contacts — one batched query.
+  let contacts: { op_status: OpStatus }[] = [];
   if (contactIds.length > 0) {
     const { data, error } = await supabase
       .from('contacts')
-      .select('op_status, removal_requested')
+      .select('op_status')
       .in('id', contactIds);
     if (error) throw new Error('טעינת אנשי הקשר נכשלה', { cause: error });
     contacts = data ?? [];

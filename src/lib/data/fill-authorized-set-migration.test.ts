@@ -36,9 +36,9 @@ describe('20261005..._fill_authorized_set.sql', () => {
     }
   });
 
-  it('admits only what reconcile_authorized_set admits: this event, not opted out, with a live guest', () => {
+  // The opt-out exclusion this migration also had was removed by 20261101220710 (owner, 01.11.2026).
+  it('admits only what reconcile_authorized_set admits: this event, with a live guest', () => {
     expect(body).toMatch(/c\.event_id\s*=\s*v_event_id/);
-    expect(body).toMatch(/c\.removal_requested\s*=\s*false/);
     expect(body).toMatch(/fg\.first_seq is not null/i);
   });
 

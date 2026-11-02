@@ -81,8 +81,7 @@
    `getOutreachEnabled()` + `getWhatsAppConfig()`. משם ל-`sendCampaignWhatsApp`.
 2. **מנוע ה-outreach האוטומטי** — ה-worker (`worker/main.ts`) מריץ `executeStep`
    (`src/lib/data/outreach-engine.ts:232-295`) לכל contact לפי לוח הזמנים:
-   בדיקת `removal_requested`, בדיקת `whatsapp_consent_at` per-contact
-   (`outreach-engine.ts:249-251`), `claimStep` (at-most-once), ואז שליחה + עדכון
+   `claimStep` (at-most-once), ואז שליחה + עדכון
    `op_status='whatsapp_sent'`.
 
 `sendCampaignWhatsApp` (`outreach.ts:71-120`) מאמת שוב **בצד השרת** את כל תנאי
@@ -169,8 +168,8 @@
    `UNIQUE(channel, provider_id)` על ה-wamid הנכנס; רק `fresh === true` ממשיך
    ל-`recordReached` (RPC `try_record_billed_result`, `src/lib/data/billing.ts:30-32`)
    — retry של Meta לא יכול לחייב פעמיים.
-4. **opt-out (D4)** — תגובת הסרה **מחייבת קודם** (זו הגעה אנושית) ורק אז
-   `markContactRemovalRequested` (`interactions.ts:152-161`) עוצר outreach עתידי.
+4. **אין opt-out** — תשובה שמבקשת הסרה היא תשובה רגילה ומחויבת; פניות אישור הגעה אינן
+   שיווק (החלטת הבעלים, 01.11.2026; מיגרציה `20261101220710`).
 5. **RSVP מכפתור (C9)** — `RSVP_BUTTON_MAP` (`webhook-processing.ts:27-31`):
    `rsvp_attending`/`rsvp_declined`/`rsvp_maybe` ⇒ `submit_rsvp` (אותו RPC אטומי
    של הטופס הציבורי), **רק כשמאחורי ה-contact עומד בדיוק אורח אחד** — לעולם לא
@@ -319,18 +318,12 @@
 
 ## 5. מודל ההסכמה (consent)
 
-- **הסכמה שיווקית היא per-ערוץ per-contact**: העמודה
-  `contacts.whatsapp_consent_at` (timestamptz, מיגרציה
-  `supabase/migrations/202606290028_billing_backhalf.sql:37`) מתעדת הסכמת
-  WhatsApp מפורשת עם חותמת זמן.
-- **אכיפה בשליחה (שתי שכבות):**
-  - `listSendableContacts` (`src/lib/data/contacts.ts:265-302`) מחזיר רק
-    contacts עם `removal_requested=false` **וגם** `whatsapp_consent_at IS NOT NULL`,
-    ובמסלול קמפיין — רק חברי הסט המוקפא (`campaign_authorized_contacts`).
-  - מנוע ה-outreach בודק שוב per-contact לפני כל step
-    (`outreach-engine.ts:244-251`).
-- **הסרה**: תגובת opt-out נכנסת מציבה `removal_requested=true` (ראו §2.3) —
-  נבדק בכל מסלולי השליחה וההקפאה (`contacts.ts:281,295,357`).
+- **אין הסכמה ואין בקשת הסרה ברמת האורח.** פניות אישור הגעה (הזמנה, תזכורות, שיחה,
+  תודה) אינן שיווק (החלטת הבעלים, 01.11.2026). עמודות ההסכמה הוסרו במיגרציה
+  `20261101134148`, ו‑`contacts.removal_requested` במיגרציה `20261101220710`.
+- **מי מקבל שליחה:** `listSendableContacts` / `resolveSendableContacts`
+  (`src/lib/data/sendable-contacts.ts`) מחזיר את אנשי הקשר של האירוע, ובמסלול קמפיין
+  רק את חברי הסט המוקפא (`campaign_authorized_contacts`).
 - **הסכמות ברמת הלקוח (בעל האירוע)** נאספות בחתימת ההסכם: שלוש הצהרות מפורשות
   (`terms_accepted`, `privacy_accepted`, `authorization_accepted`) + `tos_version`
   שנקבע בצד השרת מהמסמך הפעיל (`campaign-actions.ts:109-118`), ונשמרות עם ראיות
@@ -338,12 +331,6 @@
   `otp_verified_at` — `agreements.ts:182-195`).
 - **תיחום טרנזקציוני**: כל שליחה כבולה לקמפיין⇒אירוע⇒contact של אותו אירוע
   (`contacts` ייחודי per `(event_id, normalized_phone)`); אין שליחה גלובלית.
-
-> **פער שיש להכיר:** הפונקציה לרישום ההסכמה — `recordWhatsAppConsent`
-> (`contacts.ts:245-256`) — קיימת ומכוסה בבדיקות, אך **אין לה כיום caller בקוד
-> הייצור** (אומת ב-grep על כל `src/`). כלומר אין עדיין UI/זרימה שמציבה
-> `whatsapp_consent_at`; עד שתחווט, `listSendableContacts` יחזיר אפס אנשי קשר
-> והמנוע ידלג על כולם (fail-closed לטובת פרטיות).
 
 ---
 

@@ -17,7 +17,7 @@ import type { Tables } from '@/lib/supabase/types';
 type ContactRow = Tables<'contacts'>;
 export type EventContact = Pick<
   ContactRow,
-  'id' | 'normalized_phone' | 'op_status' | 'removal_requested'
+  'id' | 'normalized_phone' | 'op_status'
 >;
 
 // The pure dedup/normalization (deriveContacts) lives in derive-contacts.ts; the DB
@@ -332,7 +332,7 @@ export async function listContacts(eventId: string): Promise<EventContact[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('contacts')
-    .select('id, normalized_phone, op_status, removal_requested')
+    .select('id, normalized_phone, op_status')
     .eq('event_id', eventId)
     .order('created_at', { ascending: true });
   if (error) throw new Error('טעינת אנשי הקשר נכשלה', { cause: error });
@@ -341,8 +341,8 @@ export async function listContacts(eventId: string): Promise<EventContact[]> {
 
 // --- Outreach (B3) send-eligibility -----------------------------------------
 
-// Contacts eligible for a WhatsApp send: not removal-requested.
-// When a campaignId is given, membership is ADDITIONALLY bound
+// Contacts eligible for a WhatsApp send: every contact of the event.
+// When a campaignId is given, membership is bound
 // to that campaign's authorized set (campaign_authorized_contacts) via an
 // INNER JOIN — so the outreach path can never target a contact outside the set:
 // reached ⊆ authorized BY CONSTRUCTION (the Phase-2 money-leak guard, §7/0024).

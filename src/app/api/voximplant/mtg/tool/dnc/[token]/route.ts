@@ -10,13 +10,11 @@ import { voxMeetingOptOutSchema } from '@/lib/validation/voximplant';
 //
 // The meeting-booking agent's `mark_opt_out` tool (plan §4, legally
 // critical): the lead asked not to be called again. Upserts into
-// call_dnc_list — the SAME table/key the RSVP agent's mark_dnc/processCallDnc
-// already use (§4's correction: not a new column). PERSIST-THEN-PROCESS,
+// call_dnc_list (§4's correction: not a new column). PERSIST-THEN-PROCESS,
 // unlike this table's other 3 tools: a lost opt-out is a real spam-law
-// exposure, not merely a lost log entry, so it gets the same durable-retry
-// backstop as the RSVP surface's own DNC tool — via event_kind='mtg_dnc', its
-// OWN drain case (never 'call_dnc'), so this can never touch call_attempts/
-// RSVP/billing processing code (plan §7's isolation requirement).
+// exposure, not merely a lost log entry, so it gets a durable-retry backstop —
+// via event_kind='mtg_dnc', its OWN drain case, so this can never touch
+// call_attempts/RSVP/billing processing code (plan §7's isolation requirement).
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

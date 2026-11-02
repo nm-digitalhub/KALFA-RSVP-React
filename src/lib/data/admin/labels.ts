@@ -245,7 +245,6 @@ export const BILLING_OUTCOME_LABELS: Record<string, string> = {
   no_exposure: 'לא חויב — לא נחשף לשליחה בקמפיין',
   closed_window: 'לא חויב — אחרי חלון השליחה',
   before_window: 'לא חויב — לפני חלון השליחה',
-  removal_requested: 'לא חויב — איש הקשר ביקש הסרה',
   event_mismatch: 'לא חויב — אי-התאמה בין אירוע לקמפיין',
   no_campaign: 'לא חויב — הקמפיין לא נמצא',
 };

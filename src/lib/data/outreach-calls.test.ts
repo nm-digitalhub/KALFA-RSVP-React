@@ -24,7 +24,6 @@ vi.mock('@/lib/data/voximplant-concurrency', () => ({
 }));
 vi.mock('@/lib/data/outreach-engine', () => ({
   getCampaignContext: vi.fn(),
-  isContactOptedOut: vi.fn(),
   isContactReached: vi.fn(),
   isDncListed: vi.fn(),
 }));
@@ -81,7 +80,6 @@ import {
 import { countActiveCallsAllSurfaces } from '@/lib/data/voximplant-concurrency';
 import {
   getCampaignContext,
-  isContactOptedOut,
   isContactReached,
   isDncListed,
 } from '@/lib/data/outreach-engine';
@@ -144,7 +142,6 @@ beforeEach(() => {
   vi.mocked(isWithinHumanCallWindow).mockReturnValue(true);
   vi.mocked(nextHumanCallWindowStart).mockReturnValue(NEXT_WINDOW_MS);
   vi.mocked(getVoximplantConfig).mockResolvedValue(CONFIG as never);
-  vi.mocked(isContactOptedOut).mockResolvedValue(false);
   vi.mocked(isDncListed).mockResolvedValue(false);
   vi.mocked(isContactReached).mockResolvedValue(false);
   vi.mocked(checkContactSeat).mockResolvedValue({ allowed: true });
@@ -249,15 +246,11 @@ describe('gates (no dial)', () => {
     expect(getVoximplantConfig).toHaveBeenCalled();
     expect(startScenarios).not.toHaveBeenCalled();
   });
-  it('3. opted out (asked to be removed) → skipped', async () => {
-    vi.mocked(isContactOptedOut).mockResolvedValue(true);
-    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'removal_requested' });
-    expect(startScenarios).not.toHaveBeenCalled();
-  });
-  it('4. DNC → skipped', async () => {
+  it('3. a number on the local Do-Not-Call list still gets the RSVP call: no DNC check (owner, 01.11.2026)', async () => {
     vi.mocked(isDncListed).mockResolvedValue(true);
-    expect(await dispatchOutreachCall(job())).toEqual({ kind: 'skipped', reason: 'dnc_listed' });
-    expect(startScenarios).not.toHaveBeenCalled();
+    const r = await dispatchOutreachCall(job());
+    expect(r.kind).toBe('dialed');
+    expect(isDncListed).not.toHaveBeenCalled();
   });
   it('5. already reached → skipped', async () => {
     vi.mocked(isContactReached).mockResolvedValue(true);

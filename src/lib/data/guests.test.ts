@@ -122,7 +122,7 @@ describe('listGuests', () => {
   });
 
   it('returns mapped items, total, page and pageSize', async () => {
-    // A guest with no contact: op_status/removal/delivery flatten to null and
+    // A guest with no contact: op_status/delivery flatten to null and
     // NO batched delivery query runs (contactIds is empty).
     const rows = [{ id: GUEST_ID, contact_id: null, contacts: null }];
     const { builder } = createMockSupabase({
@@ -143,7 +143,6 @@ describe('listGuests', () => {
         contact_id: null,
         over_invited: false,
         op_status: null,
-        removal_requested: null,
         delivery_status: null,
       },
     ]);
@@ -154,7 +153,7 @@ describe('listGuests', () => {
     expect(result.pageSize).toBeGreaterThan(0);
   });
 
-  // op_status/removal flatten from the embed; delivery_status is the LATEST
+  // op_status flattens from the embed; delivery_status is the LATEST
   // per-CONTACT outbound state, fetched in ONE batched query (no N+1). Two guests
   // sharing a contact get the same delivery; a contactless guest gets null.
   it('merges the latest delivery status per contact in a single batched query', async () => {
@@ -162,12 +161,12 @@ describe('listGuests', () => {
       {
         id: 'g1',
         contact_id: 'c1',
-        contacts: { op_status: 'reached_billed', removal_requested: false },
+        contacts: { op_status: 'reached_billed' },
       },
       {
         id: 'g2',
         contact_id: 'c1',
-        contacts: { op_status: 'reached_billed', removal_requested: false },
+        contacts: { op_status: 'reached_billed' },
       },
       { id: 'g3', contact_id: null, contacts: null },
     ];
@@ -209,9 +208,8 @@ describe('listGuests', () => {
     // Latest delivery ('read') applies to both guests sharing c1.
     expect(byId.get('g1')?.delivery_status).toBe('read');
     expect(byId.get('g2')?.delivery_status).toBe('read');
-    // op_status/removal flattened from the embed.
+    // op_status flattened from the embed.
     expect(byId.get('g1')?.op_status).toBe('reached_billed');
-    expect(byId.get('g1')?.removal_requested).toBe(false);
     // Contactless guest: no delivery, no op_status.
     expect(byId.get('g3')?.delivery_status).toBeNull();
     expect(byId.get('g3')?.op_status).toBeNull();

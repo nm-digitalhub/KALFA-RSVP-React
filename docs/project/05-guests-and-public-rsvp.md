@@ -65,7 +65,7 @@
 
 ב‑`src/lib/data/guests.ts:31-39` מוגדרות הקרנות עמודות קבועות:
 
-- `GUEST_LIST_COLUMNS` — לרשימה המעומדת (כולל embed של `contacts(op_status, removal_requested)` ל‑badges).
+- `GUEST_LIST_COLUMNS` — לרשימה המעומדת (כולל embed של `contacts(op_status)` ל‑badges).
 - `GUEST_DETAIL_COLUMNS` — לטופס העריכה (מוסיף `meal_pref`/`note`).
 - `GROUP_COLUMNS` — לקבוצות.
 
@@ -83,7 +83,7 @@
 - **חיפוש**: `ilike` על `full_name`/`phone` דרך `buildSearchFilter`. מכיוון ש‑`.or()` של PostgREST מקבל מחרוזת פילטר גולמית, הפונקציה מסירה כל תו בעל משמעות תחבירית (`, ( ) * % " _` ו‑backslash) לפני העטיפה ב‑`*…*` — מניעת הזרקת תנאים. **חיפוש טלפון אינו תלוי פורמט ואינו תלוי מדינה** (9.9.2026): `guests.phone` שומר את מה שהבעלים הקליד, ולצדו `guests.phone_digits` — עמודה מחושבת (stored generated) שמכילה ספרות בלבד ומתוחזקת על ידי פוסטגרס בכל כתיבה. `phoneSearchVariants` (`src/lib/phone.ts`) גוזרת מהמונח את צורת ה‑E.164 בספרות ואת הצורה המקומית של אותה מדינה (`formatNational`), ושתיהן נבדקות מול `phone_digits`. כך אורח ששמור כ‑`+33 7 56 98 23 70` נמצא גם בחיפוש `+33756982370` וגם `0756982370`. הווריאנטים הם ספרות בלבד ולעולם לא צורת `+`, כדי שהתו לא ייכנס למחרוזת הפילטר.
 - **מיון**: מפתח המיון עובר דרך whitelist קשיח (`SORT_COLUMNS`, שורות 97–113: `name`/`status`/`contact`/`created`) — ערך שאינו ברשימה נופל לברירת המחדל (`created`), כי שם העמודה משורשר למחרוזת השאילתה (בשונה מ‑`.eq()` הפרמטרי); הכיוון מוגבל ל‑`asc`/`desc`. נוסף tiebreaker יציב על `id` כדי שעמודים לא "יערבבו" שורות שוות.
 - **סינון**: ערכי `status`/`contactStatus` מאומתים מול ה‑enum המחולל (`Constants.public.Enums`) — ערך לא חוקי **מתעלמים ממנו** ואינו מגיע לשאילתה; `groupId` מסונן ב‑`.eq()` פרמטרי.
-- **badges של הודעות (B6)**: מצב ה‑outreach (`op_status`, `removal_requested`) מגיע כ‑embed של ה‑contact המקושר, ו‑`delivery_status` האחרון פר‑contact נשלף בשאילתת batch אחת לכל העמוד (שורות 223–254) — ללא N+1. כשל בשליפת ה‑badges מדרדר לרשימה ללא badges במקום להפיל אותה.
+- **badges של הודעות (B6)**: מצב ה‑outreach (`op_status`) מגיע כ‑embed של ה‑contact המקושר, ו‑`delivery_status` האחרון פר‑contact נשלף בשאילתת batch אחת לכל העמוד (שורות 223–254) — ללא N+1. כשל בשליפת ה‑badges מדרדר לרשימה ללא badges במקום להפיל אותה.
 
 העמוד `src/app/(customer)/app/events/[id]/guests/page.tsx` קורא את הפרמטרים מ‑`searchParams` ומעביר אותם כמות שהם — האימות כולו בשכבת הנתונים:
 

@@ -69,10 +69,9 @@ export async function listInteractionsForContact(
 export type GuestOutreachSummary = {
   contactId: string;
   opStatus: OpStatus;
-  removalRequested: boolean;
 };
 
-// The guest's outreach state (op_status + opt-out) via its linked contact, plus
+// The guest's outreach state (op_status) via its linked contact, plus
 // the contact_id that drives listInteractionsForContact. Returns null when the
 // guest has no contact (invalid/missing phone → not reachable, not billable).
 // Two org-aware reads on the cookie client (RLS-gated).
@@ -95,7 +94,7 @@ export async function getGuestOutreachSummary(
 
   const { data: contact, error: cErr } = await supabase
     .from('contacts')
-    .select('op_status, removal_requested')
+    .select('op_status')
     .eq('event_id', eventId)
     .eq('id', contactId)
     .maybeSingle();
@@ -105,6 +104,5 @@ export async function getGuestOutreachSummary(
   return {
     contactId,
     opStatus: contact.op_status,
-    removalRequested: contact.removal_requested,
   };
 }

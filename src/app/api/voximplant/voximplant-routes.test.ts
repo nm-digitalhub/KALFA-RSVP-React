@@ -18,17 +18,14 @@ vi.mock('@/lib/data/webhooks', () => ({ insertWebhookEvents: vi.fn(async () => {
 vi.mock('@/lib/data/console-monitor', () => ({ advanceLegStatus: vi.fn(async () => {}) }));
 vi.mock('@/lib/data/call-result-processing', () => ({
   processCallRsvp: vi.fn(async () => ({ status: 'saved' })),
-  processCallDnc: vi.fn(async () => ({ ok: true })),
   processOwnerNote: vi.fn(async () => ({ ok: true })),
 }));
 
 import { GET } from './ctx/[token]/route';
 import { POST } from './cb/[token]/route';
 import { POST as saveRsvpPOST } from './agent-tool/rsvp/[token]/route';
-import { POST as dncPOST } from './agent-tool/dnc/[token]/route';
 import { POST as notePOST } from './agent-tool/note/[token]/route';
 import {
-  processCallDnc,
   processCallRsvp,
   processOwnerNote,
 } from '@/lib/data/call-result-processing';
@@ -79,8 +76,6 @@ function toolReq(path: string, token: string, body: string, ip = '3.3.3.3') {
     body,
   });
 }
-const dncCall = (token: string, body: string, ip?: string) =>
-  dncPOST(toolReq('dnc', token, body, ip), { params: Promise.resolve({ token }) });
 const noteCall = (token: string, body: string, ip?: string) =>
   notePOST(toolReq('note', token, body, ip), { params: Promise.resolve({ token }) });
 
@@ -439,56 +434,6 @@ describe('agent-tool save_rsvp POST', () => {
   });
   it('neither status nor attending → 400', async () => {
     expect((await rsvpCall(TOK, JSON.stringify({ adults: 1, children: 0 }))).status).toBe(400);
-  });
-});
-
-describe('agent-tool mark_dnc POST', () => {
-  it('valid → 200 {ok:true}, persists call_dnc idempotently + syncs', async () => {
-    const res = await dncCall(TOK, JSON.stringify({ tool_call_id: 'tc9' }));
-    expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(await res.json()).toEqual({ ok: true, status: 'removed' });
-    expect(insertWebhookEvents).toHaveBeenCalledWith([
-      expect.objectContaining({
-        provider: 'voximplant',
-        event_kind: 'call_dnc',
-        dedupe_key: `vox-dnc:${AID}`,
-        message_id: AID,
-      }),
-    ]);
-    expect(processCallDnc).toHaveBeenCalledWith(AID);
-  });
-  it('empty body → still valid (no params in the contract)', async () => {
-    expect((await dncCall(TOK, '')).status).toBe(200);
-  });
-  it('unknown token → 404 (no persist)', async () => {
-    vi.mocked(getCallAttemptByAccessToken).mockResolvedValue(null);
-    const res = await dncCall(TOK, '{}');
-    expect(res.status).toBe(404);
-    expect(res.headers.get('cache-control')).toBe('no-store');
-    expect(insertWebhookEvents).not.toHaveBeenCalled();
-  });
-  it('extra field → 400 (strictObject)', async () => {
-    expect((await dncCall(TOK, JSON.stringify({ phone: '0501234567' }))).status).toBe(400);
-  });
-  it('terminal failure (no attempt / no number) → 200 {ok:false, status:"failed"} — never "queued"', async () => {
-    vi.mocked(processCallDnc).mockResolvedValueOnce({ ok: false });
-    const res = await dncCall(TOK, '{}');
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: false, status: 'failed' });
-    expect(insertWebhookEvents).toHaveBeenCalled();
-  });
-  it('transient failure (sync THROWS) → 200 {ok:false, status:"queued"}; the durable row persisted for the drain retry', async () => {
-    vi.mocked(processCallDnc).mockRejectedValueOnce(new Error('call_dnc_list upsert failed (57014)'));
-    const res = await dncCall(TOK, '{}');
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: false, status: 'queued' });
-    expect(insertWebhookEvents).toHaveBeenCalled();
-  });
-  it('persist FAILS → 500 and the sync apply is never attempted', async () => {
-    vi.mocked(insertWebhookEvents).mockRejectedValueOnce(new Error('db down'));
-    expect((await dncCall(TOK, '{}')).status).toBe(500);
-    expect(processCallDnc).not.toHaveBeenCalled();
   });
 });
 

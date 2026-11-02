@@ -181,7 +181,7 @@ describe('getEventStats orchestration', () => {
     getEventMock.mockResolvedValue({ id: 'evt-1', name: 'E', event_type: 'wedding', event_date: null, rsvp_deadline: null, status: 'active' });
     getGuestTotalsMock.mockResolvedValue(mkTotals({ rows: 4 }));
     getCampaignForEventMock.mockResolvedValue({ id: 'c-1', status: 'active', max_contacts: 100 });
-    getCampaignDeliveryBreakdownMock.mockResolvedValue({ delivery: { sent: 1, delivered: 1, read: 1, failed: 0 }, outcome: { reached: 1, wrongNumber: 0, optedOut: 0 } });
+    getCampaignDeliveryBreakdownMock.mockResolvedValue({ delivery: { sent: 1, delivered: 1, read: 1, failed: 0 }, outcome: { reached: 1, wrongNumber: 0 } });
     const r = await getEventStats('evt-1');
     expect(r.campaign.state).toBe('visible');
     // the ledger is money: not read, not shown
@@ -203,7 +203,7 @@ describe('getEventStats orchestration', () => {
       package_price: '1.00',
       contact_quota: 1,
     });
-    getCampaignDeliveryBreakdownMock.mockResolvedValue({ delivery: { sent: 1, delivered: 1, read: 1, failed: 0 }, outcome: { reached: 1, wrongNumber: 0, optedOut: 0 } });
+    getCampaignDeliveryBreakdownMock.mockResolvedValue({ delivery: { sent: 1, delivered: 1, read: 1, failed: 0 }, outcome: { reached: 1, wrongNumber: 0 } });
     vi.mocked(countAuthorizedContacts).mockResolvedValue(1);
     vi.mocked(loadOperations).mockResolvedValue([
       { kind: 'package_purchase', effect: 'collect', outcome: 'succeeded', amount: 1, credit: 0, occurredAt: '2026-10-09T10:00:00Z', recordedAt: '2026-10-09T10:00:00Z' },
@@ -266,7 +266,7 @@ describe('getEventStats orchestration', () => {
     } as never);
     getCampaignDeliveryBreakdownMock.mockResolvedValue({
       delivery: { sent: 2, delivered: 2, read: 1, failed: 0 },
-      outcome: { reached: 2, wrongNumber: 0, optedOut: 0 },
+      outcome: { reached: 2, wrongNumber: 0 },
     });
     const r = await getEventStats('evt-1');
     const serialized = JSON.stringify(r);

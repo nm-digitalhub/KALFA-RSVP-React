@@ -26,8 +26,6 @@ import {
   OP_STATUS_VARIANTS,
   deliveryStatusLabel,
   deliveryStatusVariant,
-  REMOVAL_REQUESTED_LABEL,
-  REMOVAL_REQUESTED_VARIANT,
 } from './labels';
 
 export const metadata: Metadata = { title: 'רשימת מוזמנים' };
@@ -43,13 +41,12 @@ const GUEST_STATUS_VARIANTS: Record<GuestStatus, BadgeVariant> = {
   maybe: 'warning',
 };
 
-// op_status values that are pre-outreach DEFAULTS, not webhook OUTCOMES — they'd
-// add noise on every linked guest, so the "מצב הודעות" column suppresses them
-// (folds into "—"). All other states (sent/delivered/read/responded, the call
-// states, wrong_number, reached_billed, not_reached) still render.
+// The op_status value that is the pre-outreach DEFAULT, not an outcome — it would
+// add noise on every linked guest, so the "מצב הודעות" column suppresses it
+// (folds into "—"). Every other state (sent, the call states, wrong_number,
+// reached_billed) still renders.
 const HIDDEN_OP_STATUS: ReadonlySet<ContactOpStatus> = new Set<ContactOpStatus>([
   'pending_contact',
-  'not_eligible',
 ]);
 import { FillExpectedCount } from './fill-expected-count';
 import { GuestListControls } from './guest-list-controls';
@@ -58,12 +55,12 @@ import { GuestRowActions } from './guest-row-actions';
 import { ContactStatusCell } from './contact-status-cell';
 
 // Webhook-driven state (Meta WhatsApp): meaningful op_status OUTCOMES (see
-// HIDDEN_OP_STATUS), latest delivery, and opt-out. Returns null when there is
-// nothing to show, so the table cell can fold to "—" and the mobile card can
-// omit the row entirely. Single source of truth for both layouts.
+// HIDDEN_OP_STATUS) and latest delivery. Returns null when there is nothing to
+// show, so the table cell can fold to "—" and the mobile card can omit the row
+// entirely. Single source of truth for both layouts.
 function webhookStateBadges(g: GuestListItem): ReactNode {
   const showOp = g.op_status && !HIDDEN_OP_STATUS.has(g.op_status);
-  if (!showOp && !g.delivery_status && !g.removal_requested) {
+  if (!showOp && !g.delivery_status) {
     return null;
   }
   return (
@@ -76,11 +73,6 @@ function webhookStateBadges(g: GuestListItem): ReactNode {
       {g.delivery_status ? (
         <Badge variant={deliveryStatusVariant(g.delivery_status)}>
           {deliveryStatusLabel(g.delivery_status)}
-        </Badge>
-      ) : null}
-      {g.removal_requested ? (
-        <Badge variant={REMOVAL_REQUESTED_VARIANT}>
-          {REMOVAL_REQUESTED_LABEL}
         </Badge>
       ) : null}
     </div>

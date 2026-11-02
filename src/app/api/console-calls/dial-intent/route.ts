@@ -30,7 +30,7 @@ import { dialIntentBodySchema } from '@/lib/validation/console-calls';
 // Gate order:
 //   1. requireConsoleAgent + manage_voice
 //   2. body shape (union only)
-//   3-6. resolveDialTarget: fresh DB load → DNC → opt-out → quiet-hours/Shabbat
+//   3-6. resolveDialTarget: fresh DB load → DNC → quiet-hours/Shabbat
 //   7. voximplant_live_calls + env kill-switch
 //   8. console_manual_dial_enabled flag
 //   9. concurrency (live console_calls < 2)
@@ -71,11 +71,11 @@ export async function POST(request: Request) {
   const parsed = dialIntentBodySchema.safeParse(parsedJson);
   if (!parsed.success) return json({ error: 'גוף הבקשה אינו תקין' }, 400);
 
-  // 3-6: fresh DB load + DNC + opt-out + quiet-hours/Shabbat, all fail-closed.
+  // 3-6: fresh DB load + DNC + quiet-hours/Shabbat, all fail-closed.
   //
   // confirm_outside_hours waives the daily business-hours window ONLY, and only
   // because the agent was shown it and said yes. Every other gate here is
-  // unreachable by it — DNC, opt-out, Shabbat/Yom-Tov and the caller's own stated
+  // unreachable by it — DNC, Shabbat/Yom-Tov and the caller's own stated
   // hours all return before the window is evaluated. An agent returning a missed
   // call at 20:15 is a judgement they may make; calling someone who asked never to
   // be called is not.

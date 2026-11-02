@@ -59,12 +59,12 @@ export type ContactOpStatus = Enums<'contact_op_status'>;
 // ---------------------------------------------------------------------------
 
 // Columns for the paginated guest list. `contact_id` links a guest to its
-// outreach contact; `contacts(op_status, removal_requested)` is an EMBEDDED
-// select via the `guests_contact_id_fkey` FK (forward, to-one → object|null)
-// that surfaces the webhook-driven outreach state + opt-out flag for the list
-// badges (B6). Neither rsvp_token nor extras appears here (asserted by a test).
+// outreach contact; `contacts(op_status)` is an EMBEDDED select via the
+// `guests_contact_id_fkey` FK (forward, to-one → object|null) that surfaces the
+// webhook-driven outreach state for the list badges (B6). Neither rsvp_token nor
+// extras appears here (asserted by a test).
 export const GUEST_LIST_COLUMNS =
-  'id, full_name, phone, status, contact_status, group_id, expected_count, confirmed_adults, confirmed_kids, confirmed_headcount, callback_requested, created_at, contact_id, contacts(op_status, removal_requested)';
+  'id, full_name, phone, status, contact_status, group_id, expected_count, confirmed_adults, confirmed_kids, confirmed_headcount, callback_requested, created_at, contact_id, contacts(op_status)';
 
 // Columns for a single guest (edit form). Adds note/meal_pref but still
 // excludes rsvp_token and extras.
@@ -94,7 +94,6 @@ type GuestListQueryRow = Pick<
   over_invited: boolean | null;
   contacts: {
     op_status: ContactOpStatus | null;
-    removal_requested: boolean | null;
   } | null;
 };
 
@@ -118,12 +117,11 @@ export type GuestListItem = Pick<
   // invited size, gave a REAL answer, and that answer exceeds the invited size.
   over_invited: boolean;
   // Webhook-driven outreach state, surfaced as list badges (B6).
-  // `op_status` / `removal_requested` come from the linked contact (embedded via
-  // the guests.contact_id FK) and are null when the guest has no contact yet.
+  // `op_status` comes from the linked contact (embedded via the guests.contact_id
+  // FK) and is null when the guest has no contact yet.
   // `delivery_status` is the LATEST per-contact OUTBOUND delivery state from
   // contact_interactions (free text; null when there is no delivery callback).
   op_status: ContactOpStatus | null;
-  removal_requested: boolean | null;
   delivery_status: string | null;
 };
 
@@ -368,10 +366,10 @@ export async function listGuests(
     }
   }
 
-  // Flatten the embedded contact (op_status/removal_requested) and attach the
-  // per-contact delivery status. Keeps the nested embed object out of the DTO.
+  // Flatten the embedded contact (op_status) and attach the per-contact delivery
+  // status. Keeps the nested embed object out of the DTO.
   const items: GuestListItem[] = rows.map((r) => {
-    const contact = r.contacts; // { op_status, removal_requested } | null (FK embed)
+    const contact = r.contacts; // { op_status } | null (FK embed)
     const contactId = r.contact_id;
     return {
       id: r.id,
@@ -389,7 +387,6 @@ export async function listGuests(
       contact_id: contactId,
       over_invited: r.over_invited === true,
       op_status: contact?.op_status ?? null,
-      removal_requested: contact?.removal_requested ?? null,
       delivery_status: contactId
         ? deliveryByContact.get(contactId) ?? null
         : null,
@@ -491,7 +488,6 @@ export async function createGuest(
     ...rest,
     over_invited: over_invited === true,
     op_status: contacts?.op_status ?? null,
-    removal_requested: contacts?.removal_requested ?? null,
     delivery_status: null,
   };
 }

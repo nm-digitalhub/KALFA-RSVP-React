@@ -1,7 +1,7 @@
 // The step SCHEDULER + the step EXECUTION orchestrator (§12 FINAL M1). Kept free
 // of `server-only` / DB / pg imports so it stays unit-testable: `enqueueStepJob`
 // takes `boss`, and `runStepExecution` takes ALL side effects as injected deps
-// (reserve / send / resolve / terminal re-check). The worker wires the real
+// (reserve / send / resolve). The worker wires the real
 // implementations (outreach-engine RPC wrappers and the WhatsApp send).
 //
 // Two deterministic identities (§F.1 — do NOT unify):
@@ -66,7 +66,6 @@ export async function enqueueStepJob(boss: PgBoss, args: EnqueueStepArgs): Promi
 export type StepSendResult =
   | DeliveryOutcome // accepted | definitely_not_sent | unknown
   | { kind: 'skip'; reason: string } // config/template integrity → advance-skip
-  | { kind: 'terminal'; reason: string } // opt-out / no consent → terminalize
   | { kind: 'advance'; reason: string }; // dispatched (call request) → advance
 
 export interface StepExecutionDeps {
@@ -92,9 +91,6 @@ export interface StepExecutionDeps {
     auditId: string;
   }) => Promise<'resolved' | 'stale' | 'error'>;
   auditId: (reason: string) => string;
-  // Read-only terminal re-check (removal / channel-consent) for crash recovery —
-  // NO send. Returns the terminal reason, or null when the step is not terminal.
-  recheckTerminal: () => Promise<{ reason: string } | null>;
 }
 
 export interface StepExecutionArgs {
@@ -136,16 +132,10 @@ export async function runStepExecution(
     });
 
   // RECOVERY: a prior run of THIS job reserved + (maybe) sent, then its resolve
-  // failed / it crashed. NEVER resend. Re-check the terminal conditions FIRST
-  // (read-only, no send): a failed terminalize (opt-out / no-consent) must
-  // RE-TERMINALIZE, not convert into a blind advance. Otherwise advance once
-  // (at-most-once) — a prior real send may already have happened. Both branches
-  // are non-sending, so at-most-once holds regardless.
+  // failed / it crashed. NEVER resend: advance once (at-most-once) — a prior real
+  // send may already have happened.
   if (args.alreadyReserved) {
-    const term = await deps.recheckTerminal();
-    const res = term
-      ? await resolve({ advance: false, terminalStatus: 'stopped', reason: term.reason, jobId })
-      : await resolve({ advance: true, terminalStatus: null, reason: 'dispatch_outcome_unknown', jobId });
+    const res = await resolve({ advance: true, terminalStatus: null, reason: 'dispatch_outcome_unknown', jobId });
     if (res === 'error') throw new Error('recovery_resolve_failed');
     return;
   }
@@ -169,11 +159,6 @@ export async function runStepExecution(
       // Template/config integrity — advance-skip (still holding the reservation).
       const res = await resolve({ advance: true, terminalStatus: null, reason: outcome.reason, jobId });
       if (res === 'error') throw new Error('resolve_after_skip_failed');
-      return;
-    }
-    case 'terminal': {
-      const res = await resolve({ advance: false, terminalStatus: 'stopped', reason: outcome.reason, jobId });
-      if (res === 'error') throw new Error('resolve_after_terminal_failed');
       return;
     }
     case 'advance': {

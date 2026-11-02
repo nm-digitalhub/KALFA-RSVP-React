@@ -71,12 +71,11 @@ async function main(): Promise<void> {
 
   const { data: contact } = await admin
     .from('contacts')
-    .select('id, normalized_phone, removal_requested')
+    .select('id, normalized_phone')
     .eq('id', contactId)
     .eq('event_id', ctx.event_id)
     .maybeSingle();
   if (!contact) throw new Error('contact not found on this campaign event');
-  if (contact.removal_requested) throw new Error('contact asked to be removed — refusing');
   // Business numbers are not guest PII, but this destination IS: print the
   // country code + last 3 only, enough to confirm the right person.
   const p = contact.normalized_phone;

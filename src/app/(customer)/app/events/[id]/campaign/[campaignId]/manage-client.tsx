@@ -6,7 +6,6 @@ import { useFormStatus } from 'react-dom';
 
 import {
   OP_STATUS_LABELS,
-  REMOVAL_REQUESTED_LABEL,
   deliveryStatusLabel,
 } from '@/app/(customer)/app/events/[id]/guests/labels';
 import { sendBusinessEvent } from '@/components/consent/send-ga-event';
@@ -85,12 +84,10 @@ type Delivery = {
   outcome: {
     reached: number;
     wrongNumber: number;
-    optedOut: number;
   };
   call: {
     dialed: number;
     noAnswer: number;
-    voicemail: number;
     humanInteraction: number;
   };
 } | null;
@@ -313,7 +310,7 @@ function CampaignStatusCard({
 function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
   const { totalContacts, delivery: messageDelivery, outcome, call } = delivery;
   const hasCalls =
-    call.dialed + call.noAnswer + call.voicemail + call.humanInteraction > 0;
+    call.dialed + call.noAnswer + call.humanInteraction > 0;
 
   return (
     <section aria-labelledby="delivery-title" className="rounded-2xl border border-border bg-card p-5 sm:p-6">
@@ -375,10 +372,6 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
               value={outcome.wrongNumber.toLocaleString('he-IL')}
             />
             <DetailRow
-              label={REMOVAL_REQUESTED_LABEL}
-              value={outcome.optedOut.toLocaleString('he-IL')}
-            />
-            <DetailRow
               label="סך אנשי קשר"
               value={totalContacts.toLocaleString('he-IL')}
             />
@@ -397,10 +390,6 @@ function DeliveryBreakdown({ delivery }: { delivery: NonNullable<Delivery> }) {
             <DetailRow
               label={OP_STATUS_LABELS.no_answer}
               value={call.noAnswer.toLocaleString('he-IL')}
-            />
-            <DetailRow
-              label={OP_STATUS_LABELS.voicemail}
-              value={call.voicemail.toLocaleString('he-IL')}
             />
             <DetailRow
               label={OP_STATUS_LABELS.human_interaction_call}

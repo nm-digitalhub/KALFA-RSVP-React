@@ -16,7 +16,7 @@ describe.skipIf(!RUN)('fill_authorized_set — rollback-isolated', () => {
 
   // guests: [{ contact, seq }] — one row per guest; a contact may have several guests.
   async function run(
-    cfg: { quota: number | null; status?: string; removed?: string[]; preMembers?: string[] },
+    cfg: { quota: number | null; status?: string; preMembers?: string[] },
     guests: Array<{ contact: string; seq: number }>,
     fn: (ctx: { event: string; campaign: string; call: () => Promise<Record<string, unknown>>; members: () => Promise<string[]> }) => Promise<void>,
   ) {
@@ -35,8 +35,8 @@ describe.skipIf(!RUN)('fill_authorized_set — rollback-isolated', () => {
       let phone = 0;
       for (const id of new Set(guests.map((g) => g.contact))) {
         await q(
-          `insert into public.contacts (id, event_id, normalized_phone, removal_requested) values ($1,$2,$3,$4)`,
-          [id, event, `+97250000${String(++phone).padStart(4, '0')}`, (cfg.removed ?? []).includes(id)],
+          `insert into public.contacts (id, event_id, normalized_phone) values ($1,$2,$3)`,
+          [id, event, `+97250000${String(++phone).padStart(4, '0')}`],
         );
       }
       for (const g of guests) {
@@ -92,13 +92,6 @@ describe.skipIf(!RUN)('fill_authorized_set — rollback-isolated', () => {
     await run({ quota: 2 }, [{ contact: A, seq: 1 }, { contact: B, seq: 2 }, { contact: C, seq: 3 }], async (x) => {
       await x.call();
       expect(await x.call()).toMatchObject({ admitted: 0, size: 2, waiting: 1 });
-    });
-  });
-
-  it('skips a contact that asked to be removed', async () => {
-    await run({ quota: 2, removed: [A] }, [{ contact: A, seq: 1 }, { contact: B, seq: 2 }, { contact: C, seq: 3 }], async (x) => {
-      await x.call();
-      expect((await x.members()).sort()).toEqual([B, C].sort());
     });
   });
 

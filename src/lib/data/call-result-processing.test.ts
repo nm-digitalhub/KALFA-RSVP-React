@@ -7,16 +7,14 @@ vi.mock('server-only', () => ({}));
 
 vi.mock('@/lib/data/call-attempts', () => ({
   getCallAttemptById: vi.fn(),
-  getContactNormalizedPhone: vi.fn(),
   getGuestRsvpToken: vi.fn(),
   recordCallOutcome: vi.fn(),
   recordRsvpFromCall: vi.fn(),
   recordRsvpCallRejected: vi.fn(),
   setCallAttemptRsvpOutcome: vi.fn(),
 }));
-// createAdminClient is used by the DNC upsert + owner-note insert. A minimal
-// chainable stub: from(table).upsert/insert resolve {error:null} by default.
-const adminUpsert = vi.fn(async (..._args: unknown[]) => ({ error: null as { message: string } | null }));
+// createAdminClient is used by the owner-note insert. A minimal
+// chainable stub: from(table).insert resolves {error:null} by default.
 const adminInsert = vi.fn(async (..._args: unknown[]) => ({ error: null as { message: string } | null }));
 // The owner-note idempotency lookup: from(t).select().eq()…limit() → {data,error}.
 // Default = no matching row yet.
@@ -28,7 +26,6 @@ const adminEqs: unknown[][] = [];
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => ({
-      upsert: (...args: unknown[]) => adminUpsert(table, ...args),
       insert: (...args: unknown[]) => adminInsert(table, ...args),
       select: () => {
         const chain = {
@@ -51,8 +48,6 @@ vi.mock('@/lib/data/outreach-engine', () => ({ writeReach: vi.fn() }));
 vi.mock('@/lib/data/rsvp', () => ({ submitRsvp: vi.fn() }));
 
 import {
-  processCallDnc,
-  processCallDncRow,
   processCallResult,
   processCallRsvp,
   processCallRsvpRow,
@@ -63,7 +58,6 @@ import { ownerNoteHash } from '@/lib/voximplant/agent-tool-hash';
 import {
   getCallAttemptById,
   setCallAttemptRsvpOutcome,
-  getContactNormalizedPhone,
   getGuestRsvpToken,
   recordCallOutcome,
   recordRsvpFromCall,
@@ -94,7 +88,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   adminEqs.length = 0;
   vi.mocked(getCallAttemptById).mockResolvedValue({ ...ATTEMPT } as never);
-  vi.mocked(getContactNormalizedPhone).mockResolvedValue('+972501234567');
   vi.mocked(recordCallOutcome).mockResolvedValue({ applied: true });
   vi.mocked(insertInteraction).mockResolvedValue(true);
   vi.mocked(getGuestRsvpToken).mockResolvedValue('tok');
@@ -394,53 +387,17 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
   });
 });
 
-describe('processCallDnc (mark_dnc tool)', () => {
-  it('resolves attempt → contact phone and upserts call_dnc_list with the canonical key', async () => {
-    const r = await processCallDnc(AID);
-    expect(getContactNormalizedPhone).toHaveBeenCalledWith('ct1');
-    expect(adminUpsert).toHaveBeenCalledWith(
-      'call_dnc_list',
-      { normalized_phone: '+972501234567', reason: 'בקשת אורח בשיחה קולית' },
-      { onConflict: 'normalized_phone' },
-    );
-    expect(r).toEqual({ ok: true });
-  });
-  it('unknown attempt → ok:false, nothing written', async () => {
-    vi.mocked(getCallAttemptById).mockResolvedValue(null);
-    expect(await processCallDnc(AID)).toEqual({ ok: false });
-    expect(adminUpsert).not.toHaveBeenCalled();
-  });
-  it('contact without a normalizable phone → ok:false', async () => {
-    vi.mocked(getContactNormalizedPhone).mockResolvedValue(null);
-    expect(await processCallDnc(AID)).toEqual({ ok: false });
-    expect(adminUpsert).not.toHaveBeenCalled();
-  });
-  it('DB error → THROWS, so the drain retries (an opt-out is never marked processed unwritten)', async () => {
-    adminUpsert.mockResolvedValueOnce({ error: { message: 'row +972501234567', code: '57014' } } as never);
-    const err = await processCallDnc(AID).catch((e: unknown) => e as Error);
-    expect(err).toBeInstanceOf(Error);
-    // The provider message can echo the row — only the code may surface.
-    expect((err as Error).message).toBe('call_dnc_list upsert failed (57014)');
-    expect((err as Error).message).not.toContain('972');
-  });
-});
-
-describe('the drain contract for processCallDncRow / processOwnerNoteRow', () => {
-  const dncRow = () => row({}, AID);
+describe('the drain contract for processOwnerNoteRow', () => {
   const noteRow = () => row({ kind: 'message', text: 'מזל טוב' }, AID);
 
   it('transient DB failure propagates → the drain marks the row failed and retries it', async () => {
-    adminUpsert.mockResolvedValueOnce({ error: { message: 'x', code: '08006' } } as never);
-    await expect(processCallDncRow(dncRow())).rejects.toThrow(/call_dnc_list upsert failed/);
     adminInsert.mockResolvedValueOnce({ error: { message: 'x', code: '08006' } } as never);
     await expect(processOwnerNoteRow(noteRow())).rejects.toThrow(/owner-note insert failed/);
   });
 
   it('a TERMINAL ok:false (no attempt) returns normally → the row closes, no retry storm', async () => {
     vi.mocked(getCallAttemptById).mockResolvedValue(null);
-    await expect(processCallDncRow(dncRow())).resolves.toBeUndefined();
     await expect(processOwnerNoteRow(noteRow())).resolves.toBeUndefined();
-    expect(adminUpsert).not.toHaveBeenCalled();
     expect(adminInsert).not.toHaveBeenCalled();
   });
 });

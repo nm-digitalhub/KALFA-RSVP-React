@@ -66,7 +66,6 @@ export type EventStatsResult = {
       failed: number;
       reached: number;
       wrongNumber: number;
-      optedOut: number;
       /** Any evidence of outbound contact, message OR call. */
       outreachStarted: boolean;
     } | null;
@@ -240,7 +239,6 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
             failed: d.delivery.failed,
             reached: d.outcome.reached,
             wrongNumber: d.outcome.wrongNumber,
-            optedOut: d.outcome.optedOut,
             // Computed HERE, from the full breakdown, because the call buckets
             // are not carried on the flattened shape above — an AI-call
             // campaign that has dialled but sent no WhatsApp has started
@@ -250,11 +248,7 @@ export async function getEventStats(eventId: string): Promise<EventStatsResult> 
               d.delivery.failed > 0 ||
               d.outcome.reached > 0 ||
               d.outcome.wrongNumber > 0 ||
-              d.call.dialed +
-                d.call.noAnswer +
-                d.call.voicemail +
-                d.call.humanInteraction >
-                0,
+              d.call.dialed + d.call.noAnswer + d.call.humanInteraction > 0,
           };
           campaign.reachedCount = d.outcome.reached; // operational reached from delivery
         }

@@ -21,7 +21,7 @@ export type ReachedArgs = {
 };
 
 // Returns the RPC outcome: 'billed' | 'already_billed' |
-// 'not_active' | 'closed_window' | 'before_window' | 'removal_requested' |
+// 'not_active' | 'closed_window' | 'before_window' |
 // 'not_authorized' | 'no_campaign' | 'event_passed' | 'event_mismatch' |
 // 'event_not_active' | 'no_exposure'. On 'billed' the contact is moved to
 // reached_billed; every other outcome means NOT billed (the caller only acts on

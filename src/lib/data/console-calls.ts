@@ -425,7 +425,7 @@ export async function consoleDtmfHandoffEnabled(): Promise<boolean> {
 // ─────────────────────────────────────────────────────────────────────────
 // resolveDialTarget — the consent matrix (decide-consent GO/NO-GO table),
 // implemented as the admitted shapes (see DialTargetInput). Covers gate steps "fresh DB
-// load → DNC → opt-out → quiet hours" (decide-consent's route-implementation
+// load → DNC → quiet hours" (decide-consent's route-implementation
 // note, steps 3-6); voximplant_live_calls/env, the manual-dial flag, and
 // concurrency are generic to any target and stay in the route.
 // ─────────────────────────────────────────────────────────────────────────
@@ -477,8 +477,6 @@ export type DialTargetInput =
 export interface DialGatePolicy {
   /** An explicit "never call me". Applies to every scenario. */
   dnc: boolean;
-  /** contacts.removal_requested — a per-EVENT messaging preference. */
-  optOut: boolean;
   shabbat: boolean;
   /** 'apply' | 'overridable' (agent confirms) | 'skip'. */
   dailyWindow: 'apply' | 'overridable' | 'skip';
@@ -495,12 +493,12 @@ export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> =
   // itself; the timing rules still protect them.
   //   nationalRegistry  exempt_if_requested: the request itself is the Sixth Schedule item 1 exemption when the person
   //                     made it (callback_requests.origin); a request a workflow created is checked.
-  callback: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'overridable', nationalRegistry: 'exempt_if_requested' },
+  callback: { dnc: true, shabbat: true, dailyWindow: 'overridable', nationalRegistry: 'exempt_if_requested' },
 
   // WE initiate, to a guest who asked for nothing. Every gate applies — this is
   // the scenario all of them were written for.
   //   nationalRegistry  not_applicable: a call to a guest about their event is not marketing (owner ruling 11.10.2026).
-  guest_service: { dnc: true, optOut: true, shabbat: true, dailyWindow: 'apply', nationalRegistry: 'not_applicable' },
+  guest_service: { dnc: true, shabbat: true, dailyWindow: 'apply', nationalRegistry: 'not_applicable' },
 
   // They rang us and we did not answer. Returning it is a RESPONSE, and the
   // owner ruled on this directly: "לקוח שחייג אליי ואני חוזר אליו לא מהווה שום
@@ -508,22 +506,19 @@ export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> =
   //
   //   dnc      KEPT. "Never call me" is a standing instruction, it costs one
   //            lookup, and a number on that list ringing us is vanishingly rare.
-  //   optOut   DROPPED. removal_requested means "stop messaging me about that
-  //            event" — it is event-scoped and says nothing about whether we may
-  //            answer a call this person just placed to the business.
   //   shabbat  DROPPED. The bar exists so we do not solicit at a protected time.
   //            Ringing back somebody who dialled us is not soliciting.
   //   window   DROPPED. Same reasoning; and blocking it was the concrete failure
   //            the owner hit — a missed call at 20:15 that could not be returned.
   //   nationalRegistry  not_applicable: the person initiated the contact (owner ruling 11.10.2026).
-  returned_call: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip', nationalRegistry: 'not_applicable' },
+  returned_call: { dnc: true, shabbat: false, dailyWindow: 'skip', nationalRegistry: 'not_applicable' },
 
   // A HUMAN dialling a number they typed, on the business's own phone.
   //
   //   dnc      KEPT, and it is the only one. "Never call me" is a standing
   //            instruction from the person on the other end; it does not become
   //            void because a human rather than a robot is placing the call.
-  //   the rest DROPPED. Shabbat, business hours and the per-event opt-out are
+  //   the rest DROPPED. Shabbat and business hours are
   //            rules for AUTOMATED outreach — a campaign that must not ring
   //            strangers at protected times. An owner deciding to call someone
   //            right now has already made that judgement, and a console that
@@ -532,7 +527,7 @@ export const DIAL_GATE_POLICY: Record<DialTargetInput['kind'], DialGatePolicy> =
   // Every manual dial is audited (see recordConsoleDialAudit), which is the accountability
   // that replaces a gate here: who called which number, and when.
   //   nationalRegistry  required: a number typed by hand may be anyone's, so a manual dial is checked as a sales call.
-  manual: { dnc: true, optOut: false, shabbat: false, dailyWindow: 'skip', nationalRegistry: 'required' },
+  manual: { dnc: true, shabbat: false, dailyWindow: 'skip', nationalRegistry: 'required' },
 };
 
 export type DialTargetFailureReason =
@@ -551,12 +546,11 @@ export type DialTargetFailureReason =
   | 'registry_listed'
   | 'registry_unchecked'
   | 'registry_pending'
-  | 'opted_out'
   | 'quiet_hours'
   // The DAILY window only (default 08:00–19:00 Sun–Thu, 08:00–13:00 Fri; admin-editable), and separated from
   // 'quiet_hours' on purpose: this one an agent may override with an explicit
   // confirmation, and the others may not. Shabbat/Yom-Tov, a caller's OWN stated
-  // hours, DNC and opt-out all stay 'quiet_hours'/'dnc'/'opted_out' and stay
+  // hours and DNC all stay 'quiet_hours'/'dnc' and stay
   // absolute — an override exists for "it is 20:15 and this person is waiting for a
   // call back", not for "this person asked never to be called".
   | 'outside_hours'
@@ -638,7 +632,7 @@ const CALLBACK_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000;
 // `false`; this union states its own justification, and 'apply' — meaning
 // "the daily window applies" — is the default every caller that leaves it
 // unset gets for free. Considered and
-// REJECTED: splitting this function into a separate DNC/opt-out-only
+// REJECTED: splitting this function into a separate DNC-only
 // function plus moving the window check out to each call site — that trades
 // a low risk (this option flipping) for a higher one this project has
 // actually been bitten by (a future third caller silently forgetting the
@@ -654,7 +648,7 @@ export type HoursGate = 'apply' | 'skip_consumer_initiated';
 
 // Exported for the AI dispatchers (meeting-confirm-dispatch.ts,
 // sales-call-dispatch.ts — not console/human
-// dials): they need the exact same DNC/opt-out/Shabbat/hours gates the
+// dials): they need the exact same DNC/Shabbat/hours gates the
 // DIAL_GATE_POLICY rows already state (meeting-confirm-dispatch.ts and
 // sales-call-dispatch.ts use DIAL_GATE_POLICY.callback), and duplicating this
 // function's logic a second time is a far worse outcome than one more exported
@@ -687,26 +681,6 @@ export async function evaluateSharedConsentGates(
   // from call timing.
   if (policy.dnc && (await isDncListed(phone))) return { ok: false, reason: 'dnc' };
 
-  // Opt-out — ANY contacts row for this phone (across any event) with
-  // removal_requested=true blocks. contacts is event-scoped, so the same
-  // phone can legitimately appear under several events; the most protective
-  // reading (decide-consent: "אם קיימת שורה תואמת") is "any row objects".
-  //
-  // NOT applied when returning a call: that column is a per-event messaging
-  // preference, and it has nothing to say about whether we may ring back
-  // somebody who just dialled the business. See DIAL_GATE_POLICY.
-  if (policy.optOut) {
-    const { data: optedOut, error: optOutErr } = await admin
-      .from('contacts')
-      .select('id')
-      .eq('normalized_phone', phone)
-      .eq('removal_requested', true)
-      .limit(1)
-      .maybeSingle();
-    if (optOutErr) return { ok: false, reason: 'opted_out' }; // fail-closed
-    if (optedOut) return { ok: false, reason: 'opted_out' };
-  }
-
   // Shabbat/Yom-Tov — absolute for every scenario where WE initiate. Not applied
   // when returning a call, for the reason set out in DIAL_GATE_POLICY: the bar
   // exists so we do not solicit at a protected time, and answering somebody who
@@ -724,8 +698,8 @@ export async function evaluateSharedConsentGates(
   //
   // OVERRIDABLE, uniquely among the gates in this function, and only when a human
   // has said so for this specific dial (opts.allowOutsideHours). Everything above —
-  // DNC, opt-out, Shabbat — returns before this point and cannot be waived by
-  // anyone. The distinction is who the rule protects: those three protect the person
+  // DNC, Shabbat — returns before this point and cannot be waived by
+  // anyone. The distinction is who the rule protects: those two protect the person
   // being called, and this one encodes a default business hour that an agent
   // returning a missed call at 20:15 can reasonably judge for themselves.
   //
@@ -747,8 +721,8 @@ export async function evaluateSharedConsentGates(
 }
 
 // The national Do-Not-Call registry — LAST, because it is the only gate here that calls an outside service: a dial
-// already refused for DNC, opt-out, Shabbat or the hours never costs a registry request. It protects the person
-// called, so like DNC and opt-out it cannot be waived by allowOutsideHours.
+// already refused for DNC, Shabbat or the hours never costs a registry request. It protects the person
+// called, so like DNC it cannot be waived by allowOutsideHours.
 async function evaluateRegistryLast(
   admin: AdminClient,
   phone: string,
@@ -964,13 +938,12 @@ export async function resolveDialTarget(
   // pair, never from a browser-supplied phone.
   const { data: contact, error: contactErr } = await admin
     .from('contacts')
-    .select('id, event_id, normalized_phone, removal_requested')
+    .select('id, event_id, normalized_phone')
     .eq('id', input.contactId)
     .eq('event_id', input.eventId)
     .maybeSingle();
   if (contactErr) return { ok: false, reason: 'lookup_failed' };
   if (!contact) return { ok: false, reason: 'not_found' };
-  if (contact.removal_requested) return { ok: false, reason: 'opted_out' };
 
   const { data: guest, error: guestErr } = await admin
     .from('guests')
@@ -1012,7 +985,7 @@ export async function resolveDialTarget(
   };
 }
 
-// evaluateCallMeNowConsent — reuses the SAME DNC/opt-out/quiet-hours gate
+// evaluateCallMeNowConsent — reuses the SAME DNC/quiet-hours gate
 // resolveDialTarget's kinds already share (evaluateSharedConsentGates),
 // for another provenance: an OTP-verified site visitor's own phone number
 // (capability A, third design, 12.8). Deliberately NOT added as a
@@ -1028,7 +1001,7 @@ export async function resolveDialTarget(
 // two into one union would let a future edit to that shared code path
 // silently treat an ORDINARY unverified phone as trusted for the AGENT flow
 // too — kept apart on purpose. Still routes through the identical shared
-// gate function so DNC/opt-out/quiet-hours logic is never duplicated.
+// gate function so DNC/quiet-hours logic is never duplicated.
 //
 // RULING (israeli-compliance-advisor, 12.8): the DAILY window (08:00–19:00 /
 // Fri 08:00–13:00) is OFF for this function; Shabbat/Yom-Tov stays ON,
@@ -2620,7 +2593,7 @@ export async function recordWidgetOriginIpHash(callId: string, ipHash: string): 
 //    before) does not apply here.
 // 3. The consent layer extends cleanly with NO duplication —
 //    evaluateCallMeNowConsent (above) reuses evaluateSharedConsentGates
-//    (DNC -> contacts opt-out -> Shabbat/Yom-Tov -> daily window, the last of
+//    (DNC -> Shabbat/Yom-Tov -> daily window, the last of
 //    which it explicitly skips) on the OTP-verified phone; DialTargetResolution's
 //    eventId/contactId/guestId/callbackRequestId are already nullable. An
 //    OTP-verified visitor who typed their own number and pressed "call me"
@@ -2664,7 +2637,7 @@ export async function recordWidgetOriginIpHash(callId: string, ipHash: string): 
 // EXHAUSTED — the row becomes an ORDINARY callback, indistinguishable from
 // any other, dialled only when a human agent chooses to from the panel,
 // through EVERY existing gate (daily window, Shabbat, 30-day freshness,
-// max attempts, DNC, opt-out) via the unmodified
+// max attempts, DNC) via the unmodified
 // resolveDialTarget({kind:'callback', id}) path. An auto-dial-on-connect
 // would smuggle back exactly the "our moment, not theirs" problem the whole
 // ruling above exists to prevent.

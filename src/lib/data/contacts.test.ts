@@ -214,7 +214,7 @@ describe('pruneOrphanContact', () => {
 });
 
 describe('listSendableContacts', () => {
-  it('returns the non-removed contacts for the event — no consent record is required', async () => {
+  it('returns every contact of the event — no consent or opt-out filter', async () => {
     const { client, builder } = createMockSupabase<
       Array<{ id: string; normalized_phone: string }>
     >({
@@ -228,7 +228,7 @@ describe('listSendableContacts', () => {
     const r = await listSendableContacts('e1');
 
     expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
-    expect(builder.eq).toHaveBeenCalledWith('removal_requested', false);
+    expect(builder.eq).toHaveBeenCalledTimes(1);
     expect(builder.not).not.toHaveBeenCalled();
     expect(r).toEqual([{ id: 'c1', normalized_phone: '+972501234567' }]);
   });
@@ -254,9 +254,9 @@ describe('listSendableContacts', () => {
       'campaign_authorized_contacts.campaign_id',
       'camp1',
     );
-    // Still gated on event scope + not-removed.
+    // Still gated on event scope.
     expect(builder.eq).toHaveBeenCalledWith('event_id', 'e1');
-    expect(builder.eq).toHaveBeenCalledWith('removal_requested', false);
+    expect(builder.eq).toHaveBeenCalledTimes(2);
     expect(builder.not).not.toHaveBeenCalled();
     // The embedded join column is stripped from the returned shape.
     expect(r).toEqual([{ id: 'c1', normalized_phone: '+972501234567' }]);

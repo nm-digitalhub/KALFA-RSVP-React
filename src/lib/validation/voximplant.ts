@@ -143,14 +143,6 @@ export function voxSaveRsvpStatus(body: VoxSaveRsvp): 'attending' | 'declined' |
   return body.status ?? (body.attending ? 'attending' : 'declined');
 }
 
-// `mark_dnc` client tool (conversation-design §4.2, legally critical): the guest
-// asked not to be called again. No parameters — identity comes ONLY from the
-// URL-path access token; the server resolves attempt → contact → normalized phone.
-export const voxMarkDncSchema = z.strictObject({
-  tool_call_id: z.string().max(128).nullish(),
-});
-export type VoxMarkDnc = z.infer<typeof voxMarkDncSchema>;
-
 // `notify_owner` client tool (conversation-design §4.2): relay a guest question /
 // message / flag to the event owner. Free text is guest-supplied and capped.
 export const voxNotifyOwnerSchema = z.strictObject({
@@ -194,8 +186,8 @@ export const voxRequestRescheduleSchema = z.strictObject({
 });
 export type VoxRequestReschedule = z.infer<typeof voxRequestRescheduleSchema>;
 
-// `mark_opt_out`: no conversational parameters — same shape as voxMarkDncSchema
-// on purpose (§4: upserts into the SAME call_dnc_list, by normalized phone).
+// `mark_opt_out`: no conversational parameters (§4: upserts into call_dnc_list, by
+// normalized phone).
 export const voxMeetingOptOutSchema = z.strictObject({
   tool_call_id: z.string().max(128).nullish(),
 });

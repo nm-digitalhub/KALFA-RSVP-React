@@ -166,23 +166,6 @@ export async function setContactOpStatus(
   if (error) throw new Error('עדכון סטטוס איש הקשר נכשל', { cause: error });
 }
 
-// D4: a removal/opt-out reply still BILLS (the human reach), THEN stops FUTURE
-// outreach. Callers must run this AFTER recordReached so the billing RPC's
-// removal guard can't block the reach that carries the removal. Sets the live
-// `removal_requested` boolean (what listSendableContacts filters on); op_status
-// is left to recordReached (`reached_billed`). Idempotent — re-setting is a
-// no-op, so it is safe to run again on a deduped Meta retry.
-export async function markContactRemovalRequested(
-  contactId: string,
-): Promise<void> {
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('contacts')
-    .update({ removal_requested: true })
-    .eq('id', contactId);
-  if (error) throw new Error('עדכון בקשת ההסרה נכשל', { cause: error });
-}
-
 // Return ALL guests linked to a contact within an event (id + name + RSVP
 // token), oldest-first. A contact (one phone, deduped per event via
 // contacts_event_phone_unique) can back MULTIPLE guests — guests.contact_id has

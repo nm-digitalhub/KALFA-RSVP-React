@@ -32,8 +32,8 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Webhook-driven state (Meta WhatsApp): the outreach `op_status`, per-message
-// `delivery_status`, and the opt-out flag. These are SEPARATE from the CRM
+// Webhook-driven state (Meta WhatsApp): the outreach `op_status` and per-message
+// `delivery_status`. These are SEPARATE from the CRM
 // `contact_status` above — they reflect what Meta streamed through the webhook,
 // not what the owner typed. Shared by the guest list badges, the guest
 // WhatsApp timeline, and the campaign breakdown.
@@ -43,40 +43,26 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
 // `Record<contact_op_status, …>` so a new enum value is a COMPILE error here.
 export const OP_STATUS_LABELS: Record<ContactOpStatus, string> = {
   pending_contact: 'ממתין ליצירת קשר',
-  not_eligible: 'לא כשיר לפנייה',
   whatsapp_sent: 'WhatsApp נשלח',
-  whatsapp_delivered: 'WhatsApp נמסר',
-  whatsapp_read: 'WhatsApp נקרא',
-  whatsapp_responded: 'הגיב ב-WhatsApp',
   pending_call: 'ממתין לשיחה',
   call_dialed: 'חויג',
   no_answer: 'אין מענה',
-  voicemail: 'תא קולי',
   human_interaction_call: 'מענה אנושי',
   wrong_number: 'מספר שגוי',
-  removal_requested: 'ביקש הסרה',
   reached_billed: 'הושג',
-  not_reached: 'לא הושג',
 };
 
 // op_status → Badge variant. Exhaustive (a new enum value becomes a compile
 // error). Progress milestones tint info/success; failures tint warning/destructive.
 export const OP_STATUS_VARIANTS: Record<ContactOpStatus, BadgeVariant> = {
   pending_contact: 'neutral',
-  not_eligible: 'neutral',
   whatsapp_sent: 'neutral',
-  whatsapp_delivered: 'info',
-  whatsapp_read: 'success',
-  whatsapp_responded: 'success',
   pending_call: 'neutral',
   call_dialed: 'info',
   no_answer: 'warning',
-  voicemail: 'warning',
   human_interaction_call: 'success',
   wrong_number: 'destructive',
-  removal_requested: 'warning',
   reached_billed: 'success',
-  not_reached: 'neutral',
 };
 
 // contact_interactions.delivery_status (sent/delivered/read/failed, free text)
@@ -90,9 +76,3 @@ export {
   deliveryStatusLabel,
   deliveryStatusVariant,
 } from '@/lib/data/admin/labels';
-
-// contacts.removal_requested — the opt-out flag (a guest who asked to be
-// removed). A single label/variant pair: the badge is only rendered when the
-// flag is true, so no map is needed.
-export const REMOVAL_REQUESTED_LABEL = 'ביקש הסרה';
-export const REMOVAL_REQUESTED_VARIANT: BadgeVariant = 'warning';

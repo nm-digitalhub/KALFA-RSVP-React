@@ -14,8 +14,8 @@ describe('aggregateDeliveryBreakdown', () => {
     expect(aggregateDeliveryBreakdown([], [])).toEqual({
       totalContacts: 0,
       delivery: { sent: 0, delivered: 0, read: 0, failed: 0 },
-      outcome: { reached: 0, wrongNumber: 0, optedOut: 0 },
-      call: { dialed: 0, noAnswer: 0, voicemail: 0, humanInteraction: 0 },
+      outcome: { reached: 0, wrongNumber: 0 },
+      call: { dialed: 0, noAnswer: 0, humanInteraction: 0 },
     });
   });
 
@@ -47,38 +47,35 @@ describe('aggregateDeliveryBreakdown', () => {
     expect(result.delivery.sent).toBe(0);
   });
 
-  it('derives outcome from contact op_status and counts opt-out independently', () => {
+  it('derives outcome from contact op_status', () => {
     const result = aggregateDeliveryBreakdown(
       [],
       [
-        { op_status: 'reached_billed', removal_requested: false },
-        { op_status: 'wrong_number', removal_requested: false },
-        // reached AND opted out: the opt-out reply billed (reach) then requested removal.
-        { op_status: 'reached_billed', removal_requested: true },
-        { op_status: 'pending_contact', removal_requested: false },
+        { op_status: 'reached_billed' },
+        { op_status: 'wrong_number' },
+        { op_status: 'reached_billed' },
+        { op_status: 'pending_contact' },
       ],
     );
     expect(result.totalContacts).toBe(4);
-    expect(result.outcome).toEqual({ reached: 2, wrongNumber: 1, optedOut: 1 });
+    expect(result.outcome).toEqual({ reached: 2, wrongNumber: 1 });
   });
 
   it('tallies the AI-call family from contact op_status', () => {
     const result = aggregateDeliveryBreakdown(
       [],
       [
-        { op_status: 'call_dialed', removal_requested: false },
-        { op_status: 'call_dialed', removal_requested: false },
-        { op_status: 'no_answer', removal_requested: false },
-        { op_status: 'voicemail', removal_requested: false },
-        { op_status: 'human_interaction_call', removal_requested: false },
+        { op_status: 'call_dialed' },
+        { op_status: 'call_dialed' },
+        { op_status: 'no_answer' },
+        { op_status: 'human_interaction_call' },
         // A non-call outcome must NOT leak into the call buckets.
-        { op_status: 'reached_billed', removal_requested: false },
+        { op_status: 'reached_billed' },
       ],
     );
     expect(result.call).toEqual({
       dialed: 2,
       noAnswer: 1,
-      voicemail: 1,
       humanInteraction: 1,
     });
     // The call family and the outcome buckets are counted independently.
@@ -89,10 +86,10 @@ describe('aggregateDeliveryBreakdown', () => {
     const result = aggregateDeliveryBreakdown(
       [],
       [
-        { op_status: 'whatsapp_read', removal_requested: false },
-        { op_status: 'reached_billed', removal_requested: false },
+        { op_status: 'whatsapp_sent' },
+        { op_status: 'reached_billed' },
       ],
     );
-    expect(result.call).toEqual({ dialed: 0, noAnswer: 0, voicemail: 0, humanInteraction: 0 });
+    expect(result.call).toEqual({ dialed: 0, noAnswer: 0, humanInteraction: 0 });
   });
 });

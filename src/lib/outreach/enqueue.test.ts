@@ -88,12 +88,11 @@ function makeDeps(overrides: Partial<StepExecutionDeps> = {}) {
   const send = vi.fn(async () => ({ kind: 'accepted', providerId: 'wamid.1' }) as StepSendResult);
   const resolve = vi.fn(async () => 'resolved' as const);
   const auditId = vi.fn((reason: string) => `audit:${reason}`);
-  const recheckTerminal = vi.fn(async (): Promise<{ reason: string } | null> => null);
   const deps: StepExecutionDeps = {
-    reserve, send, resolve, auditId, recheckTerminal,
+    reserve, send, resolve, auditId,
     ...overrides,
   } as StepExecutionDeps;
-  return { deps, reserve, send, resolve, auditId, recheckTerminal };
+  return { deps, reserve, send, resolve, auditId };
 }
 
 const ARGS: StepExecutionArgs = {
@@ -180,16 +179,6 @@ describe('runStepExecution — reservation + certainty taxonomy', () => {
     );
   });
 
-  it('a terminal outcome (opt-out / no consent) → resolve{advance:false, terminalStatus:stopped}', async () => {
-    const { deps, resolve } = makeDeps({
-      send: vi.fn(async () => ({ kind: 'terminal', reason: 'removal_requested' }) as StepSendResult),
-    });
-    await runStepExecution(deps, ARGS);
-    expect(resolve).toHaveBeenCalledWith(
-      expect.objectContaining({ advance: false, terminalStatus: 'stopped', reason: 'removal_requested' }),
-    );
-  });
-
   it('a call-dispatch advance → resolve{advance, reason:call_requested}', async () => {
     const { deps, resolve } = makeDeps({
       send: vi.fn(async () => ({ kind: 'advance', reason: 'call_requested' }) as StepSendResult),
@@ -221,39 +210,4 @@ describe('runStepExecution — reservation + certainty taxonomy', () => {
       /recovery_resolve_failed/,
     );
   });
-
-  // REGRESSION (terminal-recovery defect) — FULL same-J sequence. A prior TERMINAL
-  // resolve (opt-out) that hit a transport error must NOT become a
-  // blind advance when the SAME job re-runs. Run 1 reserves + sends (terminal) +
-  // fails to resolve (throws). Run 2 (same jobId, alreadyReserved) re-checks the
-  // terminal condition and RE-TERMINALIZES — no second reserve, no second send
-  // (no WhatsApp / no call), and NEVER advance:true.
-  it.each(['removal_requested'])(
-    'full same-J recovery (%s): run1 throws, run2 re-terminalizes; reserve/send once, never advance:true',
-    async (reason) => {
-      const reserve = vi.fn(async () => 'reserved' as const);
-      const send = vi.fn(async () => ({ kind: 'terminal', reason }) as StepSendResult);
-      let resolveN = 0;
-      const resolve = vi.fn(async () => (++resolveN === 1 ? 'error' : 'resolved') as 'resolved' | 'error');
-      const recheckTerminal = vi.fn(async () => ({ reason }));
-      const { deps } = makeDeps({ reserve, send, resolve, recheckTerminal });
-
-      // RUN 1 — alreadyReserved=false → reserve → send terminal → resolve 'error' → throw.
-      await expect(runStepExecution(deps, { ...ARGS, alreadyReserved: false })).rejects.toThrow(
-        /resolve_after_terminal_failed/,
-      );
-      // RUN 2 — same jobId, alreadyReserved=true → recheckTerminal → resolve 'resolved'.
-      await runStepExecution(deps, { ...ARGS, alreadyReserved: true });
-
-      expect(reserve).toHaveBeenCalledTimes(1); // run 1 only
-      expect(send).toHaveBeenCalledTimes(1); // run 1 only — no re-send in recovery
-      expect(recheckTerminal).toHaveBeenCalledTimes(1); // run 2 recovery
-      // the SECOND resolve (recovery) re-terminalizes with the SAME reason.
-      expect(resolve).toHaveBeenNthCalledWith(
-        2,
-        expect.objectContaining({ advance: false, terminalStatus: 'stopped', reason, jobId: JOB }),
-      );
-      expect(resolve).not.toHaveBeenCalledWith(expect.objectContaining({ advance: true }));
-    },
-  );
 });
