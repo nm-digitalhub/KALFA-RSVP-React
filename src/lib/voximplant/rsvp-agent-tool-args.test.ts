@@ -48,7 +48,7 @@ describe('parseToolArgs', () => {
   it('parses a JSON string into an object', () => {
     expect(parseToolArgs('{"status":"maybe","adults":0}')).toEqual({ status: 'maybe', adults: 0 });
   });
-  it('treats absent arguments as {} (mark_dnc has none)', () => {
+  it('treats absent arguments as {}', () => {
     expect(parseToolArgs(undefined)).toEqual({});
     expect(parseToolArgs(null)).toEqual({});
     expect(parseToolArgs('')).toEqual({});
@@ -111,8 +111,8 @@ describe('save_rsvp argument mapping — a refusal is never invented', () => {
 });
 
 describe('the other tools keep their contract', () => {
-  it('mark_dnc takes no arguments', () => {
-    expect(TOOL_ROUTES.mark_dnc!.body({})).toEqual({});
+  it('mark_dnc is not a registered tool: RSVP calls have no removal request (owner, 01.11.2026)', () => {
+    expect(TOOL_ROUTES.mark_dnc).toBeUndefined();
   });
   it('notify_owner caps the text at 500 chars and defaults an unknown kind to message', () => {
     const b = TOOL_ROUTES.notify_owner!.body({ kind: 'spam', text: 'א'.repeat(600) });

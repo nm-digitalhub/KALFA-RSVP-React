@@ -4,12 +4,12 @@
             "config": "agent_configs/KALFA-RSVP.json",
             "id": "agent_9701kxj3n54ye518a3s518cexd48",
             "branch_id": "agtbrch_4101kxj3n5tqf2kae5recbbn2rtj",
-            "version_id": "agtvrsn_1601m5t086avfvgtzkhnfcfmrwm4",
+            "version_id": "agtvrsn_5501m6cj6ca6f0ja5nxdttvrfrqw",
             "branches": {
                 "test": {
                     "config": "agent_configs/KALFA-RSVP.test.json",
                     "branch_id": "agtbrch_0901m5va14yres5b3tcxnzvcma0g",
-                    "version_id": "agtvrsn_0801m5w9tfwkee48ysvdjv50fp6p"
+                    "version_id": "agtvrsn_3801m6chzr5yeenaz6eaxymd9czk"
                 }
             }
         },

@@ -90,8 +90,9 @@ describe('drift: canonicalizeAgent + compareAgentCanonical (false-positive-proof
     expect(c.name).toBeTruthy();
     expect(c.prompt).toBeTruthy();
     expect(c.language).toBe('he');
-    // 4 client tools; the built-in end_call carries no tool_id, so it is excluded.
-    expect(c.toolIds).toHaveLength(4);
+    // 3 client tools (save_rsvp, notify_owner, schedule_callback; mark_dnc was removed 01.11.2026);
+    // the built-in end_call carries no tool_id, so it is excluded.
+    expect(c.toolIds).toHaveLength(3);
   });
 
   it('degrades garbage to nulls / empty (total, IO-free)', () => {

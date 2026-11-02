@@ -8,7 +8,7 @@
 // voice Kalfa), injects dynamic variables so the agent's {{guest_name}},
 // {{event_name}}, {{event_date}}, {{event_venue}} placeholders resolve, records
 // the call, logs transcript events, forwards the agent's client tools
-// (save_rsvp / mark_dnc / notify_owner / schedule_callback) to KALFA's
+// (save_rsvp / notify_owner / schedule_callback) to KALFA's
 // token-scoped endpoints, reports el_conversation_id via the cb endpoint, and
 // posts exactly ONE terminal callback per call (rsvp_method 'agent', no digit:
 // completed = conversation ran → billed reach; handed_off (Stage 6) = a KALFA
@@ -1393,10 +1393,9 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                 // guest "נרשם"). An unregistered tool is answered with
                 // is_error:true — never fabricated as a success.
                 //   save_rsvp    → agent-tool/rsvp  → saved | rejected | queued
-                //   mark_dnc     → agent-tool/dnc   → removed | queued
                 //   notify_owner → agent-tool/note  → noted | queued
                 // Tool arguments arrive as an object; a JSON string is accepted too. Absent
-                // arguments are `{}` (mark_dnc has none). Anything else — unparseable text,
+                // arguments are `{}`. Anything else — unparseable text,
                 // an array, a number — is null, and the caller answers with a tool error
                 // instead of guessing what was meant.
                 function parseToolArgs(raw) {
@@ -1444,11 +1443,6 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                                 children: Number(args.children) || 0
                             };
                         }
-                    },
-                    mark_dnc: {
-                        path: 'dnc',
-                        okResult: 'removed',
-                        body: function () { return {}; }
                     },
                     notify_owner: {
                         path: 'note',
@@ -1611,8 +1605,8 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
                             reply(saveRsvpResult(status), false);
                             return;
                         }
-                        // mark_dnc / notify_owner: the server answers {ok, status} with
-                        // status removed|recorded (done), queued (transient — the
+                        // notify_owner: the server answers {ok, status} with
+                        // status recorded (done), queued (transient — the
                         // durable row is retried) or failed (terminal — a retry cannot
                         // change it). 'failed' must reach the agent as a failure, never
                         // as 'queued'. A reply without a status (an older server) keeps
