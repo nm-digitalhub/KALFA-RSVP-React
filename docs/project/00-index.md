@@ -19,6 +19,7 @@
 | 09 | `09-admin-panel.md` | פאנל הניהול: app_settings, קונפיגורציית ספקים, אישור הסכמים, בדיקות SUMIT, ניטור webhooks |
 | 10 | `10-api-and-webhooks.md` | אינוונטר מלא של כל ה‑Route Handlers, Server Actions וחוזי ה‑Webhooks |
 | 11 | `11-operations-and-deployment.md` | תפעול ופריסה: pm2, nginx, worker, משתני סביבה, Supabase tooling וצנרת האימות |
+| 12 | `12-rsvp-status-system.md` | מערכת הסטטוסים של אישורי ההגעה: ארבעת הצירים, מי קובע ומי קורא כל ערך, הזרימה בכל ערוץ והפערים הידועים (נכון ל‑2026‑11‑01) |
 
 ## עקרונות רוחביים (תקציר)
 
