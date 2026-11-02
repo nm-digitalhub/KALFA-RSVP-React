@@ -189,7 +189,8 @@
     "postgres-best-practices@postgres-skills": true,
     "ux-ui-design@nklisch-skills": true,
     "elevenlabs@elevenlabs": true,
-    "e2e-skills@voidmatcha": true
+    "e2e-skills@voidmatcha": true,
+    "typescript-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "postgres-skills": {
