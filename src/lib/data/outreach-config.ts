@@ -105,8 +105,8 @@ export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
 // Why this is a separate reader and not two more fields on WhatsAppConfig.
 // The plan (§1.5.3 Task 3) called for widening WhatsAppConfig itself. Measured
 // against the code that would pay for it: getWhatsAppConfig() runs ONCE PER
-// RECIPIENT on the send path (outreach-engine.ts executeStep and
-// prepareAndSendStep, inside the per-contact step delivery), so folding the role lookup into it would add a
+// RECIPIENT on the send path (outreach-engine.ts prepareAndSendStep, inside the
+// per-contact step delivery), so folding the role lookup into it would add a
 // second round-trip per recipient — a 300-guest campaign would pay 300 of them
 // for a field no send path reads. That is the same cost §1.5.2 forbids when it
 // says the resolution "must be cached per-message-batch and not read once per

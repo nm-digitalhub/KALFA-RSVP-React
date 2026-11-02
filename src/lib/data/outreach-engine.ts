@@ -7,13 +7,8 @@ import {
   getSendPolicy,
 } from '@/lib/data/outreach-config';
 import { resolveWhatsAppSend } from '@/lib/data/whatsapp-template-send';
-import { resolveTemplateForEvent } from '@/lib/data/message-templates-resolve';
-import { recordTemplateFailure, resolveTemplateMedia, sendOneWhatsApp } from '@/lib/data/outreach';
-import {
-  buildBodyParams,
-  deriveGuestFirstName,
-  type TemplateParamsContext,
-} from '@/lib/whatsapp/template-spec';
+import { recordTemplateFailure, sendOneWhatsApp } from '@/lib/data/outreach';
+import { deriveGuestFirstName, type TemplateParamsContext } from '@/lib/whatsapp/template-spec';
 import { recordReached, type ReachedArgs } from '@/lib/data/billing';
 import { setContactOpStatus } from '@/lib/data/interactions';
 import { isPastEventDay } from '@/lib/data/event-date';
@@ -30,7 +25,7 @@ import {
 } from '@/lib/outreach/send-window';
 import { buildJewishCalendar } from '@/lib/outreach/jewish-calendar';
 import { enqueueStepJob, type StepSendResult } from '@/lib/outreach/enqueue';
-import { CALL_RETRY, QUEUES, type OutreachCallRequest, type OutreachStepMode } from '@/lib/queue/queues';
+import { CALL_RETRY, QUEUES, type OutreachStepMode } from '@/lib/queue/queues';
 import type { PgBoss } from 'pg-boss';
 import { BACKGROUND_SEND_RETRY_BUDGET_MS } from '@/lib/whatsapp/client';
 
@@ -250,27 +245,6 @@ export async function stepGate(
   return { reason: 'ok', ctx };
 }
 
-// Atomic compare-and-advance: only the FIRST delivery of step N matches and
-// advances the cursor; duplicates/retries get 0 rows and must not send.
-export async function claimStep(
-  campaignId: string,
-  contactId: string,
-  stepIndex: number,
-): Promise<boolean> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('outreach_state')
-    .update({ current_step_index: stepIndex + 1 })
-    .eq('campaign_id', campaignId)
-    .eq('contact_id', contactId)
-    .eq('status', 'active')
-    .eq('current_step_index', stepIndex)
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('עדכון מצב ה-outreach נכשל', { cause: error });
-  return data !== null;
-}
-
 export async function setOutreachStatus(
   campaignId: string,
   contactId: string,
@@ -289,22 +263,6 @@ export async function setOutreachStatus(
     .eq('campaign_id', campaignId)
     .eq('contact_id', contactId);
   if (error) throw new Error('עדכון סטטוס ה-outreach נכשל', { cause: error });
-}
-
-// Record the first-decided send instant for a contact's current step (the
-// send-timing re-plan anchor / audit). Best-effort; correctness rests on the
-// deterministic plan + det-id queue idempotency + the execution-time gate.
-export async function setPlannedAt(
-  campaignId: string,
-  contactId: string,
-  plannedAtIso: string | null,
-): Promise<void> {
-  const admin = createAdminClient();
-  await admin
-    .from('outreach_state')
-    .update({ planned_at: plannedAtIso })
-    .eq('campaign_id', campaignId)
-    .eq('contact_id', contactId);
 }
 
 async function bumpCount(
@@ -331,127 +289,6 @@ async function bumpCount(
     .eq('contact_id', contactId);
 }
 
-export type StepAction =
-  | { action: 'whatsapp_sent' }
-  | { action: 'call_request'; callRequest: OutreachCallRequest }
-  | { action: 'skipped' };
-
-// Execute touchpoint N for a contact. The worker does not call this; it drives
-// prepareAndSendStep through the serial flow below.
-// Re-checks eligibility, atomically claims the step, then sends (WhatsApp) or
-// signals a call dispatch. At-most-once by design (a missed nudge beats a double
-// message; the multi-touchpoint schedule self-covers).
-export async function executeStep(
-  ctx: CampaignContext,
-  campaignId: string,
-  contactId: string,
-  eventId: string,
-  stepIndex: number,
-): Promise<StepAction> {
-  const tp = ctx.schedule[stepIndex];
-  if (!tp) return { action: 'skipped' };
-  const admin = createAdminClient();
-
-  const { data: contact } = await admin
-    .from('contacts')
-    .select('id, normalized_phone')
-    .eq('id', contactId)
-    .maybeSingle();
-  if (!contact) return { action: 'skipped' };
-  if (tp.channel === 'call' && !ctx.allowed_channels.includes('call')) {
-    return { action: 'skipped' };
-  }
-
-  // Claim — only the first delivery proceeds; duplicates exit here.
-  if (!(await claimStep(campaignId, contactId, stepIndex))) {
-    return { action: 'skipped' };
-  }
-
-  if (tp.channel === 'whatsapp') {
-    const config = await getWhatsAppConfig();
-    if (!config) {
-      // Expected fail-closed state (WhatsApp not yet configured) — NOT a
-      // template-integrity failure. Do not log here, or every environment
-      // that hasn't configured WhatsApp yet floods the sink for no reason.
-      return { action: 'skipped' };
-    }
-    // Event-type-aware resolution: the generic row's components.variants may
-    // swap in the wedding-family template name for this event type.
-    const template = await resolveTemplateForEvent(tp.message_key, ctx.event.event_type);
-    if (!template) {
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'template_missing', tp.message_key, tp.channel);
-      return { action: 'skipped' };
-    }
-    if (template.channel !== 'whatsapp') {
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'channel_mismatch', tp.message_key, tp.channel);
-      return { action: 'skipped' };
-    }
-    // {{1}} source: the recipient's linked guest name, oldest guest first
-    // (deterministic when a family shares one phone → several guests per
-    // contact). No linked guest → null; buildTemplateParams falls back to the
-    // generic greeting rather than dropping the touchpoint.
-    const { data: guest } = await admin
-      .from('guests')
-      .select('full_name')
-      .eq('event_id', eventId)
-      .eq('contact_id', contactId)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    // Shared {{1}} rule (deriveGuestFirstName): first token of the linked
-    // guest's name; households ("משפחת …")/no-guest → null → generic greeting.
-    const guestFirstName = deriveGuestFirstName(guest?.full_name);
-    // Which side of the Meta positional contract to bind — the wedding family
-    // renders groom/bride in {{2}}/{{3}} (docs/whatsapp-templates-meta-submission.md).
-    const family = template.name.startsWith('kalfa_wedding_') ? 'wedding' : 'generic';
-    const built = buildBodyParams({
-      paramContract: template.paramContract,
-      family,
-      ctx: { event: ctx.event, guestFirstName },
-    });
-    if ('missing' in built) {
-      // Fail-closed: never send a template with an empty positional parameter.
-      // Recorded like the other integrity failures (missing-key list is
-      // event-level data, not PII — guest name never blocks).
-      await recordTemplateFailure(admin, campaignId, stepIndex, 'params_incomplete', tp.message_key, tp.channel);
-      return { action: 'skipped' };
-    }
-    // Media invite: swap to the IMAGE-header sibling when the row maps one
-    // AND the event has an uploaded invitation image (fail-open to text).
-    const media = await resolveTemplateMedia(template, ctx.inviteImagePath);
-    const outcome = await sendOneWhatsApp(
-      admin,
-      { id: campaignId, event_id: eventId },
-      { id: contactId, normalized_phone: contact.normalized_phone },
-      media.template,
-      config,
-      tp.message_key,
-      built.params,
-      media.headerImage ? { headerImage: media.headerImage } : undefined,
-      { retryBudgetMs: BACKGROUND_SEND_RETRY_BUDGET_MS },
-    );
-    if (outcome.kind !== 'accepted') return { action: 'skipped' };
-    await bumpCount(admin, campaignId, contactId, 'whatsapp_sent_count');
-    await setContactOpStatus(contactId, 'whatsapp_sent');
-    return { action: 'whatsapp_sent' };
-  }
-
-  // call — the worker enqueues C2's per-contact dial.
-  await bumpCount(admin, campaignId, contactId, 'call_request_count');
-  await setContactOpStatus(contactId, 'pending_call');
-  return {
-    action: 'call_request',
-    callRequest: {
-      campaignId,
-      eventId,
-      contactId,
-      normalizedPhone: contact.normalized_phone,
-      scriptKey: tp.message_key,
-      touchpointIndex: stepIndex,
-    },
-  };
-}
-
 // The reach path for call results. Records the billed reach through the
 // SAME try_record_billed_result RPC (cross-channel dedup) — never a raw insert —
 // and on 'billed' stops the contact's outreach. Called by the call result
@@ -467,16 +304,6 @@ export async function writeReach(args: ReachedArgs): Promise<string> {
     await setOutreachStatus(args.campaignId, args.contactId, 'reached', 'reached');
   }
   return outcome;
-}
-
-// Stop a contact's outreach when reached (the data-side stop; pending pg-boss
-// jobs are not cancelled — the execution-time reach check is the guarantee).
-// Idempotent.
-export async function cancelOutreachForContact(
-  campaignId: string,
-  contactId: string,
-): Promise<void> {
-  await setOutreachStatus(campaignId, contactId, 'reached', 'reached');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

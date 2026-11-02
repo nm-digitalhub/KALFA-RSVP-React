@@ -122,7 +122,7 @@ export async function sendOneWhatsApp(
 // (campaign, reason).
 export const MANUAL_SEND_TOUCHPOINT_INDEX = -1;
 
-// Media-invite resolution used by the engine's executeStep and the invite scripts:
+// Media-invite resolution used by the invite scripts:
 // switch to the IMAGE-header sibling template with a short-lived signed URL
 // ONLY when the row maps one AND the event has an uploaded image. ANY failure
 // (no mapping, no image, storage error) falls back to the text template —
@@ -151,11 +151,10 @@ export async function resolveTemplateMedia(
 // template, channel mismatch, or event data too incomplete to bind the
 // positional parameters) must never fail silently. This records it durably,
 // deduplicated per (campaign, touchpoint, reason) via an atomic upsert — NOT
-// select-then-insert, since the engine's claimStep advances a per-recipient
-// cursor, so concurrent workers can hit the same broken touchpoint for
-// different contacts at once. Shared by the engine (executeStep and
-// prepareAndSendStep) and the manual batch path (sendCampaignWhatsApp, with the
-// sentinel index above).
+// select-then-insert, since the engine advances a per-recipient cursor, so
+// concurrent workers can hit the same broken touchpoint for different contacts
+// at once. Shared by the engine (prepareAndSendStep) and the manual batch path
+// (sendCampaignWhatsApp, with the sentinel index above).
 export async function recordTemplateFailure(
   admin: AdminClient,
   campaignId: string,

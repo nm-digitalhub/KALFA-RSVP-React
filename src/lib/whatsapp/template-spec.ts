@@ -1,8 +1,8 @@
 // Send-time parameter binding for the approved WhatsApp templates. PURE
 // functions only (no I/O, no `server-only`) so the full contract is unit-
 // testable. The live send binds through buildSendContext below (via
-// resolveWhatsAppSend); the per-layout builders are still called by the
-// engine's executeStep and the send scripts until the step-7 cutover.
+// resolveWhatsAppSend); the per-layout builders are still called by the send
+// scripts.
 //
 // The positional contract ({{1}}..{{7}}) is FIXED — it is what was submitted
 // to and approved by Meta (docs/whatsapp-templates-meta-submission.md):
