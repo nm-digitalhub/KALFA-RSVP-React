@@ -1,9 +1,10 @@
 import 'server-only';
 
+import type { QueryData, SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
 import type { CallbackPolicy } from '@/lib/callbacks/schedule-policy';
-import type { Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
+import type { Database, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for sales_call_attempts — the Voximplant
 // token/dispatch-bookkeeping table for the sales-closing agent's outbound
 // call on a callback_requests row (topic = 'מכירות'). See that table's own
@@ -23,7 +24,12 @@ import type { Tables, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 //
 // Never logs access_token.
 
-type AttemptRow = Tables<'sales_call_attempts'>;
+// `select('*')` on this table, and the row type derived from that exact query with QueryData — the documented helper
+// (supabase.com/docs/guides/api/rest/generating-types). Not Tables<'sales_call_attempts'>: that Row also carries the computed field
+// call_analysis, which PostgREST returns only when it is selected by name, never for `*` — the shape supabase-js
+// types since 2.118.0 (supabase/supabase-js#2730).
+const selectAllAttempts = (client: SupabaseClient<Database>) => client.from('sales_call_attempts').select('*');
+type AttemptRow = QueryData<ReturnType<typeof selectAllAttempts>>[number];
 type AttemptInsert = TablesInsert<'sales_call_attempts'>;
 
 // Mirrors call_attempts' own PRE_TERMINAL and callback_request_attempts'
@@ -82,9 +88,7 @@ export async function getSalesDispatchAttemptBySlot(
   scheduledAtSnapshot: string,
 ): Promise<AttemptRow | null> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('sales_call_attempts')
-    .select('*')
+  const { data, error } = await selectAllAttempts(admin)
     .eq('callback_request_id', callbackRequestId)
     .eq('scheduled_at_snapshot', scheduledAtSnapshot)
     .maybeSingle();
@@ -180,9 +184,7 @@ export async function getUnresolvedSalesAttempt(
   callbackRequestId: string,
 ): Promise<AttemptRow | null> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('sales_call_attempts')
-    .select('*')
+  const { data, error } = await selectAllAttempts(admin)
     .eq('callback_request_id', callbackRequestId)
     .not('vox_call_session_history_id', 'is', null)
     .is('outcome_recorded_at', null)

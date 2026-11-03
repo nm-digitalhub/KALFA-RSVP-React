@@ -1,9 +1,10 @@
 import 'server-only';
 
+import type { QueryData, SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
 import type { CallbackPolicy } from '@/lib/callbacks/schedule-policy';
-import type { Tables, TablesInsert } from '@/lib/supabase/types';
+import type { Database, TablesInsert } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for callback_request_attempts — the
 // Voximplant token/dispatch-bookkeeping table parallel to call_attempts, but
 // scoped to callback_requests (meeting-confirmation/reschedule calls; see
@@ -20,7 +21,12 @@ import type { Tables, TablesInsert } from '@/lib/supabase/types';
 // dispatch-lifecycle migration's own comment for the full reasoning; the
 // dispatch-side writers here only ever touch dispatch_status.
 
-type AttemptRow = Tables<'callback_request_attempts'>;
+// `select('*')` on this table, and the row type derived from that exact query with QueryData — the documented helper
+// (supabase.com/docs/guides/api/rest/generating-types). Not Tables<'callback_request_attempts'>: that Row also carries the computed field
+// call_analysis, which PostgREST returns only when it is selected by name, never for `*` — the shape supabase-js
+// types since 2.118.0 (supabase/supabase-js#2730).
+const selectAllAttempts = (client: SupabaseClient<Database>) => client.from('callback_request_attempts').select('*');
+type AttemptRow = QueryData<ReturnType<typeof selectAllAttempts>>[number];
 type AttemptInsert = TablesInsert<'callback_request_attempts'>;
 
 // Mirrors call_attempts' own PRE_TERMINAL exactly (call-attempts.ts) — the
@@ -99,9 +105,7 @@ export async function listCallbackDispatchAttemptsBySlot(
   scheduledAtSnapshot: string,
 ): Promise<AttemptRow[]> {
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('callback_request_attempts')
-    .select('*')
+  const { data, error } = await selectAllAttempts(admin)
     .eq('callback_request_id', callbackRequestId)
     .eq('scheduled_at_snapshot', scheduledAtSnapshot)
     .eq('issued_via', 'dispatch')
