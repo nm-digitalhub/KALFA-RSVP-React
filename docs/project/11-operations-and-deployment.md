@@ -307,17 +307,25 @@ mismatch. התאוששות: להריץ `npm run deploy` מחדש (לא restart �
   (הפרויקט קושר לפרויקט קיים). לכן `db push` עיוור מסוכן; runbook
   ה-multi-tenancy (§6.4) מורה במפורש להחיל קבצים בודדים בתוך טרנזקציה.
   מיגרציות עדכניות (למשל L0a) כן הוחלו עם `db push` לאחר יישור ההיסטוריה —
-  אבל רק לאחר `supabase migration list --linked` נקי.
+  אבל רק לאחר `supabase migration list --remote` נקי (ב-v2: `--linked`).
 
 ### 6.3 הכלים הרשמיים (התקן המחייב)
 
+מאז 03.11.2026 הפרויקט על Supabase CLI v3 (מדריך: https://supabase.com/docs/guides/local-development/cli/migrating-to-v3).
+פקודה בלי יעד רצה מול ה-stack **המקומי**; כל פקודה מול ה-DB החי מסתיימת ב-`--remote` (תמיד בסוף — `--remote <מילה>`
+נקרא כשם branch/ref). כל שינוי בפרויקט המתארח (כתיבה ב-`db query`, `db push`, `migration repair`, `functions deploy`,
+`secrets set` …) מבקש אישור; בהרצה לא-אינטראקטיבית או של agent הוא נעצר ב-`HostedMutationConsentRequiredError` ולא
+מריץ כלום, עד `--yes`.
+
 ```bash
-npx supabase migration new <name>          # יצירת קובץ מיגרציה חדש
-npx supabase db query --linked "<sql>"     # שאילתות מול ה-DB החי (רץ כ-postgres)
-npx supabase migration list --linked       # השוואת מיגרציות דיסק מול DB
-npx supabase db advisors --linked          # advisors של אבטחה/ביצועים
-npm run gen:types                          # רענון טיפוסים (supabase gen types --linked > src/lib/supabase/types.generated.ts)
-npm run types:check                        # אימות ש-types.generated.ts תואם ל-DB החי (רץ אוטומטית בתחילת npm run deploy)
+npx supabase migration new <name>                       # יצירת קובץ מיגרציה חדש
+npx supabase db query "<sql>" --read-only --remote      # קריאה מול ה-DB החי (טרנזקציה read-only, supabase_read_only_user)
+npx supabase db query "<sql>" --remote                  # כ-postgres; שינוי מתארח — דורש אישור, ובהרצה לא-אינטראקטיבית --yes
+npx supabase migration list --remote                    # השוואת מיגרציות דיסק מול DB
+npx supabase db advisors --remote                       # advisors של אבטחה/ביצועים
+npm run gen:types                                       # רענון טיפוסים (supabase gen types --remote > src/lib/supabase/types.generated.ts)
+npm run types:check                                     # אימות ש-types.generated.ts תואם ל-DB החי (רץ אוטומטית בתחילת npm run deploy)
+npm run check:permissions -- --yes                      # מטריצת ההרשאות; כותבת בתוך BEGIN…ROLLBACK, ולכן --read-only לא אפשרי
 ```
 
 שני קבצים, שני תפקידים (לפי התיעוד הרשמי, "Helper types for tables and joins"):
@@ -334,19 +342,22 @@ npm run types:check                        # אימות ש-types.generated.ts ת
   הקובץ גם מייצא את helper-types (`Tables<'x'>`, `TablesInsert`, `TablesUpdate`,
   `Enums<'x'>`) — הצורה המועדפת בקוד על פני `Database['public']['Tables'][...]`.
 
-**שתי התקנות של ה-CLI, ושתיהן חייבות להיות באותה גרסה (נמדד 15.10.2026):**
-1. `node_modules/.bin/supabase` — הגרסה הננעלת ב-`package.json` (`"supabase": "2.121.0"`). בה משתמשים `npx supabase`, `npm run gen:types` והשער `types:check`.
-2. `~/.supabase/bin/supabase` (+ `supabase-go`) — ההתקנה שרצה כשמקלידים `supabase` בטרמינל. מותקנת בסקריפט הרשמי
-   (`curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install | bash`), שמוריד את ה-tarball מ-GitHub, מאמת sha256 מול `checksums.txt`
-   ומחליף את הבינאריים במקום. הסקריפט לא שומר גיבוי — הגיבויים `*.<גרסה>.bak` שבתיקייה נעשו ידנית לפני כל עדכון.
-   עדכון: קודם `cp -p supabase supabase.<ישנה>.bak` (וכן ל-`supabase-go`), ואז
-   `bash install.sh --version <גרסה> --no-modify-path` מקובץ שקראת (לא pipe ישיר).
+**ה-CLI ב-beta (נמדד 03.11.2026):**
+1. `node_modules/.bin/supabase` — הגרסה הננעלת ב-`package.json` (`"supabase": "3.0.0"`). ה-wrapper
+   `~/.supabase-wrapper/bin/supabase` (ראשון ב-PATH, ו-`SUPABASE_CLI_BINARY_OVERRIDE` ב-`~/.bashrc`) מריץ את הבינארי
+   של הפרויקט (`node_modules/@supabase/cli-linux-x64`) לכל `supabase`, `npx supabase` ו-`npm run` מתוך beta. ליעד
+   מקומי הוא מגדיר `SUPABASE_DB_PORT` מ-`[db].port` ב-`supabase/config.toml` ואת סיסמת קונטיינר ה-DB המקומי, כי
+   `.env.local` מגדיר את שניהם לערכי production; ליעד מרוחק (`--remote`, `--remote=…`, וגם `--linked` / `--project-ref` /
+   `--db-url` של v2) הוא לא משנה דבר. בלי זיהוי `--remote`, פקודת v3 מול ה-DB החי נכשלה ב-`password authentication
+   failed` (נמדד 03.11.2026, תוקן באותו יום).
+2. `~/.supabase/bin/supabase` (+ `supabase-go`) — נשאר 2.122.0 בכוונה (03.11.2026): הוא משותף לתיקיות אחרות בחשבון
+   שיש להן `supabase/config.toml`. בתוך beta הוא לא רץ, כי ה-wrapper מעדיף את הבינארי של הפרויקט. v3 כבר לא מתקין
+   `supabase-go`. `scripts/update-supabase-cli.sh` עדיין מיישר את שתי ההתקנות לאותה גרסה — הרצתו תעלה גם את הבינארי
+   הגלובלי ל-v3.
 
-עד 15.10 ההתקנה השנייה הייתה 2.120.0 מול 2.121.0 בפרויקט, והבאנר "A new version of Supabase CLI is available"
-הופיע בכל הרצה. בכל העלאת גרסה ב-`package.json` יש לעדכן גם אותה.
-
-`db query --linked` רץ כמשתמש `postgres`, כולל יכולת להריץ פונקציות
-SECURITY DEFINER שנעולות ל-service_role. אין להשתמש בסקריפטים אד-הוק
+`db query --remote` (בלי `--read-only`) רץ כמשתמש `postgres`, כולל יכולת להריץ פונקציות
+SECURITY DEFINER שנעולות ל-service_role. `--read-only` רץ כ-`supabase_read_only_user` ונכשל עליהן ב-`42501`
+(נמדד 03.11.2026). אין להשתמש בסקריפטים אד-הוק
 לגישת DB — הכלים הרשמיים בלבד.
 
 ### 6.4 Runbooks — `supabase/runbooks/`

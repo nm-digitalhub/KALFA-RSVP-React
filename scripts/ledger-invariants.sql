@@ -1,6 +1,6 @@
 -- Ledger invariants. READ-ONLY: one SELECT, it changes nothing.
 --
---   npx supabase db query --linked -f scripts/ledger-invariants.sql
+--   npx supabase db query -f scripts/ledger-invariants.sql --read-only --remote
 --
 -- Run it after every `db push` that touches the payment ledger, after every real or test payment run on a new terminal, and at the
 -- go-live acceptance. Every row with kind = 'invariant' must say status = 'OK' (value 0). A 'CHECK' row lists up to five ids

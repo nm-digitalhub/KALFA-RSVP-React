@@ -1,5 +1,5 @@
 -- Platform roles × their permissions × the people holding them. Read-only.
---   npx supabase db query --linked -f scripts/platform-roles-overview.sql
+--   npx supabase db query -f scripts/platform-roles-overview.sql --read-only --remote
 --
 -- ⚠️ READ THIS FOR SHAPE, NEVER TO NARROW A GATE. The roster is pre-launch and
 -- temporary — three of the five roles have zero people today. "Nobody is locked out

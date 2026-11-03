@@ -34,8 +34,9 @@ these URLs are pointers, not snapshots.
 - CLI: https://supabase.com/docs/reference/cli/supabase-migration-new ·
   https://supabase.com/docs/reference/cli/supabase-gen-types-typescript — SEARCH-ONLY.
 - Management API: https://supabase.com/docs/reference/api/introduction — SEARCH-ONLY.
-- Live-schema introspection in THIS repo: `supabase db query --linked` runs as
-  postgres (can exec SECDEF); use pg_catalog (pg_constraint/pg_indexes), NOT
+- Live-schema introspection in THIS repo (CLI v3): `supabase db query "<sql>" --read-only --remote`
+  runs as `supabase_read_only_user` (cannot exec service_role SECDEF — 42501); `--remote`
+  without `--read-only` runs as postgres and needs the user's approval, then `--yes`; use pg_catalog (pg_constraint/pg_indexes), NOT
   information_schema, for constraints (returns empty for real FKs here).
 
 ## Meta WhatsApp Cloud API — STRONG for templates/webhooks, stitched elsewhere

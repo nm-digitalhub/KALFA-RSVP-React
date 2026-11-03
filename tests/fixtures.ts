@@ -22,7 +22,7 @@ import { CardcomServer } from './cardcom';
 //
 // The accounts and what they create stay in the local database. A purchase leaves a locked pricing round and ledger
 // rows that nothing may delete (the guards behind purge_test_event), so there is no complete cleanup per test; the
-// local database is reset with `supabase db reset --local`, and supabase/seed.sql restores the base data.
+// local database is reset with `supabase db reset` (CLI v3: the local stack is the default target), and supabase/seed.sql restores the base data.
 
 export type Account = { id: string; email: string; password: string };
 

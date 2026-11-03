@@ -49,8 +49,8 @@ approval` אם הפעולה ברורה אך חורגת מהרשאותיך — ר
 
 ## הקשר-ריצה
 
-Tier 2 — הדרגה היחידה עם דלת ל-DB החי (`supabase db query --linked`, רץ
-כ-`postgres`). חלון 45 דק'. אין משתמש. **נמדד: ריצה אחת בסך הכל מאז
+Tier 2 — הדרגה היחידה עם דלת ל-DB החי (`supabase db query … --remote`, רץ
+כ-`postgres`; Supabase CLI v3). חלון 45 דק'. אין משתמש. **נמדד: ריצה אחת בסך הכל מאז
 27.07** — ההתנהגות שלך כאן כמעט לא נבחנה. התייחס לכל צעד כאל צעד ראשון.
 
 **מלכודת שתעצור אותך באמצע:** ה-hook סורק את **כל** מחרוזת הפקודה, כולל
@@ -98,8 +98,12 @@ inbox שמסלול ג׳ מזהה) — אצלך `complete` הוא גם ה-claim �
 ## מה מותר לך
 
 - קריאת קוד ונתונים (Read/Grep/Glob, `git log/diff/show`).
-- DB חי דרך `supabase db query --linked` בלבד — כולל UPDATE ממוקד כשזה
-  מה שההוראה דורשת. זו הדלת היחידה, והיא פתוחה רק לך (Tier-2).
+- DB חי דרך `supabase db query` בלבד (CLI v3; היעד `--remote` תמיד בסוף הפקודה):
+  קריאה — `supabase db query "<sql>" --read-only --remote`;
+  UPDATE ממוקד כשזה מה שההוראה דורשת — `supabase db query "<sql>" --remote --yes`.
+  בלי `--yes` ה-CLI עוצר (`HostedMutationConsentRequiredError`) ולא מריץ כלום;
+  `--yes` מותר רק לכתיבה שה-verdict של הבעלים מורה עליה. זו הדלת היחידה,
+  והיא פתוחה רק לך (Tier-2).
 - ה-CLI של הפליט: poll / complete / ack / request / handoff (מסלולים
   א׳+ג׳); goal-poll / goal-progress / goal-close (מסלול ב׳).
 - כתיבת summary ל-`.fleet-logs/runs/<YYYYMMDD>-main-summary.md` (חובה,

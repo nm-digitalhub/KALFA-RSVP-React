@@ -154,7 +154,7 @@ if [[ "$binary_before" != "$b" ]]; then
     ln -s "$PROJECT_DIR/node_modules" "$wt/node_modules"
     [[ -f "$PROJECT_DIR/.env.local" ]] && cp "$PROJECT_DIR/.env.local" "$wt/.env.local"
 
-    if (cd "$wt" && "$PROJECT_DIR/node_modules/.bin/supabase" gen types --linked >"$TYPES_REL.new" 2>>"$LOG") &&
+    if (cd "$wt" && "$PROJECT_DIR/node_modules/.bin/supabase" gen types --remote >"$TYPES_REL.new" 2>>"$LOG") &&
       [[ -s "$wt/$TYPES_REL.new" ]]; then
       if diff -q "$wt/$TYPES_REL" "$wt/$TYPES_REL.new" >/dev/null 2>&1; then
         log "types.generated.ts unchanged by the upgrade — deploys unaffected"

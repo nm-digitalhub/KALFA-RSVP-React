@@ -22,16 +22,20 @@ skills:
 
 Owner of everything that lands in `supabase/migrations/` and of the live
 schema's security posture. The repo is linked to the LIVE `kalfa-event-magic`
-project — there is no local stack; every apply is production.
+project. Supabase CLI v3 (since 03.11.2026): a command with no target runs
+against the LOCAL stack — every live command needs `--remote`, placed last.
 
 ## Phase 0 — currency check (BLOCKING)
 
-- Introspect the LIVE schema before designing: `npx supabase db query --linked`
-  (runs as postgres, can exec SECDEF). For constraints use **pg_catalog**
+- Introspect the LIVE schema before designing:
+  `npx supabase db query "<sql>" --read-only --remote` (read-only transaction as
+  `supabase_read_only_user`; it cannot EXEC service_role-only SECDEF — 42501).
+  The postgres path is `--remote` without `--read-only`: a hosted change in v3,
+  so it needs the user's approval and then `--yes`. For constraints use **pg_catalog**
   (`pg_constraint`, `pg_indexes`) — `information_schema` returns empty for real
   FKs here (VERIFIED-LIVE). Never trust the local types.ts or memory for
   current structure.
-- Check migration sync first: `npx supabase migration list --linked` (drift ⇒
+- Check migration sync first: `npx supabase migration list --remote` (drift ⇒
   stop and reconcile before anything else). A Codex session may hold the shared
   build lock — never compete.
 - Docs when needed: https://supabase.com/docs/guides/database/postgres/row-level-security ·
@@ -44,10 +48,11 @@ project — there is no local stack; every apply is production.
   timestamps). Never hand-edit `src/lib/supabase/types.generated.ts` — regenerate:
   `npm run gen:types` (→ `src/lib/supabase/types.generated.ts`; `types.ts` is the hand-maintained MergeDeep override layer), then
   diff to confirm only the expected delta.
-- **Apply**: additive single-file after clean `migration list --linked` →
-  `npx supabase db push --linked`. Ambiguous/destructive → explicit-transaction
+- **Apply**: additive single-file after clean `migration list --remote` →
+  `npx supabase db push --remote` (v3 asks first; in an agent run it stops
+  with HostedMutationConsentRequiredError until the user approves, then `--yes`). Ambiguous/destructive → explicit-transaction
   SQL via Management API / SQL editor with preflight + rollback section
-  (runbook precedent). ALWAYS run `npx supabase db advisors --linked` after.
+  (runbook precedent). ALWAYS run `npx supabase db advisors --remote` after.
   DB changes require explicit user approval before apply — plan first.
 - **Policy patterns (post-audit, VERIFIED-LIVE 2026-07-13)**:
   - Owner-scoped SELECT on event-child tables: `can_access_event(event_id,
@@ -75,8 +80,9 @@ project — there is no local stack; every apply is production.
     precedent).
 - SECDEF functions: 24 audited injection-clean; every new one gets
   `set search_path = ''` + qualified names + explicit EXECUTE grants (audit
-  migration 8193846 precedent). Note: read_only db query can't EXEC
-  service_role SECDEF (42501) — use `--linked` (postgres) or Mgmt API.
+  migration 8193846 precedent). Note: `db query --read-only` can't EXEC
+  service_role SECDEF (42501) — use `--remote` without `--read-only`
+  (postgres; user approval + `--yes`) or the Mgmt API.
 
 ## Workflow
 

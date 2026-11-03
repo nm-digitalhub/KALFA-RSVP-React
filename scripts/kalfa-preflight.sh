@@ -27,7 +27,7 @@ warn_if_failed() {
 }
 
 [ -d "$ROOT/.git" ] || fail "Not a Git repository: $ROOT"
-cd "$ROOT"
+cd "$ROOT" || fail "Cannot enter $ROOT"
 
 # Domain: explicit KALFA_DOMAIN wins; otherwise derived from APP_ORIGIN in
 # .env.local (scheme + inline comment stripped) — never a hardcoded default
@@ -141,7 +141,7 @@ sudo_cmd() {
   done
 
   section 'LINKED SUPABASE MIGRATIONS'
-  npx --no-install supabase migration list --linked
+  npx --no-install supabase migration list --remote
   warn_if_failed
 
   section 'PM2 WITHOUT ENVIRONMENT VARIABLES'

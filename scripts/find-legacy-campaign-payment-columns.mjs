@@ -398,7 +398,9 @@ function dbObjects() {
   const cols = [...COLUMNS];
   const word = (c) => `(^|[^a-z0-9_])${c}($|[^a-z0-9_])`;
   const anyCol = `(${cols.map((c) => word(c)).join('|')})`;
-  const q = (sql) => JSON.parse(execFileSync('supabase', ['db', 'query', '--linked', '-o', 'json', sql], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })).rows;
+  // CLI v3: --remote = the linked project (local is the default); --read-only runs the catalog SELECTs without the
+  // hosted-change confirmation a non-interactive run cannot give.
+  const q = (sql) => JSON.parse(execFileSync('supabase', ['db', 'query', sql, '--output-format', 'json', '--read-only', '--remote'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })).rows;
   const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
   const hit = (s) => cols.filter((c) => new RegExp(word(c)).test(s));
   const out = [];

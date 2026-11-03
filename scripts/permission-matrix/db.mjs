@@ -1,11 +1,12 @@
 // The live database facts scripts/permission-matrix.mjs compares the code against. Read-only: SELECTs from the catalog
 // and from the permission tables, through the Supabase CLI against the linked project.
 //
-// THE CLI IS CHECKED FIRST. `supabase db query --help` (CLI 2.121.0) documents the result format as --output-format
-// (text | json | stream-json); -o / --output is listed as the format of status variables. Measured on 18.10.2026 with
-// `select 1`: BOTH `-o json` and `--output-format json` return the same JSON, { boundary, rows, warning } — so
-// scripts/find-legacy-campaign-payment-columns.mjs (which uses -o json) works too. This uses the documented flag, and
-// reads the installed CLI's help first, stopping with a clear error when a flag it needs is missing. parseRows accepts
+// THE CLI IS CHECKED FIRST. `supabase db query --help` (CLI 3.0.0) documents the target as `--remote` (local is the
+// default in v3), `--read-only` ("Runs the statement in a read-only transaction; a hosted target needs no
+// confirmation") and the result format as --output-format (text | json | stream-json). Without --read-only, v3 refuses
+// a hosted `db query` in a non-interactive or agent run (HostedMutationConsentRequiredError) — every query here is a
+// SELECT, so --read-only is the documented path. The JSON shape is { boundary, rows, warning } (measured 03.11.2026).
+// This reads the installed CLI's help first, stopping with a clear error when a flag it needs is missing. parseRows accepts
 // a top-level array, { rows }, { data }, or one JSON value per line, and refuses anything else.
 
 export function parseRows(stdout) {
@@ -33,7 +34,7 @@ export function parseRows(stdout) {
 }
 
 export function checkCli(help) {
-  const missing = ['--linked', '--output-format'].filter((f) => !String(help).includes(f));
+  const missing = ['--remote', '--read-only', '--output-format'].filter((f) => !String(help).includes(f));
   if (missing.length) throw new Error(`This Supabase CLI's \`db query\` has no ${missing.join(' / ')}. Update the CLI, or run without --db.`);
 }
 
@@ -45,7 +46,7 @@ const keysIn = (s) => [
 
 export function readLiveDb({ execFileSync, cli = 'supabase' }) {
   checkCli(execFileSync(cli, ['db', 'query', '--help'], { encoding: 'utf8' }));
-  const q = (sql) => parseRows(execFileSync(cli, ['db', 'query', '--linked', '--output-format', 'json', sql], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
+  const q = (sql) => parseRows(execFileSync(cli, ['db', 'query', sql, '--output-format', 'json', '--read-only', '--remote'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
   const catalog = q(`select p.key, p.category, coalesce((select array_agg(r.name order by r.rank) from public.platform_role_permissions rp join public.platform_roles r on r.id = rp.role_id where rp.permission_id = p.id), '{}') as roles from public.platform_permission_definitions p order by p.category, p.key`)
     .map((c) => ({ ...c, roles: Array.isArray(c.roles) ? c.roles : String(c.roles ?? '').replace(/[{}]/g, '').split(',').filter(Boolean) }));
   const roles = q('select name, is_owner_role from public.platform_roles order by rank');

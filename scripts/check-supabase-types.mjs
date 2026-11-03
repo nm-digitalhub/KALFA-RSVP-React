@@ -3,7 +3,7 @@
 // database (run: npm run types:check; wired into `npm run deploy`).
 //
 // types.generated.ts is generated output (`npm run gen:types` = `supabase gen types
-// --linked`, per https://supabase.com/docs/guides/api/rest/generating-types).
+// --remote`, per https://supabase.com/docs/guides/api/rest/generating-types).
 // Nothing else guards it: a migration pushed to the linked project without a
 // regenerate leaves the committed types describing a schema that no longer
 // exists, and `tsc --noEmit` stays green because it only knows the stale file.
@@ -22,14 +22,15 @@ const TARGET = 'src/lib/supabase/types.generated.ts';
 
 let generated;
 try {
-  generated = execFileSync('npx', ['supabase', 'gen', 'types', '--linked'], {
+  // CLI v3: `gen types` with no target reads the LOCAL database; `--remote` is the linked project.
+  generated = execFileSync('npx', ['supabase', 'gen', 'types', '--remote'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     maxBuffer: 64 * 1024 * 1024,
   });
 } catch (err) {
   const stderr = err && typeof err.stderr === 'string' ? err.stderr.trim() : '';
-  console.error(`types:check — \`supabase gen types --linked\` failed${stderr ? `:\n${stderr}` : ''}`);
+  console.error(`types:check — \`supabase gen types --remote\` failed${stderr ? `:\n${stderr}` : ''}`);
   process.exit(2);
 }
 

@@ -538,7 +538,9 @@ describe('db.mjs', () => {
   });
 
   it('stops before any query when the CLI lacks the flags it uses', () => {
-    assert.throws(() => checkCli('--linked only'), /--output-format/);
-    assert.doesNotThrow(() => checkCli('--linked … --output-format choice'));
+    assert.throws(() => checkCli('--remote only'), /--read-only \/ --output-format/);
+    // A v2 CLI: --linked instead of --remote, no --read-only.
+    assert.throws(() => checkCli('--linked … --output-format choice'), /--remote \/ --read-only/);
+    assert.doesNotThrow(() => checkCli('--remote[=<ref|branch|url>] … --read-only … --output-format choice'));
   });
 });
