@@ -1,0 +1,296 @@
+{
+  "cb": {
+    "form": {
+      "contact": {
+        "label": "Your contact details",
+        "placeholder": "For example: your name, phone or email"
+      },
+      "lockedNotice": "Your call is already scheduled, and the time won't change.",
+      "note": {
+        "placeholder": "Write the details here…"
+      },
+      "submit": "Send"
+    },
+    "header": {
+      "subtitle": "We'll call you back. Two quick questions so we're ready when we do.",
+      "title": "We missed your call"
+    }
+  },
+  "error": {
+    "generic": {
+      "body": "There was a problem loading this page. Please try again, or come back a little later if it keeps happening.",
+      "retry": "Try again",
+      "title": "Something went wrong"
+    },
+    "updated": {
+      "reloading": "Reloading the page…",
+      "title": "The site has been updated"
+    }
+  },
+  "g": {
+    "invalidLink": "This link is invalid or no longer available.",
+    "invite": {
+      "imageAlt": "Event invitation",
+      "openFull": "Open the full-size invitation"
+    },
+    "landing": {
+      "cta": "Send a gift",
+      "toggle": {
+        "back": "Back to invitation",
+        "front": "Directions & calendar"
+      },
+      "wazeLink": "Navigate with Waze"
+    },
+    "rateLimited": "Too many requests. Please try again in a moment."
+  },
+  "join": {
+    "failed": "We couldn't add you to the team. The invitation may no longer be valid.",
+    "invalid": {
+      "backLink": "Back to my account",
+      "notice": "This invitation is invalid, has expired or has already been used."
+    },
+    "submit": "Join",
+    "title": "Join the team"
+  },
+  "r": {
+    "attendees": {
+      "title": "Who else is coming"
+    },
+    "closed": {
+      "notice": "The RSVP deadline has passed. For details, you can contact the person who invited you."
+    },
+    "form": {
+      "adults": "Adults",
+      "attendance": {
+        "legend": "Will you be attending?"
+      },
+      "kids": "Children",
+      "mealPref": {
+        "label": "Meal preference (optional)"
+      },
+      "note": {
+        "label": "Note (optional)"
+      },
+      "question": {
+        "selectPlaceholder": "Choose…"
+      },
+      "showInGuestList": {
+        "label": "Show me on the \"Who else is coming\" list (first name only)"
+      },
+      "submit": "Submit RSVP",
+      "success": {
+        "updateHint": "You can update your reply at any time from this same link."
+      }
+    },
+    "gift": {
+      "cta": "Send a gift",
+      "prompt": "Would you like to add to the joy of the day?"
+    },
+    "header": {
+      "greeting": "Hello {{name}},",
+      "wazeLink": "Navigate with Waze"
+    },
+    "invalidLink": "This RSVP link is invalid, has expired or is no longer active.",
+    "invite": {
+      "imageAlt": "Event invitation",
+      "openFull": "Open the full-size invitation"
+    },
+    "rateLimited": "Too many requests. Please try again in a moment."
+  },
+  "rate": {
+    "form": {
+      "comment": {
+        "label": "Anything you'd like to add? (optional)",
+        "placeholder": "Tell us a little more…"
+      },
+      "heading": "How was our service?",
+      "legend": "Service rating",
+      "submit": "Send rating",
+      "submitting": "Sending…"
+    },
+    "invalidLink": "This link is invalid or no longer available.",
+    "rateLimited": "Too many requests. Please try again in a moment.",
+    "thanks": {
+      "body": "It helps us improve for next time",
+      "title": "Thanks for your rating!"
+    }
+  },
+  "site": {
+    "about": {
+      "cta": {
+        "createEvent": "Create a new event",
+        "newEvent": "New event"
+      },
+      "does": {
+        "limits": "What it doesn't do: it doesn't manage your venue, vendors or budget, and it doesn't send mass advertising. Messages go only to the event's invited guests, and only about that event.",
+        "title": "What KALFA does"
+      },
+      "hero": {
+        "eyebrow": "About",
+        "intro": "KALFA is an Israeli RSVP management system for private events: weddings, bar and bat mitzvahs, brit milah ceremonies, family celebrations and company events. It does one thing: it helps the host know who's coming, without spreadsheets or dozens of phone calls.",
+        "title": "About KALFA"
+      },
+      "operator": {
+        "title": "Who runs the service"
+      },
+      "principles": {
+        "title": "How we work"
+      }
+    },
+    "contact": {
+      "callbackSection": {
+        "title": "Ask us to call you back"
+      },
+      "contactSection": {
+        "title": "Send us a message"
+      },
+      "form": {
+        "email": "Email",
+        "fullName": "Full name",
+        "message": "Your message",
+        "noteOptional": "Note (optional)",
+        "phone": "Phone",
+        "reachHint": "Please fill in an email or a phone number (at least one)",
+        "submitCallback": "Call me back",
+        "submitContact": "Send message"
+      },
+      "subtitle": "Have a question, a request or a problem? Write to us or leave your number, and we'll get back to you.",
+      "title": "Contact and support"
+    },
+    "error": {
+      "generic": {
+        "body": "There was a problem loading this page. Please try again, or come back a little later if it keeps happening.",
+        "home": "Back to homepage",
+        "retry": "Try again",
+        "title": "Something went wrong"
+      },
+      "updated": {
+        "reloading": "Reloading the page…",
+        "title": "The site has been updated"
+      }
+    },
+    "faq": {
+      "categoriesAriaLabel": "Question categories",
+      "subtitle": "Everything you need to know about KALFA: what it is, how it works, what it costs and what happens if you want to cancel.",
+      "title": "Frequently asked questions"
+    },
+    "guestListTemplate": {
+      "closing": {
+        "subtitle": "Import this file to send a personal invitation for every row, with automatic reminders only to those who haven't replied yet.",
+        "title": "Your list is ready. What about the replies?"
+      },
+      "cta": {
+        "createEvent": "Create a new event",
+        "download": "Download the template",
+        "newEvent": "New event"
+      },
+      "faq": {
+        "eyebrow": "FAQ",
+        "title": "About the template"
+      },
+      "file": {
+        "sampleNote": "The row with no phone number is there on purpose: you can still manage a guest who has no number. They just won't get an automatic message.",
+        "tableCaption": "Guest list template layout",
+        "title": "What's in the file"
+      },
+      "hero": {
+        "eyebrow": "Free download",
+        "subtitle": "A ready-made file with the right columns that opens in Excel and Google Sheets. You can start filling it in right away, and if you later want to manage your event on KALFA, it's the same template the system imports.",
+        "title": "Guest list template"
+      },
+      "mistakes": {
+        "eyebrow": "Good to know",
+        "title": "Four mistakes that show up in almost every spreadsheet guest list"
+      },
+      "steps": {
+        "title": "How to build a wedding guest list in five steps"
+      }
+    },
+    "home": {
+      "audiences": {
+        "eyebrow": "Who it's for",
+        "subtitle": "From an intimate family gathering to a large company conference, KALFA adapts to your size and style.",
+        "title": "One event or hundreds, with the same control"
+      },
+      "closing": {
+        "subtitle": "Start managing your event's RSVPs today: tidy, clear and all in one place."
+      },
+      "cta": {
+        "createEvent": "Create a new event",
+        "dashboard": "Go to my account",
+        "howItWorks": "How it works",
+        "login": "Log in",
+        "newEvent": "New event",
+        "startNow": "Get started"
+      },
+      "features": {
+        "closing": "Everything's connected. Nothing gets lost.",
+        "eyebrow": "Key features",
+        "subtitle": "Seven features that work together, from the guest list to the final report.",
+        "title": "Everything you need to manage RSVPs"
+      },
+      "hero": {
+        "eyebrow": "Smart management for a perfect event",
+        "private": "Private and secure",
+        "readyInMinutes": "Ready in minutes",
+        "subtitle": "Send invitations, track replies in real time and manage your guest list and plus-ones. No spreadsheets, no scattered messages, no mess."
+      },
+      "how": {
+        "eyebrow": "How it works",
+        "subtitle": "No complicated tutorials. Set up an event and get going.",
+        "title": "Six simple steps, from first idea to the big day"
+      },
+      "preview": {
+        "ariaLabel": "Sample view of an event dashboard",
+        "eventName": "Wedding · Dana & Yoav",
+        "snapshot": "At a glance"
+      },
+      "problem": {
+        "eyebrow": "The reality today",
+        "subtitle": "Hosts run into the same problems again and again, and it all adds up to needless stress.",
+        "title": "Managing an event shouldn't feel like a full-time job"
+      },
+      "solution": {
+        "eyebrow": "The solution",
+        "subtitle": "Guests, invitations, RSVPs, reminders, statuses and updates: one tidy system that gives you full control.",
+        "title": "KALFA brings everything together in one place"
+      },
+      "trust": {
+        "eyebrow": "Trust",
+        "subtitle": "The goal is simple: prevent confusion, save time and give you full, calm control of the process.",
+        "title": "Built to reduce stress, not add to it"
+      }
+    },
+    "whatsapp": {
+      "cta": {
+        "createEvent": "Create a new event",
+        "newEvent": "New event",
+        "template": "Guest list template"
+      },
+      "faq": {
+        "eyebrow": "FAQ",
+        "title": "Sending on WhatsApp: common questions"
+      },
+      "hero": {
+        "eyebrow": "Messaging channel",
+        "subtitle": "A personal invitation for every guest through WhatsApp's official business platform. No group, no broadcast list, no sending by hand from your own phone.",
+        "title": "RSVPs on WhatsApp"
+      },
+      "limits": {
+        "eyebrow": "Good to know up front",
+        "title": "WhatsApp is a platform with rules, and we follow them"
+      },
+      "points": {
+        "title": "Why WhatsApp"
+      }
+    }
+  },
+  "ty": {
+    "invalidLink": "This link is invalid or no longer available.",
+    "invite": {
+      "imageAlt": "Event invitation",
+      "openFull": "Open the full-size invitation"
+    },
+    "rateLimited": "Too many requests. Please try again in a moment."
+  }
+}

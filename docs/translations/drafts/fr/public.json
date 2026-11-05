@@ -1,0 +1,296 @@
+{
+  "cb": {
+    "form": {
+      "contact": {
+        "label": "Comment vous joindre ?",
+        "placeholder": "Par exemple : nom, téléphone ou e-mail"
+      },
+      "lockedNotice": "Votre créneau d’appel est déjà fixé et ne changera pas.",
+      "note": {
+        "placeholder": "Écrivez les détails ici…"
+      },
+      "submit": "Envoyer"
+    },
+    "header": {
+      "subtitle": "Nous allons vous rappeler. Pour bien préparer cet appel, voici deux questions rapides.",
+      "title": "Vous nous avez appelés et nous n’avons pas pu répondre"
+    }
+  },
+  "error": {
+    "generic": {
+      "body": "La page n’a pas pu se charger. Vous pouvez réessayer et, si le problème persiste, revenir un peu plus tard.",
+      "retry": "Réessayer",
+      "title": "Un problème est survenu"
+    },
+    "updated": {
+      "reloading": "Rechargement de la page…",
+      "title": "Le site a été mis à jour"
+    }
+  },
+  "g": {
+    "invalidLink": "Ce lien n’est pas valide ou n’est plus disponible.",
+    "invite": {
+      "imageAlt": "Invitation à l’événement",
+      "openFull": "Ouvrir l’invitation en grand format"
+    },
+    "landing": {
+      "cta": "Offrir un cadeau",
+      "toggle": {
+        "back": "Retour à l’invitation",
+        "front": "Itinéraire et agenda"
+      },
+      "wazeLink": "Y aller avec Waze"
+    },
+    "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+  },
+  "join": {
+    "failed": "Impossible de rejoindre l’équipe. Il est possible que cette invitation ne soit plus valide.",
+    "invalid": {
+      "backLink": "Retour à mon espace",
+      "notice": "Cette invitation n’est pas valide, a expiré ou a déjà été utilisée."
+    },
+    "submit": "Rejoindre",
+    "title": "Rejoindre l’équipe"
+  },
+  "r": {
+    "attendees": {
+      "title": "Qui d’autre sera là ?"
+    },
+    "closed": {
+      "notice": "La date limite de réponse est passée. Pour plus de détails, vous pouvez contacter la personne qui vous invite."
+    },
+    "form": {
+      "adults": "Adultes",
+      "attendance": {
+        "legend": "Serez-vous là ?"
+      },
+      "kids": "Enfants",
+      "mealPref": {
+        "label": "Préférence de menu (facultatif)"
+      },
+      "note": {
+        "label": "Remarque (facultatif)"
+      },
+      "question": {
+        "selectPlaceholder": "Choisissez…"
+      },
+      "showInGuestList": {
+        "label": "Apparaître dans la liste « Qui sera là ? » (prénom uniquement)"
+      },
+      "submit": "Envoyer ma réponse",
+      "success": {
+        "updateHint": "Vous pouvez modifier votre réponse à tout moment depuis ce même lien."
+      }
+    },
+    "gift": {
+      "cta": "Offrir un cadeau",
+      "prompt": "Envie de faire plaisir à vos hôtes ?"
+    },
+    "header": {
+      "greeting": "Bonjour {{name}},",
+      "wazeLink": "Y aller avec Waze"
+    },
+    "invalidLink": "Ce lien de réponse n’est pas valide, a expiré ou a été annulé.",
+    "invite": {
+      "imageAlt": "Invitation à l’événement",
+      "openFull": "Ouvrir l’invitation en grand format"
+    },
+    "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+  },
+  "rate": {
+    "form": {
+      "comment": {
+        "label": "Un commentaire à ajouter ? (facultatif)",
+        "placeholder": "Dites-nous-en un peu plus…"
+      },
+      "heading": "Comment avez-vous trouvé notre service ?",
+      "legend": "Votre avis sur notre service",
+      "submit": "Envoyer mon avis",
+      "submitting": "Envoi en cours…"
+    },
+    "invalidLink": "Ce lien n’est pas valide ou n’est plus disponible.",
+    "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant.",
+    "thanks": {
+      "body": "Cela nous aide à nous améliorer pour la prochaine fois",
+      "title": "Merci pour votre avis !"
+    }
+  },
+  "site": {
+    "about": {
+      "cta": {
+        "createEvent": "Créer un événement",
+        "newEvent": "Nouvel événement"
+      },
+      "does": {
+        "limits": "Ce qu’elle ne fait pas : elle ne gère ni la salle, ni les prestataires, ni le budget, et n’envoie pas de publicité de masse. Les messages sont envoyés uniquement aux invités de l’événement, et uniquement à son sujet.",
+        "title": "Ce que fait la plateforme"
+      },
+      "hero": {
+        "eyebrow": "À propos",
+        "intro": "KALFA est une plateforme israélienne de gestion des confirmations de présence pour les événements privés : mariages, bar-mitsva et bat-mitsva, brit-mila, fêtes de famille et événements d’entreprise. Elle fait une seule chose : aider la personne qui organise l’événement à savoir qui vient, sans tableurs ni coups de fil à n’en plus finir.",
+        "title": "À propos de KALFA"
+      },
+      "operator": {
+        "title": "Qui exploite le service"
+      },
+      "principles": {
+        "title": "Notre façon de travailler"
+      }
+    },
+    "contact": {
+      "callbackSection": {
+        "title": "Faites-vous rappeler"
+      },
+      "contactSection": {
+        "title": "Envoyer une demande"
+      },
+      "form": {
+        "email": "E-mail",
+        "fullName": "Prénom et nom",
+        "message": "Votre message",
+        "noteOptional": "Remarque (facultatif)",
+        "phone": "Téléphone",
+        "reachHint": "Renseignez au moins un e-mail ou un numéro de téléphone",
+        "submitCallback": "Rappelez-moi",
+        "submitContact": "Envoyer une demande"
+      },
+      "subtitle": "Une question, une demande ou un problème ? Écrivez-nous ou laissez votre numéro, et nous vous recontacterons.",
+      "title": "Contact et assistance"
+    },
+    "error": {
+      "generic": {
+        "body": "La page n’a pas pu se charger. Vous pouvez réessayer et, si le problème persiste, revenir un peu plus tard.",
+        "home": "Retour à l’accueil",
+        "retry": "Réessayer",
+        "title": "Un problème est survenu"
+      },
+      "updated": {
+        "reloading": "Rechargement de la page…",
+        "title": "Le site a été mis à jour"
+      }
+    },
+    "faq": {
+      "categoriesAriaLabel": "Catégories de questions",
+      "subtitle": "Tout ce qu’il faut savoir sur KALFA : ce que c’est, comment ça marche, combien ça coûte et ce qui se passe en cas d’annulation.",
+      "title": "Questions fréquentes"
+    },
+    "guestListTemplate": {
+      "closing": {
+        "subtitle": "Importez ce fichier, envoyez une invitation personnelle pour chaque ligne et un rappel automatique uniquement aux personnes qui n’ont pas encore répondu.",
+        "title": "La liste est prête. Et les réponses ?"
+      },
+      "cta": {
+        "createEvent": "Créer un événement",
+        "download": "Télécharger le modèle",
+        "newEvent": "Nouvel événement"
+      },
+      "faq": {
+        "eyebrow": "Questions fréquentes",
+        "title": "À propos du modèle"
+      },
+      "file": {
+        "sampleNote": "La ligne « Mamie Rachel », sans téléphone, est un exemple voulu : vous pouvez aussi gérer une personne invitée sans numéro. Elle ne recevra simplement pas de message automatique.",
+        "tableCaption": "Structure du modèle de liste d’invités",
+        "title": "Ce que contient le fichier"
+      },
+      "hero": {
+        "eyebrow": "Téléchargement gratuit",
+        "subtitle": "Un fichier prêt à l’emploi, avec les bonnes colonnes, qui s’ouvre dans Excel et Google Sheets. Vous pouvez commencer à le remplir tout de suite et, si vous décidez ensuite de gérer votre événement sur KALFA, c’est ce même modèle que la plateforme importe.",
+        "title": "Modèle de liste d’invités"
+      },
+      "mistakes": {
+        "eyebrow": "Bon à savoir",
+        "title": "Quatre erreurs qui reviennent dans presque toutes les listes sur tableur"
+      },
+      "steps": {
+        "title": "Comment préparer une liste d’invités de mariage en cinq étapes"
+      }
+    },
+    "home": {
+      "audiences": {
+        "eyebrow": "Pour qui ?",
+        "subtitle": "De la fête de famille intime au grand congrès d’entreprise, KALFA s’adapte à la taille et au style de votre événement.",
+        "title": "Un événement ou des centaines : la même maîtrise"
+      },
+      "closing": {
+        "subtitle": "Commencez dès aujourd’hui à gérer les confirmations de présence de votre événement, de façon claire et organisée, au même endroit."
+      },
+      "cta": {
+        "createEvent": "Créer un événement",
+        "dashboard": "Mon espace",
+        "howItWorks": "Comment ça marche",
+        "login": "Se connecter",
+        "newEvent": "Nouvel événement",
+        "startNow": "Commencer maintenant"
+      },
+      "features": {
+        "closing": "Tout est connecté. Rien ne se perd.",
+        "eyebrow": "Fonctionnalités clés",
+        "subtitle": "Sept outils qui fonctionnent ensemble, de la liste d’invités au rapport final.",
+        "title": "Tout ce qu’il faut pour gérer vos confirmations de présence"
+      },
+      "hero": {
+        "eyebrow": "Une gestion intelligente pour un événement parfait",
+        "private": "Privé et sécurisé",
+        "readyInMinutes": "Prêt en quelques minutes",
+        "subtitle": "Envoyez vos invitations, suivez les réponses en temps réel et gérez votre liste d’invités et d’accompagnants, sans tableurs, sans messages éparpillés, sans pagaille."
+      },
+      "how": {
+        "eyebrow": "Comment ça marche",
+        "subtitle": "Pas de formation compliquée : créez votre événement et c’est parti.",
+        "title": "Six étapes simples, de l’idée au jour J"
+      },
+      "preview": {
+        "ariaLabel": "Exemple de tableau de bord de gestion d’un événement",
+        "eventName": "Mariage · Dana et Yoav",
+        "snapshot": "Vue d’ensemble"
+      },
+      "problem": {
+        "eyebrow": "La situation aujourd’hui",
+        "subtitle": "Quand on organise un événement, on retombe sans cesse sur les mêmes problèmes, et tout cela finit en stress inutile.",
+        "title": "Organiser un événement ne devrait pas être un travail à plein temps"
+      },
+      "solution": {
+        "eyebrow": "La solution",
+        "subtitle": "Invités, invitations, confirmations de présence, rappels, statuts et mises à jour : une seule plateforme bien organisée, qui vous donne une maîtrise totale.",
+        "title": "KALFA réunit tout au même endroit"
+      },
+      "trust": {
+        "eyebrow": "Confiance",
+        "subtitle": "L’objectif est simple : éviter la confusion, gagner du temps et vous donner une maîtrise totale et sereine de l’organisation.",
+        "title": "Conçue pour réduire le stress, pas pour en ajouter"
+      }
+    },
+    "whatsapp": {
+      "cta": {
+        "createEvent": "Créer un événement",
+        "newEvent": "Nouvel événement",
+        "template": "Modèle de liste d’invités"
+      },
+      "faq": {
+        "eyebrow": "Questions fréquentes",
+        "title": "Envoi par WhatsApp : les questions qui reviennent"
+      },
+      "hero": {
+        "eyebrow": "Canal d’envoi",
+        "subtitle": "Chaque invité reçoit son invitation personnelle via la plateforme professionnelle officielle de WhatsApp : ni groupe, ni liste de diffusion, ni envoi manuel depuis votre téléphone.",
+        "title": "Confirmations de présence par WhatsApp"
+      },
+      "limits": {
+        "eyebrow": "À savoir avant de commencer",
+        "title": "WhatsApp a ses règles, et nous les respectons"
+      },
+      "points": {
+        "title": "Pourquoi passer par ce canal ?"
+      }
+    }
+  },
+  "ty": {
+    "invalidLink": "Ce lien n’est pas valide ou n’est plus disponible.",
+    "invite": {
+      "imageAlt": "Invitation à l’événement",
+      "openFull": "Ouvrir l’invitation en grand format"
+    },
+    "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+  }
+}
