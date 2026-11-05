@@ -28,10 +28,37 @@ type WebhookInboxRow = Tables<'webhook_inbox'>;
 // A failed read or write throws, so handleWebhook (worker/main.ts) records the
 // failure instead of marking the row processed. Every write here repeats safely.
 //
+// The rows after a failed one go on, so its retry can land after a newer event for
+// the same template. isSupersededByNewerEvent stops that retry from putting the old
+// state back: the send decision reads the status (decideRoutedTemplate in
+// template-route.ts). The nightly sync does not go through this check.
+//
 // isCategoryDowngraded lives in src/lib/whatsapp/template-health.ts (shared
 // with the reconciliation poll) so both paths agree on what "downgraded"
 // means.
 import { isCategoryDowngraded } from '@/lib/whatsapp/template-health';
+
+// event_at is Meta's delivery time, in seconds. Two deliveries of one kind for one
+// template in the same second share a dedupe_key, so they never reach this as two
+// rows. A row with no event_at has no order to compare, and it applies.
+async function isSupersededByNewerEvent(
+  admin: ReturnType<typeof createAdminClient>,
+  row: WebhookInboxRow,
+  templateId: string,
+): Promise<boolean> {
+  if (!row.event_at) return false;
+  const { data, error } = await admin
+    .from('webhook_inbox')
+    .select('id')
+    .eq('provider', 'whatsapp')
+    .eq('event_kind', row.event_kind)
+    .eq('payload->>message_template_id', templateId)
+    .gt('event_at', row.event_at)
+    .not('processed_at', 'is', null)
+    .limit(1);
+  if (error) throw new Error('בדיקת סדר אירועי התבנית נכשלה', { cause: error });
+  return data.length > 0;
+}
 
 async function findTemplateRowId(
   admin: ReturnType<typeof createAdminClient>,
@@ -111,6 +138,7 @@ export async function processTemplateStatusRow(row: WebhookInboxRow): Promise<vo
   if (!parsed.success) return; // malformed/unexpected payload — nothing to apply
   const v = parsed.data;
   const admin = createAdminClient();
+  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return;
   const target = await findMirrorTemplate(admin, v.message_template_id);
   const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
   await updateMirror(admin, target, {
@@ -151,6 +179,7 @@ export async function processTemplateCategoryRow(row: WebhookInboxRow): Promise<
   if (!parsed.success) return;
   const v = parsed.data;
   const admin = createAdminClient();
+  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return;
   const target = await findMirrorTemplate(admin, v.message_template_id);
   const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
   await updateMirror(
@@ -226,6 +255,7 @@ export async function processTemplateCategoryMisuseRow(row: WebhookInboxRow): Pr
   if (!parsed.success) return;
   const v = parsed.data;
   const admin = createAdminClient();
+  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return;
   const target = await findMirrorTemplate(admin, v.message_template_id);
   const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
   await updateMirror(admin, target, { correct_category: v.correct_category });
@@ -261,6 +291,7 @@ export async function processTemplateQualityRow(row: WebhookInboxRow): Promise<v
   if (!parsed.success) return;
   const v = parsed.data;
   const admin = createAdminClient();
+  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return;
   const target = await findMirrorTemplate(admin, v.message_template_id);
   const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
   await updateMirror(admin, target, {

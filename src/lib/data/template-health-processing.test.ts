@@ -12,18 +12,51 @@ let mirrorResult: { data: unknown; error: unknown } = { data: null, error: null 
 const updateCalls: Array<{ table: string; payload: Record<string, unknown> }> = [];
 // A write that fails, by table. Default: every write succeeds.
 let updateErrors: Record<string, unknown> = {};
+// Rows already marked processed, and the failure of the query that reads them.
+type ProcessedInboxRow = { event_kind: string; templateId: string; event_at: string };
+let processedInbox: ProcessedInboxRow[] = [];
+let inboxError: unknown = null;
+
+function inboxQuery() {
+  const equal: Record<string, unknown> = {};
+  let after = '';
+  const query = {
+    eq(column: string, value: unknown) {
+      equal[column] = value;
+      return query;
+    },
+    gt(_column: string, value: string) {
+      after = value;
+      return query;
+    },
+    not: () => query,
+    limit: async () => ({
+      data: processedInbox.filter(
+        (r) =>
+          r.event_kind === equal.event_kind &&
+          r.templateId === equal['payload->>message_template_id'] &&
+          r.event_at > after,
+      ),
+      error: inboxError,
+    }),
+  };
+  return query;
+}
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
     from: (table: string) => ({
-      select: () => ({
-        eq: () => ({
-          eq: () => ({
-            maybeSingle: async () => selectResult,
-          }),
-          maybeSingle: async () => (table === 'whatsapp_message_templates' ? mirrorResult : selectResult),
-        }),
-      }),
+      select: () =>
+        table === 'webhook_inbox'
+          ? inboxQuery()
+          : {
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => selectResult,
+                }),
+                maybeSingle: async () => (table === 'whatsapp_message_templates' ? mirrorResult : selectResult),
+              }),
+            },
       update: (payload: Record<string, unknown>) => ({
         eq: async () => {
           updateCalls.push({ table, payload });
@@ -60,6 +93,8 @@ beforeEach(() => {
   selectResult = { data: TEMPLATE, error: null };
   mirrorResult = { data: null, error: null };
   updateErrors = {};
+  processedInbox = [];
+  inboxError = null;
   updateCalls.length = 0; // a plain array, not a vi.fn() spy — clearAllMocks doesn't touch it
 });
 
@@ -413,6 +448,97 @@ describe('a failed read or write fails the row, so the worker retries it', () =>
     updateErrors = {};
     await processTemplateCategoryRow(completed);
     expect(sendSlackAlert).toHaveBeenCalledTimes(1);
+  });
+});
+
+// A failed row stays in the queue while the rows after it go on, so its retry can land
+// after a newer event for the same template. The send decision reads the status, so an
+// old APPROVED written over a newer DISABLED would send a template Meta has disabled.
+describe('a retried event never overwrites a newer one', () => {
+  const keys = { message_template_id: 555, message_template_name: 'x', message_template_language: 'he' };
+  const EARLIER = '2026-11-05T08:00:00+00:00';
+  const LATER = '2026-11-05T08:00:30+00:00';
+  const MIRROR = {
+    id: '555',
+    whatsapp_template_settings: { requested_category: 'UTILITY' },
+    message_template_routes: [{ message_key: 'gift' }],
+  };
+  const event = (event_kind: string, event_at: string | null, payload: Record<string, unknown>) =>
+    ({ id: `row-${event_at}`, event_kind, event_at, payload: { ...keys, ...payload } }) as unknown as Parameters<
+      typeof processTemplateStatusRow
+    >[0];
+  const processed = (event_kind: string, event_at: string, templateId = '555') =>
+    processedInbox.push({ event_kind, templateId, event_at });
+  const approved = event('template_status', EARLIER, { event: 'APPROVED' });
+
+  beforeEach(() => {
+    mirrorResult = { data: MIRROR, error: null };
+  });
+
+  it('approval fails, a later disable succeeds: the approval retry leaves the template disabled', async () => {
+    updateErrors = { whatsapp_message_templates: { code: 'XX000' } };
+    await expect(processTemplateStatusRow(approved)).rejects.toThrow();
+
+    updateErrors = {};
+    await processTemplateStatusRow(event('template_status', LATER, { event: 'DISABLED' }));
+    processed('template_status', LATER);
+
+    await processTemplateStatusRow(approved);
+
+    const statuses = updateCalls
+      .filter((c) => c.table === 'whatsapp_message_templates')
+      .map((c) => c.payload.status);
+    expect(statuses.at(-1)).toBe('DISABLED');
+    expect(updateCalls.filter((c) => c.table === 'message_templates').at(-1)?.payload.meta_status).toBe('DISABLED');
+  });
+
+  it('a superseded event neither writes nor alerts, and the row still completes', async () => {
+    processed('template_status', LATER);
+    await expect(
+      processTemplateStatusRow(event('template_status', EARLIER, { event: 'REJECTED' })),
+    ).resolves.toBeUndefined();
+    expect(updateCalls).toHaveLength(0);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('a retry with no newer event still applies', async () => {
+    processed('template_status', '2026-11-05T07:59:00+00:00');
+    await processTemplateStatusRow(approved);
+    expect(updateCalls.find((c) => c.table === 'whatsapp_message_templates')?.payload.status).toBe('APPROVED');
+  });
+
+  it('another event kind, or another template, is not a newer event', async () => {
+    processed('template_quality', LATER);
+    processed('template_status', LATER, '999');
+    await processTemplateStatusRow(approved);
+    expect(updateCalls.find((c) => c.table === 'whatsapp_message_templates')?.payload.status).toBe('APPROVED');
+  });
+
+  it('a row with no event time has no order to compare, so it applies', async () => {
+    processed('template_status', LATER);
+    await processTemplateStatusRow(event('template_status', null, { event: 'APPROVED' }));
+    expect(updateCalls.find((c) => c.table === 'whatsapp_message_templates')?.payload.status).toBe('APPROVED');
+  });
+
+  it('holds for the category, category-misuse and quality events too', async () => {
+    processed('template_category', LATER);
+    processed('template_category_misuse', LATER);
+    processed('template_quality', LATER);
+    await processTemplateCategoryRow(
+      event('template_category', EARLIER, { previous_category: 'UTILITY', new_category: 'MARKETING' }),
+    );
+    await processTemplateCategoryMisuseRow(
+      event('template_category_misuse', EARLIER, { category: 'UTILITY', correct_category: 'MARKETING' }),
+    );
+    await processTemplateQualityRow(event('template_quality', EARLIER, { new_quality_score: 'RED' }));
+    expect(updateCalls).toHaveLength(0);
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('a failed order lookup fails the row, so the worker retries it', async () => {
+    inboxError = { code: 'XX000' };
+    await expect(processTemplateStatusRow(approved)).rejects.toThrow();
+    expect(updateCalls).toHaveLength(0);
   });
 });
 
