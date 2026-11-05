@@ -13,25 +13,6 @@ import { useT } from 'next-i18next/client';
 
 import { submitRatingAction } from './actions';
 
-// Three-point CSAT picker + optional comment. Built from shadcn's own
-// composition for this exact shape (reui c-rating-9's shell: Card + rating +
-// adaptive copy + Textarea + gated submit) with c-rating-8's plain-button
-// icon-picker pattern instead of the star control, and lucide icons (Frown/
-// Meh/Smile — lucide is already used elsewhere in the app, e.g. not-found.tsx) instead
-// of emoji: a real web page doesn't have email's rendering constraints, so it
-// gets the sharper, on-brand icon instead of a platform emoji glyph.
-const OPTIONS = [
-  { score: 1 as const, Icon: Frown, label: 'לא היה טוב', tone: 'destructive' as const },
-  { score: 2 as const, Icon: Meh, label: 'בסדר', tone: 'warning' as const },
-  { score: 3 as const, Icon: Smile, label: 'מצוין', tone: 'success' as const },
-];
-
-const FEEDBACK: Record<1 | 2 | 3, string> = {
-  1: 'מצטערים לשמוע — תודה שספרת לנו',
-  2: 'תודה על המשוב, נמשיך להשתפר',
-  3: 'שמחים לשמוע! 🎉',
-};
-
 const TONE_CLASS: Record<'destructive' | 'warning' | 'success', string> = {
   destructive: 'border-destructive bg-destructive/10 text-destructive',
   warning: 'border-warning bg-warning/15 text-warning-foreground',
@@ -54,6 +35,23 @@ export function RatingForm({
   // The picker sits above the <form> element (layout), so its radios join the
   // form through the `form` attribute rather than by nesting.
   const formId = useId();
+  // Three-point CSAT picker + optional comment. Built from shadcn's own
+  // composition for this exact shape (reui c-rating-9's shell: Card + rating +
+  // adaptive copy + Textarea + gated submit) with c-rating-8's plain-button
+  // icon-picker pattern instead of the star control, and lucide icons (Frown/
+  // Meh/Smile — lucide is already used elsewhere in the app, e.g. not-found.tsx) instead
+  // of emoji: a real web page doesn't have email's rendering constraints, so it
+  // gets the sharper, on-brand icon instead of a platform emoji glyph.
+  const options = [
+    { score: 1 as const, Icon: Frown, label: t('rate.form.option.bad', 'לא היה טוב'), tone: 'destructive' as const },
+    { score: 2 as const, Icon: Meh, label: t('rate.form.option.ok', 'בסדר'), tone: 'warning' as const },
+    { score: 3 as const, Icon: Smile, label: t('rate.form.option.great', 'מצוין'), tone: 'success' as const },
+  ];
+  const feedback: Record<1 | 2 | 3, string> = {
+    1: t('rate.form.feedback.bad', 'מצטערים לשמוע — תודה שספרת לנו'),
+    2: t('rate.form.feedback.ok', 'תודה על המשוב, נמשיך להשתפר'),
+    3: t('rate.form.feedback.great', 'שמחים לשמוע! 🎉'),
+  };
 
   if (state.data?.notice) {
     return (
@@ -80,7 +78,7 @@ export function RatingForm({
           <fieldset form={formId}>
             <legend className="sr-only">{t('rate.form.legend', 'דירוג שירות')}</legend>
             <div className="flex gap-2">
-              {OPTIONS.map(({ score, Icon, label, tone }) => (
+              {options.map(({ score, Icon, label, tone }) => (
                 <label
                   key={score}
                   className={`flex size-16 items-center justify-center rounded-xl border-2 text-muted-foreground transition-all duration-200 ease-k-out outline-none touch-manipulation motion-safe:active:scale-95 has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring ${
@@ -106,7 +104,7 @@ export function RatingForm({
             </div>
           </fieldset>
           {selected && (
-            <p className="text-xs font-medium text-muted-foreground">{FEEDBACK[selected]}</p>
+            <p className="text-xs font-medium text-muted-foreground">{feedback[selected]}</p>
           )}
         </div>
 

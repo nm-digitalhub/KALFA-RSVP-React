@@ -5,6 +5,9 @@ import { z } from 'zod';
 // custom answers rebuilt from the flat `answer_<q_key>` fields → Zod → submit_rsvp → headcount mirror — and its
 // exact Hebrew: the form line next to the field errors, and one line per submit_rsvp reason.
 vi.mock('server-only', () => ({}));
+vi.mock('@/i18n.server', () => ({
+  getT: async () => ({ t: (_key: string, defaultValue: string) => defaultValue }),
+}));
 vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers()) }));
 
 const { rateLimit, submitRsvp, mirrorEq } = vi.hoisted(() => ({

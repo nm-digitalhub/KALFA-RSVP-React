@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // The public rating (/rate/[token]) keeps its order — rate limit keyed on the token's fingerprint → Zod →
 // submitInquiryRating — and its one generic refusal for every token state.
 vi.mock('server-only', () => ({}));
+vi.mock('@/i18n.server', () => ({
+  getT: async () => ({ t: (_key: string, defaultValue: string) => defaultValue }),
+}));
 vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers()) }));
 
 const { rateLimit, submitInquiryRating } = vi.hoisted(() => ({ rateLimit: vi.fn(), submitInquiryRating: vi.fn() }));

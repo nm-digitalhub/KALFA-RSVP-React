@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { headers } from 'next/headers';
 import { returnValidationErrors } from 'next-safe-action';
 
+import { getT } from '@/i18n.server';
 import { RSVP_SUBMIT_RATE } from '@/lib/constants';
 import { submitRsvp, type RsvpFailureReason } from '@/lib/data/rsvp';
 import { actionClient, returnUserError } from '@/lib/safe-action';
@@ -12,19 +13,6 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import { rsvpSubmitSchema } from '@/lib/validation/rsvp';
 
 const ANSWER_PREFIX = 'answer_';
-
-// Reason codes from submit_rsvp mapped to safe, user-facing Hebrew. These are
-// actionable (deadline/closed/count) without revealing token validity beyond
-// what the page already showed; unknown/revoked collapse to one generic line.
-const REASON_MESSAGES: Record<RsvpFailureReason, string> = {
-  not_found: 'קישור אישור ההגעה אינו תקף או בוטל.',
-  closed: 'האירוע אינו פתוח כעת לאישורי הגעה.',
-  deadline_passed: 'המועד האחרון לאישור הגעה חלף.',
-  invalid_count: 'מספר האורחים אינו תקין.',
-  invalid_answers: 'אחת התשובות אינה תקינה. נא לבדוק ולנסות שוב.',
-  missing_required: 'נא למלא את כל השדות הנדרשים.',
-  invalid_status: 'הבחירה אינה תקינה.',
-};
 
 function trimmedOrUndefined(value: FormDataEntryValue | null): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -54,13 +42,16 @@ export const submitRsvpAction = actionClient
     const fp = tokenFingerprint(String(token));
     const gate = await rateLimit(`rsvp:submit:${fp}:${ip}`, RSVP_SUBMIT_RATE);
     if (!gate.allowed) {
-      returnUserError('נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.');
+      const { t } = await getT('public');
+      returnUserError(t('r.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.'));
     }
     return next();
   })
   .inputSchema(z.instanceof(FormData))
   .bindArgsSchemas([z.string().min(1)])
   .stateAction(async ({ parsedInput: formData, bindArgsParsedInputs: [token] }) => {
+    const { t } = await getT('public');
+
     // Custom answers arrive as flat fields named `answer_<q_key>`; rebuild the
     // object the schema + RPC expect. submit_rsvp re-validates keys/options/length.
     const answers: Record<string, string> = {};
@@ -86,7 +77,7 @@ export const submitRsvpAction = actionClient
       // nested answers.<q_key> message still lands under `answers`.
       const { fieldErrors } = z.flattenError(parsed.error);
       returnValidationErrors(rsvpSubmitSchema, {
-        _errors: ['נא לבדוק את הפרטים שמולאו.'],
+        _errors: [t('r.errors.checkFields', 'נא לבדוק את הפרטים שמולאו.')],
         ...Object.fromEntries(Object.entries(fieldErrors).map(([field, errors]) => [field, { _errors: errors }])),
       });
     }
@@ -115,11 +106,23 @@ export const submitRsvpAction = actionClient
       }
     }
     if (!outcome.ok) {
-      returnUserError(REASON_MESSAGES[outcome.reason]);
+      // Reason codes from submit_rsvp mapped to safe, user-facing Hebrew. These are
+      // actionable (deadline/closed/count) without revealing token validity beyond
+      // what the page already showed; unknown/revoked collapse to one generic line.
+      const reasonMessages: Record<RsvpFailureReason, string> = {
+        not_found: t('r.errors.notFound', 'קישור אישור ההגעה אינו תקף או בוטל.'),
+        closed: t('r.errors.closed', 'האירוע אינו פתוח כעת לאישורי הגעה.'),
+        deadline_passed: t('r.errors.deadlinePassed', 'המועד האחרון לאישור הגעה חלף.'),
+        invalid_count: t('r.errors.invalidCount', 'מספר האורחים אינו תקין.'),
+        invalid_answers: t('r.errors.invalidAnswers', 'אחת התשובות אינה תקינה. נא לבדוק ולנסות שוב.'),
+        missing_required: t('r.errors.missingRequired', 'נא למלא את כל השדות הנדרשים.'),
+        invalid_status: t('r.errors.invalidStatus', 'הבחירה אינה תקינה.'),
+      };
+      returnUserError(reasonMessages[outcome.reason]);
     }
     return {
       notice: outcome.unchanged
-        ? 'התשובה שלך כבר נשמרה אצלנו. תודה!'
-        : 'אישור ההגעה נשמר בהצלחה. תודה!',
+        ? t('r.success.unchanged', 'התשובה שלך כבר נשמרה אצלנו. תודה!')
+        : t('r.success.saved', 'אישור ההגעה נשמר בהצלחה. תודה!'),
     };
   });

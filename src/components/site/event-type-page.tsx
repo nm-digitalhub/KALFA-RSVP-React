@@ -1,18 +1,20 @@
 import Link from 'next/link';
 import { ArrowLeft, BookOpen, CalendarClock, CircleCheck, ListChecks, Sparkles } from 'lucide-react';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { siteCta } from '@/components/site/cta';
+import { getT } from '@/i18n.server';
 import { getUser } from '@/lib/auth/dal';
 import { getPublicBusinessFacts } from '@/lib/data/public-business-facts';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
 import { formatOutreachScheduleHe } from '@/lib/faq/tokens';
-import { EVENT_TYPES, type EventTypeContent } from '@/lib/marketing/event-types';
+import { EVENT_TYPES, getEventTypeContent, type EventTypeSlug } from '@/lib/marketing/event-types';
 import { buildBreadcrumbJsonLd, jsonLdScript } from '@/lib/seo/breadcrumb-json-ld';
 import { getAppOrigin } from '@/lib/url';
 
 // Shared layout for the four event-type marketing pages. The four page files
-// (/wedding, /bar-mitzva, /brit, /event) are thin — they pick an entry from
-// src/lib/marketing/event-types.ts and hand it here, so the DIFFERENCES
+// (/wedding, /bar-mitzva, /brit, /event) are thin — they name an entry of
+// src/lib/marketing/event-types.ts by slug and hand it here, so the DIFFERENCES
 // between them live in the catalogue where they can be compared, and the
 // markup exists once.
 //
@@ -36,7 +38,10 @@ function Eyebrow({ className, children }: { className?: string; children: React.
   );
 }
 
-export async function EventTypePage({ content }: { content: EventTypeContent }) {
+export async function EventTypePage({ slug }: { slug: EventTypeSlug }) {
+  const { t, i18n } = await getT('public');
+  const content = getEventTypeContent(slug, t);
+
   // Returning visitors go to their dashboard rather than to sign-up. getUser
   // is React-cache()d and the (site) layout's SiteHeader already called it for
   // this request — no extra round trip.
@@ -55,7 +60,7 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
       ? formatOutreachScheduleHe(facts.outreach_schedule)
       : '';
   const startHref = user ? '/app/events/new' : '/auth/signup';
-  const startLabel = user ? 'אירוע חדש' : 'צרו אירוע חדש';
+  const startLabel = user ? t('site.eventPage.cta.newEvent', 'אירוע חדש') : t('site.eventPage.cta.createEvent', 'צרו אירוע חדש');
 
   const jsonLd = buildFaqJsonLd(
     content.faq.map((f) => ({ question: f.q, answer: f.a })),
@@ -67,10 +72,10 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
   const related = [
     ...EVENT_TYPES.filter((e) => e.slug !== content.slug).map((e) => ({
       href: e.path,
-      label: e.h1,
+      label: getEventTypeContent(e.slug, t).h1,
     })),
-    { href: '/whatsapp', label: 'אישורי הגעה בוואטסאפ' },
-    { href: '/guest-list-template', label: 'תבנית רשימת מוזמנים להורדה' },
+    { href: '/whatsapp', label: t('site.eventPage.related.whatsapp', 'אישורי הגעה בוואטסאפ') },
+    { href: '/guest-list-template', label: t('site.eventPage.related.template', 'תבנית רשימת מוזמנים להורדה') },
   ];
 
   return (
@@ -106,7 +111,7 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
                 <ArrowLeft className="size-5" aria-hidden />
               </Link>
               <Link href="/guest-list-template" className={siteCta({ variant: 'outline' })}>
-                תבנית רשימת מוזמנים
+                {t('site.eventPage.cta.template', 'תבנית רשימת מוזמנים')}
               </Link>
             </div>
           </div>
@@ -119,9 +124,9 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
               {content.challengesTitle}
             </h2>
             <div className="k-reveal-group mt-10 grid gap-4 sm:grid-cols-2">
-              {content.challenges.map(({ t, d }) => (
-                <div key={t} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
-                  <h3 className="text-lg font-bold">{t}</h3>
+              {content.challenges.map(({ title, d }) => (
+                <div key={title} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
+                  <h3 className="text-lg font-bold">{title}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
                 </div>
               ))}
@@ -135,7 +140,7 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
         <section className="mx-auto max-w-3xl px-6 py-16">
           <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
             <BookOpen className="size-4" aria-hidden />
-            מדריך
+            {t('site.eventPage.guide.eyebrow', 'מדריך')}
           </span>
           <h2 className="mt-3 text-balance text-display font-bold tracking-tight">
             {content.guideTitle}
@@ -158,23 +163,23 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
             <div>
               <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
                 <CalendarClock className="size-4" aria-hidden />
-                לוח זמנים
+                {t('site.eventPage.timing.eyebrow', 'לוח זמנים')}
               </span>
               <h2 className="mt-4 text-balance text-display font-bold tracking-tight">
                 {content.timingTitle}
               </h2>
               <p className="mt-3 text-pretty text-lg text-muted-foreground">
-                המלצה מעשית — לא כלל ברזל. אפשר להתאים לכל אירוע.
+                {t('site.eventPage.timing.subtitle', 'המלצה מעשית — לא כלל ברזל. אפשר להתאים לכל אירוע.')}
               </p>
               <div className="mt-6 rounded-lg border border-border bg-[#f9fafb] p-4 text-sm leading-relaxed">
-                <p className="font-bold">לוח השליחה של KALFA</p>
+                <p className="font-bold">{t('site.eventPage.timing.cadenceTitle', 'לוח השליחה של KALFA')}</p>
                 {cadence ? (
                   <p className="mt-1 text-muted-foreground">
-                    אחרי הפעלת אישורי ההגעה, הפניות למוזמנים יוצאות אוטומטית לפי תאריך האירוע: {cadence}.
+                    {t('site.eventPage.timing.cadenceBody', 'אחרי הפעלת אישורי ההגעה, הפניות למוזמנים יוצאות אוטומטית לפי תאריך האירוע: {{cadence}}.', { cadence })}
                   </p>
                 ) : null}
                 <p className="mt-1 text-muted-foreground">
-                  אין פניות בשבת, בחג ובשעות הלילה — פנייה שמועדה נופל בזמן כזה מתוזמנת מחדש אוטומטית.
+                  {t('site.eventPage.timing.quietHours', 'אין פניות בשבת, בחג ובשעות הלילה — פנייה שמועדה נופל בזמן כזה מתוזמנת מחדש אוטומטית.')}
                 </p>
               </div>
             </div>
@@ -201,10 +206,10 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
           <div className="mx-auto max-w-3xl px-6 py-16">
             <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
               <ListChecks className="size-4" aria-hidden />
-              שאלות נפוצות
+              {t('site.eventPage.faq.eyebrow', 'שאלות נפוצות')}
             </span>
             <h2 className="mt-3 text-balance text-display font-bold tracking-tight">
-              שאלות שחוזרות על עצמן
+              {t('site.eventPage.faq.title', 'שאלות שחוזרות על עצמן')}
             </h2>
             <div className="k-reveal-group mt-8 space-y-8">
               {content.faq.map((f) => (
@@ -217,19 +222,21 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
               ))}
             </div>
             <p className="mt-10 text-muted-foreground">
-              שאלות נוספות על המערכת ועל המחיר —{' '}
-              <Link href="/faq" className="font-semibold text-primary hover:underline">
-                בעמוד השאלות הנפוצות
-              </Link>
-              .
+              <Trans
+                t={t}
+                i18n={i18n}
+                i18nKey="site.eventPage.faq.moreLink"
+                defaults="שאלות נוספות על המערכת ועל המחיר — <faq>בעמוד השאלות הנפוצות</faq>."
+                components={{ faq: <Link href="/faq" className="font-semibold text-primary hover:underline" /> }}
+              />
             </p>
           </div>
         </section>
 
         {/* Related pages — internal links between the sibling marketing pages,
             so no page is reachable only from the footer. */}
-        <nav aria-label="עמודים קשורים" className="mx-auto max-w-6xl px-6 pt-16">
-          <h2 className="text-lg font-bold">עוד באותו נושא</h2>
+        <nav aria-label={t('site.eventPage.related.ariaLabel', 'עמודים קשורים')} className="mx-auto max-w-6xl px-6 pt-16">
+          <h2 className="text-lg font-bold">{t('site.eventPage.related.title', 'עוד באותו נושא')}</h2>
           <ul className="mt-4 flex flex-wrap gap-3">
             {related.map((r) => (
               <li key={r.href}>
@@ -248,10 +255,10 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
         <section className="mx-auto max-w-6xl px-6 py-16">
           <div className="k-reveal k-sheen relative isolate overflow-hidden rounded-3xl bg-primary px-8 py-14 text-center before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_start] before:from-white/15 before:to-transparent">
             <h2 className="text-balance text-display font-extrabold tracking-tight text-primary-foreground">
-              {content.h1} — במקום אחד
+              {t('site.eventPage.closing.title', '{{h1}} — במקום אחד', { h1: content.h1 })}
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-pretty text-primary-foreground/90">
-              רשימה מסודרת, תזכורות אוטומטיות ותמונת מצב שמתעדכנת מעצמה.
+              {t('site.eventPage.closing.subtitle', 'רשימה מסודרת, תזכורות אוטומטיות ותמונת מצב שמתעדכנת מעצמה.')}
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               <Link href={startHref} className={siteCta({ variant: 'dark', size: 'xl' })}>
@@ -260,7 +267,7 @@ export async function EventTypePage({ content }: { content: EventTypeContent }) 
               </Link>
               <Link href="/#how" className={siteCta({ variant: 'onPrimary', size: 'xl' })}>
                 <CircleCheck className="size-5" aria-hidden />
-                איך המערכת עובדת
+                {t('site.eventPage.cta.howItWorks', 'איך המערכת עובדת')}
               </Link>
             </div>
           </div>

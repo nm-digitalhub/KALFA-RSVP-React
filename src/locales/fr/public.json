@@ -1,5 +1,11 @@
 {
   "cb": {
+    "errors": {
+      "checkFields": "",
+      "generic": "",
+      "rateLimited": "",
+      "unavailable": ""
+    },
     "form": {
       "contact": {
         "label": "Comment vous appeler ?",
@@ -7,13 +13,22 @@
       },
       "lockedNotice": "Votre créneau d’appel est déjà fixé et ne changera pas.",
       "note": {
+        "label": "",
         "placeholder": "Écrivez les détails ici…"
       },
       "submit": "Envoyer"
     },
     "header": {
+      "phoneHint": "",
       "subtitle": "Nous allons vous rappeler. Pour bien préparer cet appel, voici deux questions rapides.",
       "title": "Vous nous avez appelés et nous n’avons pas pu répondre"
+    },
+    "meta": {
+      "title": ""
+    },
+    "success": {
+      "locked": "",
+      "saved": ""
     }
   },
   "error": {
@@ -41,13 +56,23 @@
       },
       "wazeLink": "Y aller avec Waze"
     },
+    "meta": {
+      "title": ""
+    },
     "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+  },
+  "guest": {
+    "brandLine": ""
   },
   "join": {
     "failed": "Impossible de rejoindre l’équipe. Il est possible que cette invitation ne soit plus valide.",
     "invalid": {
       "backLink": "Retour à mon espace",
       "notice": "Cette invitation n’est pas valide, a expiré ou a déjà été utilisée."
+    },
+    "invited": "",
+    "meta": {
+      "title": ""
     },
     "submit": "Rejoindre",
     "title": "Rejoindre l’équipe"
@@ -58,6 +83,16 @@
     },
     "closed": {
       "notice": "La date limite de réponse est passée. Pour plus de détails, vous pouvez contacter la personne qui vous invite."
+    },
+    "errors": {
+      "checkFields": "",
+      "closed": "",
+      "deadlinePassed": "",
+      "invalidAnswers": "",
+      "invalidCount": "",
+      "invalidStatus": "",
+      "missingRequired": "",
+      "notFound": ""
     },
     "form": {
       "adults": "Adultes",
@@ -77,8 +112,20 @@
       "showInGuestList": {
         "label": "Apparaître dans la liste « Qui sera là ? » (prénom uniquement)"
       },
+      "status": {
+        "attending": "",
+        "declined": "",
+        "maybe": ""
+      },
+      "stepper": {
+        "decrease": "",
+        "increase": ""
+      },
       "submit": "Envoyer ma réponse",
       "success": {
+        "summary_one": "",
+        "summary_many": "",
+        "summary_other": "",
         "updateHint": "Vous pouvez modifier votre réponse à tout moment depuis ce même lien."
       }
     },
@@ -95,20 +142,43 @@
       "imageAlt": "Invitation à l’événement",
       "openFull": "Ouvrir l’invitation en grand format"
     },
-    "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+    "meta": {
+      "title": ""
+    },
+    "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant.",
+    "success": {
+      "saved": "",
+      "unchanged": ""
+    }
   },
   "rate": {
+    "errors": {
+      "invalidScore": ""
+    },
     "form": {
       "comment": {
         "label": "Un commentaire à ajouter ? (facultatif)",
         "placeholder": "Dites-nous-en un peu plus…"
       },
+      "feedback": {
+        "bad": "",
+        "great": "",
+        "ok": ""
+      },
       "heading": "Comment avez-vous trouvé notre service ?",
       "legend": "Votre avis sur notre service",
+      "option": {
+        "bad": "",
+        "great": "",
+        "ok": ""
+      },
       "submit": "Envoyer mon avis",
       "submitting": "Envoi en cours…"
     },
     "invalidLink": "Ce lien n’est pas valide ou n’est plus disponible.",
+    "meta": {
+      "title": ""
+    },
     "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant.",
     "thanks": {
       "body": "Cela nous aide à nous améliorer pour la prochaine fois",
@@ -117,11 +187,30 @@
   },
   "site": {
     "about": {
+      "breadcrumb": "",
       "cta": {
         "createEvent": "Créer un événement",
         "newEvent": "Nouvel événement"
       },
       "does": {
+        "items": {
+          "guestList": {
+            "body": "",
+            "title": ""
+          },
+          "personalInvite": {
+            "body": "",
+            "title": ""
+          },
+          "privateLink": {
+            "body": "",
+            "title": ""
+          },
+          "snapshot": {
+            "body": "",
+            "title": ""
+          }
+        },
         "limits": "Ce qu’elle ne fait pas : elle ne gère ni la salle, ni les prestataires, ni le budget, et n’envoie pas de publicité de masse. Les messages sont envoyés uniquement aux invités de l’événement, et uniquement à son sujet.",
         "title": "Ce que fait la plateforme"
       },
@@ -130,12 +219,65 @@
         "intro": "KALFA est une plateforme israélienne de gestion des confirmations de présence pour les événements privés : mariages, bar-mitsva et bat-mitsva, brit-mila, fêtes de famille et événements d’entreprise. Elle fait une seule chose : aider la personne qui organise l’événement à savoir qui vient, sans tableurs ni dizaines de coups de fil.",
         "title": "À propos de KALFA"
       },
+      "meta": {
+        "title": ""
+      },
+      "moreLinks": "",
       "operator": {
+        "body": "",
+        "contact": "",
         "title": "Qui exploite le service"
       },
       "principles": {
+        "items": {
+          "dataOwnership": {
+            "body": "",
+            "title": ""
+          },
+          "hebrewFirst": {
+            "title": ""
+          },
+          "noShabbat": {
+            "body": "",
+            "title": ""
+          },
+          "openPrice": {
+            "body": "",
+            "title": ""
+          }
+        },
         "title": "Notre façon de travailler"
       }
+    },
+    "callMe": {
+      "busy": "",
+      "close": "",
+      "codeAria": "",
+      "codePrompt": "",
+      "disclosureAccept": "",
+      "errors": {
+        "generic": "",
+        "sendCodeFailed": ""
+      },
+      "noAgent": "",
+      "phoneLabel": "",
+      "refusal": {
+        "balance": "",
+        "concurrency": "",
+        "dailyBreaker": "",
+        "dnc": "",
+        "flagDisabled": "",
+        "liveCallsDisabled": "",
+        "otp": "",
+        "perPhoneRate": "",
+        "quietHours": "",
+        "registryPending": ""
+      },
+      "retry": "",
+      "ringingSoon": "",
+      "sendCode": "",
+      "title": "",
+      "verifyAndCall": ""
     },
     "contact": {
       "callbackSection": {
@@ -149,6 +291,7 @@
         "rateLimited": "",
         "sendFailed": ""
       },
+      "faqHint": "",
       "form": {
         "email": "E-mail",
         "fullName": "Prénom et nom",
@@ -158,6 +301,10 @@
         "reachHint": "Renseignez au moins un e-mail ou un numéro de téléphone",
         "submitCallback": "Rappelez-moi",
         "submitContact": "Envoyer un message"
+      },
+      "meta": {
+        "description": "",
+        "title": ""
       },
       "subtitle": "Une question, une demande ou un problème ? Écrivez-nous ou laissez votre numéro, et nous vous recontacterons.",
       "success": {
@@ -178,12 +325,358 @@
         "title": "Le site a été mis à jour"
       }
     },
+    "eventPage": {
+      "closing": {
+        "subtitle": "",
+        "title": ""
+      },
+      "cta": {
+        "createEvent": "",
+        "howItWorks": "",
+        "newEvent": "",
+        "template": ""
+      },
+      "faq": {
+        "eyebrow": "",
+        "moreLink": "",
+        "title": ""
+      },
+      "guide": {
+        "eyebrow": ""
+      },
+      "related": {
+        "ariaLabel": "",
+        "template": "",
+        "title": "",
+        "whatsapp": ""
+      },
+      "timing": {
+        "cadenceBody": "",
+        "cadenceTitle": "",
+        "eyebrow": "",
+        "quietHours": "",
+        "subtitle": ""
+      }
+    },
+    "eventType": {
+      "barMitzva": {
+        "challenges": {
+          "c1": {
+            "body": "",
+            "title": ""
+          },
+          "c2": {
+            "body": "",
+            "title": ""
+          },
+          "c3": {
+            "body": "",
+            "title": ""
+          },
+          "c4": {
+            "body": "",
+            "title": ""
+          },
+          "eyebrow": "",
+          "title": ""
+        },
+        "faq": {
+          "q1": {
+            "answer": "",
+            "question": ""
+          },
+          "q2": {
+            "answer": "",
+            "question": ""
+          },
+          "q3": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "",
+            "heading": ""
+          },
+          "g2": {
+            "body": "",
+            "heading": ""
+          },
+          "g3": {
+            "body": "",
+            "heading": ""
+          },
+          "title": ""
+        },
+        "hero": {
+          "lede": "",
+          "title": ""
+        },
+        "meta": {
+          "description": "",
+          "title": ""
+        },
+        "navLabel": "",
+        "timing": {
+          "t1": "",
+          "t2": "",
+          "t3": "",
+          "t4": "",
+          "title": ""
+        }
+      },
+      "brit": {
+        "challenges": {
+          "c1": {
+            "body": "",
+            "title": ""
+          },
+          "c2": {
+            "body": "",
+            "title": ""
+          },
+          "c3": {
+            "body": "",
+            "title": ""
+          },
+          "c4": {
+            "body": "",
+            "title": ""
+          },
+          "eyebrow": "",
+          "title": ""
+        },
+        "faq": {
+          "q1": {
+            "answer": "",
+            "question": ""
+          },
+          "q2": {
+            "answer": "",
+            "question": ""
+          },
+          "q3": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "",
+            "heading": ""
+          },
+          "g2": {
+            "body": "",
+            "heading": ""
+          },
+          "g3": {
+            "body": "",
+            "heading": ""
+          },
+          "title": ""
+        },
+        "hero": {
+          "lede": "",
+          "title": ""
+        },
+        "meta": {
+          "description": "",
+          "title": ""
+        },
+        "navLabel": "",
+        "timing": {
+          "t1": "",
+          "t2": "",
+          "t3": "",
+          "title": ""
+        }
+      },
+      "event": {
+        "challenges": {
+          "c1": {
+            "body": "",
+            "title": ""
+          },
+          "c2": {
+            "body": "",
+            "title": ""
+          },
+          "c3": {
+            "body": "",
+            "title": ""
+          },
+          "c4": {
+            "body": "",
+            "title": ""
+          },
+          "eyebrow": "",
+          "title": ""
+        },
+        "faq": {
+          "q1": {
+            "answer": "",
+            "question": ""
+          },
+          "q2": {
+            "answer": "",
+            "question": ""
+          },
+          "q3": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "",
+            "heading": ""
+          },
+          "g2": {
+            "body": "",
+            "heading": ""
+          },
+          "g3": {
+            "body": "",
+            "heading": ""
+          },
+          "title": ""
+        },
+        "hero": {
+          "lede": "",
+          "title": ""
+        },
+        "meta": {
+          "description": "",
+          "title": ""
+        },
+        "navLabel": "",
+        "timing": {
+          "t1": "",
+          "t2": "",
+          "t3": "",
+          "title": ""
+        }
+      },
+      "wedding": {
+        "challenges": {
+          "c1": {
+            "body": "",
+            "title": ""
+          },
+          "c2": {
+            "body": "",
+            "title": ""
+          },
+          "c3": {
+            "body": "",
+            "title": ""
+          },
+          "c4": {
+            "body": "",
+            "title": ""
+          },
+          "eyebrow": "",
+          "title": ""
+        },
+        "faq": {
+          "q1": {
+            "answer": "",
+            "question": ""
+          },
+          "q2": {
+            "answer": "",
+            "question": ""
+          },
+          "q3": {
+            "answer": "",
+            "question": ""
+          },
+          "q4": {
+            "answer": "",
+            "question": ""
+          },
+          "q5": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "",
+            "heading": ""
+          },
+          "g2": {
+            "body": "",
+            "heading": ""
+          },
+          "g3": {
+            "body": "",
+            "heading": ""
+          },
+          "g4": {
+            "body": "",
+            "heading": ""
+          },
+          "title": ""
+        },
+        "hero": {
+          "lede": "",
+          "title": ""
+        },
+        "meta": {
+          "description": "",
+          "title": ""
+        },
+        "navLabel": "",
+        "timing": {
+          "t1": "",
+          "t2": "",
+          "t3": "",
+          "t4": "",
+          "t5": "",
+          "title": ""
+        }
+      }
+    },
     "faq": {
       "categoriesAriaLabel": "Catégories de questions",
+      "contactFallback": "",
+      "eyebrow": {
+        "about": "",
+        "howItWorks": "",
+        "legalSupport": "",
+        "pricing": ""
+      },
+      "meta": {
+        "description": "",
+        "title": ""
+      },
+      "notFound": "",
       "subtitle": "Tout ce qu’il faut savoir sur KALFA : ce que c’est, comment ça marche, combien ça coûte et ce qui se passe en cas d’annulation.",
       "title": "Questions fréquentes"
     },
+    "footer": {
+      "copyright": "",
+      "legal": {
+        "about": "",
+        "contact": "",
+        "cookies": "",
+        "faq": "",
+        "privacy": "",
+        "terms": ""
+      },
+      "legalAriaLabel": "",
+      "manageCookies": "",
+      "pages": {
+        "template": "",
+        "whatsapp": ""
+      },
+      "pagesAriaLabel": "",
+      "tagline": ""
+    },
     "guestListTemplate": {
+      "breadcrumb": "",
       "closing": {
         "subtitle": "Importez ce fichier : une invitation personnelle pour chaque ligne et un rappel automatique uniquement aux personnes qui n’ont pas encore répondu.",
         "title": "La liste est prête. Et les réponses ?"
@@ -195,9 +688,36 @@
       },
       "faq": {
         "eyebrow": "Questions fréquentes",
+        "items": {
+          "googleSheets": {
+            "answer": "",
+            "question": ""
+          },
+          "howToBuild": {
+            "answer": "",
+            "question": ""
+          },
+          "importToKalfa": {
+            "answer": "",
+            "question": ""
+          },
+          "listGrows": {
+            "answer": "",
+            "question": ""
+          },
+          "opensInExcel": {
+            "answer": "",
+            "question": ""
+          },
+          "rowPerInvite": {
+            "answer": "",
+            "question": ""
+          }
+        },
         "title": "À propos du modèle"
       },
       "file": {
+        "intro": "",
         "sampleNote": "La dernière ligne, sans téléphone, est un exemple voulu : vous pouvez aussi gérer une personne invitée sans numéro. Elle ne recevra simplement pas de message automatique.",
         "tableCaption": "Structure du modèle de liste d’invités",
         "title": "Ce que contient le fichier"
@@ -207,22 +727,91 @@
         "subtitle": "Un fichier prêt à l’emploi, avec les bonnes colonnes, qui s’ouvre dans Excel et Google Sheets. Vous pouvez commencer à le remplir tout de suite et, si vous décidez ensuite de gérer votre événement sur KALFA, c’est ce même modèle que la plateforme importe.",
         "title": "Modèle de liste d’invités"
       },
+      "meta": {
+        "description": "",
+        "title": ""
+      },
       "mistakes": {
         "eyebrow": "Bon à savoir",
+        "items": {
+          "excelPhone": {
+            "body": "",
+            "title": ""
+          },
+          "mixedPhones": {
+            "body": "",
+            "title": ""
+          },
+          "noGroup": {
+            "body": "",
+            "title": ""
+          },
+          "rowPerPerson": {
+            "body": "",
+            "title": ""
+          }
+        },
         "title": "Quatre erreurs qui reviennent dans presque toutes les listes sur tableur"
       },
       "steps": {
+        "items": {
+          "groupPerRow": {
+            "body": "",
+            "title": ""
+          },
+          "mergeDedupe": {
+            "body": "",
+            "title": ""
+          },
+          "ownCopy": {
+            "body": "",
+            "title": ""
+          },
+          "phoneFormat": {
+            "body": "",
+            "title": ""
+          },
+          "rowPerInvite": {
+            "body": "",
+            "title": ""
+          }
+        },
         "title": "Comment préparer une liste d’invités de mariage en cinq étapes"
       }
+    },
+    "header": {
+      "createEvent": "",
+      "login": ""
     },
     "home": {
       "audiences": {
         "eyebrow": "Pour qui ?",
+        "items": {
+          "barBatMitzva": {
+            "title": ""
+          },
+          "brit": {
+            "title": ""
+          },
+          "company": {
+            "title": ""
+          },
+          "conferences": {
+            "title": ""
+          },
+          "family": {
+            "title": ""
+          },
+          "weddings": {
+            "title": ""
+          }
+        },
         "subtitle": "De la fête de famille intime à la grande convention d’entreprise, KALFA s’adapte à la taille et au style de votre événement.",
         "title": "Un événement ou des centaines : la même maîtrise"
       },
       "closing": {
-        "subtitle": "Commencez dès aujourd’hui à gérer les confirmations de présence de votre événement, de façon claire et organisée, au même endroit."
+        "subtitle": "Commencez dès aujourd’hui à gérer les confirmations de présence de votre événement, de façon claire et organisée, au même endroit.",
+        "title": ""
       },
       "cta": {
         "createEvent": "Créer un événement",
@@ -235,6 +824,36 @@
       "features": {
         "closing": "Tout est connecté. Rien ne se perd.",
         "eyebrow": "Fonctionnalités clés",
+        "items": {
+          "communication": {
+            "body": "",
+            "title": ""
+          },
+          "guestList": {
+            "body": "",
+            "title": ""
+          },
+          "import": {
+            "body": "",
+            "title": ""
+          },
+          "invites": {
+            "body": "",
+            "title": ""
+          },
+          "liveStatus": {
+            "body": "",
+            "title": ""
+          },
+          "reports": {
+            "body": "",
+            "title": ""
+          },
+          "tracking": {
+            "body": "",
+            "title": ""
+          }
+        },
         "subtitle": "Sept outils qui fonctionnent ensemble, de la liste d’invités au rapport final.",
         "title": "Tout ce qu’il faut pour gérer vos confirmations de présence"
       },
@@ -242,12 +861,46 @@
         "eyebrow": "Une gestion intelligente pour un événement parfait",
         "private": "Privé et sécurisé",
         "readyInMinutes": "Prêt en quelques minutes",
-        "subtitle": "Envoyez vos invitations, suivez les réponses en temps réel et gérez votre liste d’invités et d’accompagnants, sans tableurs, sans messages éparpillés, sans pagaille."
+        "subtitle": "Envoyez vos invitations, suivez les réponses en temps réel et gérez votre liste d’invités et d’accompagnants, sans tableurs, sans messages éparpillés, sans pagaille.",
+        "title": ""
       },
       "how": {
         "eyebrow": "Comment ça marche",
+        "items": {
+          "addGuests": {
+            "body": "",
+            "title": ""
+          },
+          "arrive": {
+            "body": "",
+            "title": ""
+          },
+          "createEvent": {
+            "body": "",
+            "title": ""
+          },
+          "sendInvites": {
+            "body": "",
+            "title": ""
+          },
+          "sendUpdates": {
+            "body": "",
+            "title": ""
+          },
+          "trackReplies": {
+            "body": "",
+            "title": ""
+          }
+        },
         "subtitle": "Pas de formation compliquée : créez votre événement et c’est parti.",
         "title": "Six étapes simples, de l’idée au jour J"
+      },
+      "jsonLd": {
+        "appDescription": ""
+      },
+      "meta": {
+        "ogDescription": "",
+        "ogTitle": ""
       },
       "preview": {
         "ariaLabel": "Exemple de tableau de bord de gestion d’un événement",
@@ -256,16 +909,57 @@
       },
       "problem": {
         "eyebrow": "La situation aujourd’hui",
+        "items": {
+          "lastMinuteLoad": {
+            "body": "",
+            "title": ""
+          },
+          "manualTracking": {
+            "body": "",
+            "title": ""
+          },
+          "scatteredMessages": {
+            "body": "",
+            "title": ""
+          },
+          "uncertainty": {
+            "body": "",
+            "title": ""
+          }
+        },
         "subtitle": "Quand on organise un événement, on retombe sans cesse sur les mêmes problèmes, et tout cela finit en stress inutile.",
         "title": "Organiser un événement ne devrait pas être un travail à plein temps"
       },
       "solution": {
         "eyebrow": "La solution",
+        "items": {
+          "autoReminders": "",
+          "clearSnapshot": "",
+          "liveStatus": "",
+          "oneList": ""
+        },
         "subtitle": "Invités, invitations, confirmations de présence, rappels, statuts et mises à jour : une seule plateforme bien organisée, qui vous donne une maîtrise totale.",
         "title": "KALFA réunit tout au même endroit"
       },
       "trust": {
         "eyebrow": "Confiance",
+        "items": {
+          "control": {
+            "body": "",
+            "title": ""
+          },
+          "easeOfUse": {
+            "title": ""
+          },
+          "order": {
+            "body": "",
+            "title": ""
+          },
+          "privacy": {
+            "body": "",
+            "title": ""
+          }
+        },
         "subtitle": "L’objectif est simple : éviter la confusion, gagner du temps et vous donner une maîtrise totale et sereine de l’organisation.",
         "title": "Conçue pour réduire le stress, pas pour en ajouter"
       }
@@ -278,6 +972,25 @@
       },
       "faq": {
         "eyebrow": "Questions fréquentes",
+        "items": {
+          "anyText": {
+            "answer": "",
+            "question": ""
+          },
+          "guestsSeeEachOther": {
+            "answer": "",
+            "question": ""
+          },
+          "howToSend": {
+            "answer": "",
+            "question": ""
+          },
+          "noWhatsapp": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "moreLink": "",
         "title": "Envoi par WhatsApp : les questions qui reviennent"
       },
       "hero": {
@@ -287,9 +1000,37 @@
       },
       "limits": {
         "eyebrow": "À savoir avant de commencer",
+        "items": {
+          "approvedTemplate": "",
+          "eventOnly": "",
+          "noGuarantee": "",
+          "stopRequest": ""
+        },
         "title": "WhatsApp a ses règles, et nous les respectons"
       },
+      "meta": {
+        "description": "",
+        "title": ""
+      },
       "points": {
+        "items": {
+          "autoRecorded": {
+            "body": "",
+            "title": ""
+          },
+          "personal": {
+            "body": "",
+            "title": ""
+          },
+          "reach": {
+            "body": "",
+            "title": ""
+          },
+          "remindersOnly": {
+            "body": "",
+            "title": ""
+          }
+        },
         "title": "Pourquoi passer par ce canal ?"
       }
     }
@@ -300,6 +1041,36 @@
       "imageAlt": "Invitation à l’événement",
       "openFull": "Ouvrir l’invitation en grand format"
     },
+    "meta": {
+      "title": ""
+    },
     "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+  },
+  "validation": {
+    "email": {
+      "invalidShort": ""
+    },
+    "inquiry": {
+      "contact": {
+        "required": ""
+      },
+      "message": {
+        "required": "",
+        "tooLong": ""
+      },
+      "topic": {
+        "required": ""
+      }
+    },
+    "name": {
+      "required": "",
+      "tooLong": ""
+    },
+    "note": {
+      "tooLong": ""
+    },
+    "phone": {
+      "invalidShort": ""
+    }
   }
 }

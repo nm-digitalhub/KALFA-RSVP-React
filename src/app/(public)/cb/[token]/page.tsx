@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { getCallbackIntakeByToken } from '@/lib/data/callback-intake';
 import { getT } from '@/i18n.server';
@@ -12,10 +13,13 @@ import { IntakeForm } from './intake-form';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'פרטים לשיחה חוזרת',
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  return {
+    title: t('cb.meta.title', 'פרטים לשיחה חוזרת'),
+    robots: { index: false, follow: false },
+  };
+}
 
 const TOKEN_RE = /^[0-9a-f]{32}$/;
 const INTAKE_VIEW_RATE = {
@@ -28,7 +32,7 @@ export default async function CallbackIntakePage({
 }: {
   params: Promise<{ token: string }>;
 }) {
-  const { t } = await getT('public');
+  const { t, i18n } = await getT('public');
   const { token } = await params;
 
   if (!TOKEN_RE.test(token)) {
@@ -84,14 +88,21 @@ export default async function CallbackIntakePage({
           </p>
 
           <p className="mt-2 text-[16px] font-medium leading-7 text-[#7c8189]">
-            נחזור אליך למספר שמסתיים ב-
-            <span
-              dir="ltr"
-              className="mr-1 font-bold tabular-nums text-[#111827]"
-            >
-              {view.phone_hint}
-            </span>
-            .
+            <Trans
+              t={t}
+              i18n={i18n}
+              i18nKey="cb.header.phoneHint"
+              defaults="נחזור אליך למספר שמסתיים ב-<hint>{{phoneHint}}</hint>."
+              values={{ phoneHint: view.phone_hint }}
+              components={{
+                hint: (
+                  <span
+                    dir="ltr"
+                    className="mr-1 font-bold tabular-nums text-[#111827]"
+                  />
+                ),
+              }}
+            />
           </p>
         </header>
 
@@ -108,13 +119,20 @@ export default async function CallbackIntakePage({
           <span className="h-px w-12 bg-[#dddddd]" />
 
           <span>
-            מנוהל באמצעות{' '}
-            <strong
-              dir="ltr"
-              className="font-extrabold tracking-[-0.03em] text-[#525252]"
-            >
-              KALFA
-            </strong>
+            <Trans
+              t={t}
+              i18n={i18n}
+              i18nKey="guest.brandLine"
+              defaults="מנוהל באמצעות <brand>KALFA</brand>"
+              components={{
+                brand: (
+                  <strong
+                    dir="ltr"
+                    className="font-extrabold tracking-[-0.03em] text-[#525252]"
+                  />
+                ),
+              }}
+            />
           </span>
 
           <span className="h-px w-12 bg-[#dddddd]" />

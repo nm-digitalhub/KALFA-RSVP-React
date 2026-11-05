@@ -1,6 +1,8 @@
+import type { TFunction } from 'i18next';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Info, Route, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { getPublishedFaqItems } from '@/lib/data/faq';
 import { getPublicBusinessFacts } from '@/lib/data/public-business-facts';
@@ -15,19 +17,23 @@ import { pageOpenGraph } from '@/lib/seo/open-graph';
 
 // Title and description are declared once and reused for the Open Graph
 // block — the share preview and the search snippet must not drift apart.
-const TITLE = 'שאלות נפוצות';
-const DESCRIPTION =
-  'תשובות על KALFA במקום אחד: מה המערכת עושה, איך מנהלים אירוע מההתחלה ועד הסוף, איך בנוי התמחור והחיוב, ומה קורה במקרה של ביטול.';
-
-export const metadata: Metadata = {
-  title: TITLE,
-  description: DESCRIPTION,
-  // Nested metadata objects are REPLACED, not merged: a page that sets no
-  // openGraph inherits the root layout's wholesale, so its share preview
-  // would show the site-wide blurb instead of this page's.
-  openGraph: pageOpenGraph(TITLE, DESCRIPTION, '/faq'),
-  alternates: { canonical: '/faq' },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  const pageTitle = t('site.faq.meta.title', 'שאלות נפוצות');
+  const pageDescription = t(
+    'site.faq.meta.description',
+    'תשובות על KALFA במקום אחד: מה המערכת עושה, איך מנהלים אירוע מההתחלה ועד הסוף, איך בנוי התמחור והחיוב, ומה קורה במקרה של ביטול.',
+  );
+  return {
+    title: pageTitle,
+    description: pageDescription,
+    // Nested metadata objects are REPLACED, not merged: a page that sets no
+    // openGraph inherits the root layout's wholesale, so its share preview
+    // would show the site-wide blurb instead of this page's.
+    openGraph: pageOpenGraph(pageTitle, pageDescription, '/faq'),
+    alternates: { canonical: '/faq' },
+  };
+}
 
 // Content is DB-backed (admin-editable, /admin/faq) and the price card and
 // pricing tokens read the packages on sale at render time — render per-request,
@@ -37,12 +43,12 @@ export const dynamic = 'force-dynamic';
 // Presentational only (icon + short eyebrow label above each section's H2)
 // — not business content, so it lives here rather than in
 // src/lib/faq/page-model.ts alongside the real section titles.
-const SECTION_EYEBROW: Record<FaqCategory, { icon: LucideIcon; label: string }> = {
-  about: { icon: Info, label: 'אודות' },
-  pricing: { icon: Wallet, label: 'תמחור' },
-  how_it_works: { icon: Route, label: 'תהליך העבודה' },
-  legal_support: { icon: ShieldCheck, label: 'משפטי ותמיכה' },
-};
+const sectionEyebrow = (t: TFunction<'public'>): Record<FaqCategory, { icon: LucideIcon; label: string }> => ({
+  about: { icon: Info, label: t('site.faq.eyebrow.about', 'אודות') },
+  pricing: { icon: Wallet, label: t('site.faq.eyebrow.pricing', 'תמחור') },
+  how_it_works: { icon: Route, label: t('site.faq.eyebrow.howItWorks', 'תהליך העבודה') },
+  legal_support: { icon: ShieldCheck, label: t('site.faq.eyebrow.legalSupport', 'משפטי ותמיכה') },
+});
 
 // Public FAQ page (beta.kalfa.me/faq). Hebrew, RTL. Every question below the
 // price card (except the code-owned billing-unit one, see
@@ -52,7 +58,7 @@ const SECTION_EYEBROW: Record<FaqCategory, { icon: LucideIcon; label: string }> 
 // and hiding an answer behind a click interaction is exactly what the SEO/GEO
 // plan warns against for FAQ content (answer-first, extractable by AI search).
 export default async function FaqPage() {
-  const { t } = await getT('public');
+  const { t, i18n } = await getT('public');
   // No getAppOrigin() call here — unlike the home page's Organization/WebSite
   // JSON-LD (which embeds absolute @id URLs), a FAQPage schema needs no site
   // origin at all (see src/lib/faq/json-ld.ts).
@@ -61,6 +67,7 @@ export default async function FaqPage() {
   const [items, facts] = await Promise.all([getPublishedFaqItems(), getPublicBusinessFacts()]);
   const model = buildFaqPageModel(items, facts);
   const jsonLd = buildFaqJsonLd(flattenFaqEntries(model));
+  const eyebrows = sectionEyebrow(t);
 
   return (
     <div className="bg-background">
@@ -108,7 +115,7 @@ export default async function FaqPage() {
             </nav>
 
             {model.sections.map((section, index) => {
-              const { icon: Icon, label } = SECTION_EYEBROW[section.category];
+              const { icon: Icon, label } = eyebrows[section.category];
               return (
                 <section
                   key={section.category}
@@ -143,20 +150,24 @@ export default async function FaqPage() {
           // ever removed (they aren't, by construction) AND every DB row is
           // unpublished — kept as a defensive floor, not the expected state.
           <p className="mt-10 text-muted-foreground">
-            לשאלות נוספות אפשר{' '}
-            <Link href="/contact" className="font-semibold text-primary hover:underline">
-              ליצור קשר
-            </Link>
-            .
+            <Trans
+              t={t}
+              i18n={i18n}
+              i18nKey="site.faq.contactFallback"
+              defaults="לשאלות נוספות אפשר <contact>ליצור קשר</contact>."
+              components={{ contact: <Link href="/contact" className="font-semibold text-primary hover:underline" /> }}
+            />
           </p>
         )}
 
         <p className="mt-12 border-t border-border pt-8 text-muted-foreground">
-          לא מצאתם תשובה?{' '}
-          <Link href="/contact" className="font-semibold text-primary hover:underline">
-            צרו קשר
-          </Link>{' '}
-          ונחזור אליכם.
+          <Trans
+            t={t}
+            i18n={i18n}
+            i18nKey="site.faq.notFound"
+            defaults="לא מצאתם תשובה? <contact>צרו קשר</contact> ונחזור אליכם."
+            components={{ contact: <Link href="/contact" className="font-semibold text-primary hover:underline" /> }}
+          />
         </p>
       </main>
     </div>

@@ -5,6 +5,7 @@ import { zfd } from 'zod-form-data';
 import { headers } from 'next/headers';
 import { returnValidationErrors } from 'next-safe-action';
 
+import { getT } from '@/i18n.server';
 import { submitCallbackIntake } from '@/lib/data/callback-intake';
 import { actionClient, returnUserError } from '@/lib/safe-action';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
@@ -12,12 +13,6 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import { callbackIntakeSchema } from '@/lib/validation/inquiries';
 
 const RATE = { limit: 10, windowMs: 10 * 60_000 };
-
-// One generic refusal for every "no". Which token exists, which has expired and
-// which was already used are all the same sentence here — the difference is
-// exactly what a prober would be probing for.
-const UNAVAILABLE = 'הקישור הזה כבר לא פעיל. אפשר להשאיר פרטים מחדש בעמוד יצירת הקשר.';
-const GENERIC = 'שליחת הפרטים נכשלה. אפשר לנסות שוב.';
 
 // The fields as posted, untouched (z.unknown): callbackIntakeSchema runs in the
 // body, after the honeypot, and the rate limit runs before anything is parsed.
@@ -55,7 +50,8 @@ export const submitIntakeAction = actionClient
     // Keyed on a FINGERPRINT, never the raw bearer token — raw tokens in
     // in-memory keys can surface in diagnostics (same pattern as /r and /ty).
     if (!(await rateLimit(`cb-intake:${tokenFingerprint(String(token))}:${ip}`, RATE)).allowed) {
-      returnUserError('נשלחו יותר מדי בקשות. נסו שוב בעוד כמה דקות.');
+      const { t } = await getT('public');
+      returnUserError(t('cb.errors.rateLimited', 'נשלחו יותר מדי בקשות. נסו שוב בעוד כמה דקות.'));
     }
     return next();
   })
@@ -68,7 +64,15 @@ export const submitIntakeAction = actionClient
       return { notice: 'הפרטים נשמרו. נחזור אליך בהקדם.' };
     }
 
-    const parsed = callbackIntakeSchema.safeParse({
+    const { t } = await getT('public');
+    // One generic refusal for every "no". Which token exists, which has expired and
+    // which was already used are all the same sentence here — the difference is
+    // exactly what a prober would be probing for.
+    const unavailable = t('cb.errors.unavailable', 'הקישור הזה כבר לא פעיל. אפשר להשאיר פרטים מחדש בעמוד יצירת הקשר.');
+    const generic = t('cb.errors.generic', 'שליחת הפרטים נכשלה. אפשר לנסות שוב.');
+
+    const schema = callbackIntakeSchema(t);
+    const parsed = schema.safeParse({
       full_name: input.full_name,
       topic: input.topic,
       note: String(input.note ?? '').trim() || undefined,
@@ -77,9 +81,9 @@ export const submitIntakeAction = actionClient
       preference: String(input.preference ?? '').trim() || undefined,
     });
     if (!parsed.success) {
-      returnValidationErrors(callbackIntakeSchema, {
+      returnValidationErrors(schema, {
         ...z.formatError(parsed.error),
-        _errors: ['נא לבדוק את הפרטים שמולאו.'],
+        _errors: [t('cb.errors.checkFields', 'נא לבדוק את הפרטים שמולאו.')],
       });
     }
 
@@ -88,16 +92,16 @@ export const submitIntakeAction = actionClient
     try {
       outcome = await submitCallbackIntake(token, parsed.data);
     } catch {
-      returnUserError(GENERIC);
+      returnUserError(generic);
     }
 
     if (!outcome.ok) {
-      returnUserError(outcome.reason === 'unavailable' ? UNAVAILABLE : GENERIC);
+      returnUserError(outcome.reason === 'unavailable' ? unavailable : generic);
     }
 
     return {
       notice: outcome.scheduleLocked
-        ? 'הפרטים נשמרו, תודה. המועד שכבר נקבע לא השתנה — נחזור אליך אז.'
-        : 'הפרטים נשמרו, תודה. נחזור אליך בהקדם.',
+        ? t('cb.success.locked', 'הפרטים נשמרו, תודה. המועד שכבר נקבע לא השתנה — נחזור אליך אז.')
+        : t('cb.success.saved', 'הפרטים נשמרו, תודה. נחזור אליך בהקדם.'),
     };
   });

@@ -4,14 +4,17 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 // site-footer.tsx reads the cookie-consent admin config (server-only module).
-// Only the exported link constants are exercised here — stub the server
+// Only the exported link builders are exercised here — stub the server
 // imports (repo convention, see admin-config.test.ts).
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+// The component's getT reaches next/headers, which only resolves inside Next. The builders take `t` as an argument.
+vi.mock('@/i18n.server', () => ({ getT: vi.fn() }));
 
+import { getT } from '@/lib/i18n';
 import { EVENT_TYPES } from '@/lib/marketing/event-types';
 
-import { FOOTER_LINKS, FOOTER_PAGE_LINKS } from './site-footer';
+import { footerLinks, footerPageLinks } from './site-footer';
 
 // Source-level guards for the shared marketing footer (footer review
 // 2026-08-24). Component tests default to a Node environment (vitest.config;
@@ -23,6 +26,11 @@ const footerSrc = readFileSync(join(__dirname, 'site-footer.tsx'), 'utf8');
 const siteDir = join(repoRoot, 'src', 'app', '(public)', '(site)');
 const layoutSrc = readFileSync(join(siteDir, 'layout.tsx'), 'utf8');
 const homeSrc = readFileSync(join(siteDir, 'page.tsx'), 'utf8');
+
+// The fixed Hebrew translator, so the labels below are the real defaults and not a stub's echo.
+const t = getT('public');
+const FOOTER_LINKS = footerLinks(t);
+const FOOTER_PAGE_LINKS = footerPageLinks(t);
 
 describe('SiteFooter', () => {
   it('every footer link — legal tier and page tier alike — points at a real (site) route', () => {
@@ -56,8 +64,8 @@ describe('SiteFooter', () => {
 
   it('is two tiers of LINKS: brand, page nav, legal nav with the cookie control, copyright — no placeholder columns', () => {
     expect(footerSrc).toContain('<footer');
-    expect(footerSrc).toContain('aria-label="אישורי הגעה לפי סוג אירוע"');
-    expect(footerSrc).toContain('aria-label="משפטי ותמיכה"');
+    expect(footerSrc).toContain("aria-label={t('site.footer.pagesAriaLabel', 'אישורי הגעה לפי סוג אירוע')}");
+    expect(footerSrc).toContain("aria-label={t('site.footer.legalAriaLabel', 'משפטי ותמיכה')}");
     expect(footerSrc).toContain('<ManageCookiesButton');
     // Hidden when the admin switched consent off (showPreferences would be dead).
     expect(footerSrc).toContain('enabled={consentEnabled}');

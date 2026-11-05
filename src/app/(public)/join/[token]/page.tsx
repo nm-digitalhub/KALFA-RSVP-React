@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { SubmitButton } from '@/components/forms';
 import { getUser } from '@/lib/auth/dal';
@@ -9,11 +10,14 @@ import { getT } from '@/i18n.server';
 
 import { acceptInvitationAction } from './actions';
 
-export const metadata: Metadata = {
-  title: 'הצטרפות לארגון',
-  // Personal, link-only page — keep it out of search indexes.
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  return {
+    title: t('join.meta.title', 'הצטרפות לארגון'),
+    // Personal, link-only page — keep it out of search indexes.
+    robots: { index: false, follow: false },
+  };
+}
 
 // Public invitation-acceptance page. Requires login (redirects to /auth/login
 // with a return path). Shows the org behind a still-valid token and a single
@@ -26,7 +30,7 @@ export default async function JoinPage({
   params: Promise<{ token: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  const { t } = await getT('public');
+  const { t, i18n } = await getT('public');
   const { token } = await params;
   const { error } = await searchParams;
 
@@ -67,8 +71,14 @@ export default async function JoinPage({
             </p>
           ) : null}
           <p className="text-muted-foreground">
-            הוזמנת להצטרף לארגון{' '}
-            <span className="font-semibold text-foreground">{preview.orgName}</span>.
+            <Trans
+              t={t}
+              i18n={i18n}
+              i18nKey="join.invited"
+              defaults="הוזמנת להצטרף לארגון <org>{{orgName}}</org>."
+              values={{ orgName: preview.orgName }}
+              components={{ org: <span className="font-semibold text-foreground" /> }}
+            />
           </p>
           <form action={acceptInvitationAction}>
             <input type="hidden" name="token" value={token} />

@@ -39,9 +39,10 @@ function hasField(src: string, name: 'title' | 'description' | 'openGraph'): boo
   return new RegExp(`\\n\\s*${name}:`).test(src.split('export default')[0]);
 }
 
-// The literal VALUE, however the page spells it: either inline in the metadata
-// object or, on the pages that reuse one string for both the description and
-// the Open Graph block, as a `const TITLE` / `const DESCRIPTION`.
+// The literal VALUE, however the page spells it: the Hebrew default of its
+// `site.<page>.meta.title` / `.description` key in generateMetadata, inline in
+// the metadata object or, on the pages that reuse one string for both the
+// description and the Open Graph block, as a `const TITLE` / `const DESCRIPTION`.
 //
 // Pages that source their copy from src/lib/marketing/event-types.ts return
 // null here on purpose: their text is already checked for uniqueness, length
@@ -52,6 +53,8 @@ function literal(src: string, name: 'title' | 'description'): string | null {
   const asConst = src.match(new RegExp(`\\nconst ${constName} =\\s*\\n?\\s*'([^']*)'`));
   if (asConst) return asConst[1];
   const meta = src.split('export default')[0];
+  const translated = meta.match(new RegExp(`\\bt\\(\\s*'site\\.[^']*\\.meta\\.${name}',\\s*'([^']*)'`));
+  if (translated) return translated[1];
   const inline = meta.match(new RegExp(`\\n\\s*${name}:\\s*\\n?\\s*'([^']*)'`));
   return inline ? inline[1] : null;
 }
@@ -65,6 +68,19 @@ describe('public site metadata', () => {
     expect(pages.length).toBeGreaterThanOrEqual(12);
     expect(pages.map((p) => p.route)).toContain('/');
     expect(pages.map((p) => p.route)).toContain('/wedding');
+  });
+
+  it('reads the copy of every page that owns it, so the checks below cannot pass on nothing', () => {
+    // literal() returns null for a shape it does not know, and the uniqueness and
+    // length checks skip null. '/' takes its title and description from the root
+    // layout, and the event-type pages take theirs from the catalogue.
+    const catalogue = new Set(['/wedding', '/bar-mitzva', '/brit', '/event']);
+    const owned = pages.filter((p) => p.route !== '/' && !catalogue.has(p.route));
+    expect(owned.length).toBeGreaterThanOrEqual(8);
+    for (const p of owned) {
+      expect(literal(p.src, 'title'), p.route).not.toBeNull();
+      expect(literal(p.src, 'description'), p.route).not.toBeNull();
+    }
   });
 
   it('every page declares its OWN description — never inheriting the site-wide one', () => {

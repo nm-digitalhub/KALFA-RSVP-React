@@ -5,6 +5,7 @@ import { zfd } from 'zod-form-data';
 import { headers } from 'next/headers';
 import { returnValidationErrors } from 'next-safe-action';
 
+import { getT } from '@/i18n.server';
 import { RATING_SUBMIT_RATE } from '@/lib/constants';
 import { submitInquiryRating } from '@/lib/data/inquiry-rating';
 import { actionClient, returnUserError } from '@/lib/safe-action';
@@ -31,18 +32,20 @@ export const submitRatingAction = actionClient
     const fp = tokenFingerprint(String(token));
     const gate = await rateLimit(`rating:submit:${fp}:${ip}`, RATING_SUBMIT_RATE);
     if (!gate.allowed) {
-      returnUserError('נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.');
+      const { t } = await getT('public');
+      returnUserError(t('rate.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.'));
     }
     return next();
   })
   .inputSchema(ratingForm)
   .bindArgsSchemas([z.string().min(1)])
   .stateAction(async ({ parsedInput: { score, comment }, bindArgsParsedInputs: [token] }) => {
+    const { t } = await getT('public');
     const parsed = submitRatingSchema.safeParse({ score, comment: comment ?? '' });
     if (!parsed.success) {
       returnValidationErrors(submitRatingSchema, {
         ...z.formatError(parsed.error),
-        _errors: ['נא לבחור דירוג תקין.'],
+        _errors: [t('rate.errors.invalidScore', 'נא לבחור דירוג תקין.')],
       });
     }
 
@@ -54,7 +57,7 @@ export const submitRatingAction = actionClient
     if (!result.ok) {
       // One generic message — never reveal whether the token was unknown,
       // never requested a rating, or a DB error occurred.
-      returnUserError('הקישור אינו תקף או שאינו זמין עוד.');
+      returnUserError(t('rate.invalidLink', 'הקישור אינו תקף או שאינו זמין עוד.'));
     }
 
     return { notice: 'תודה על הדירוג!' };

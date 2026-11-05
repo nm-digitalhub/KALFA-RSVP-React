@@ -1,3 +1,6 @@
+import { Trans } from 'react-i18next/TransWithoutContext';
+
+import { getT } from '@/i18n.server';
 import { getAppUrl } from '@/lib/url';
 
 // Shared page shell for the guest token surfaces (/r /g /ty /rate).
@@ -28,6 +31,7 @@ import { getAppUrl } from '@/lib/url';
 // is passed anywhere, but it states the intent and keeps a site-wide pattern of
 // self-referential links from ever resembling a link scheme.
 async function BrandLine() {
+  const { t, i18n } = await getT('public');
   // Same trusted-origin helper every shareable link uses — never the request
   // Host. UTM so the analytics dashboard can tell this traffic apart from
   // direct visits rather than guessing.
@@ -36,14 +40,21 @@ async function BrandLine() {
   );
   return (
     <p className="pt-8 text-center text-xs text-muted-foreground">
-      מנוהל באמצעות{' '}
-      <a
-        href={href}
-        rel="nofollow"
-        className="font-semibold text-foreground/70 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
-      >
-        KALFA
-      </a>
+      <Trans
+        t={t}
+        i18n={i18n}
+        i18nKey="guest.brandLine"
+        defaults="מנוהל באמצעות <brand>KALFA</brand>"
+        components={{
+          brand: (
+            <a
+              href={href}
+              rel="nofollow"
+              className="font-semibold text-foreground/70 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+            />
+          ),
+        }}
+      />
     </p>
   );
 }

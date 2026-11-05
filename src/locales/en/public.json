@@ -1,5 +1,11 @@
 {
   "cb": {
+    "errors": {
+      "checkFields": "",
+      "generic": "",
+      "rateLimited": "",
+      "unavailable": ""
+    },
     "form": {
       "contact": {
         "label": "Your contact details",
@@ -7,13 +13,22 @@
       },
       "lockedNotice": "Your call is already scheduled, and the time won't change.",
       "note": {
+        "label": "",
         "placeholder": "Write the details here…"
       },
       "submit": "Send"
     },
     "header": {
+      "phoneHint": "",
       "subtitle": "We'll call you back. Two quick questions so we're ready when we do.",
       "title": "We missed your call"
+    },
+    "meta": {
+      "title": ""
+    },
+    "success": {
+      "locked": "",
+      "saved": ""
     }
   },
   "error": {
@@ -41,13 +56,23 @@
       },
       "wazeLink": "Navigate with Waze"
     },
+    "meta": {
+      "title": ""
+    },
     "rateLimited": "Too many requests. Please try again in a moment."
+  },
+  "guest": {
+    "brandLine": ""
   },
   "join": {
     "failed": "We couldn't add you to the team. The invitation may no longer be valid.",
     "invalid": {
       "backLink": "Back to my account",
       "notice": "This invitation is invalid, has expired or has already been used."
+    },
+    "invited": "",
+    "meta": {
+      "title": ""
     },
     "submit": "Join",
     "title": "Join the team"
@@ -58,6 +83,16 @@
     },
     "closed": {
       "notice": "The RSVP deadline has passed. For details, you can contact the person who invited you."
+    },
+    "errors": {
+      "checkFields": "",
+      "closed": "",
+      "deadlinePassed": "",
+      "invalidAnswers": "",
+      "invalidCount": "",
+      "invalidStatus": "",
+      "missingRequired": "",
+      "notFound": ""
     },
     "form": {
       "adults": "Adults",
@@ -77,8 +112,19 @@
       "showInGuestList": {
         "label": "Show me on the \"Who else is coming\" list (first name only)"
       },
+      "status": {
+        "attending": "",
+        "declined": "",
+        "maybe": ""
+      },
+      "stepper": {
+        "decrease": "",
+        "increase": ""
+      },
       "submit": "Submit RSVP",
       "success": {
+        "summary_one": "",
+        "summary_other": "",
         "updateHint": "You can update your reply at any time from this same link."
       }
     },
@@ -95,20 +141,43 @@
       "imageAlt": "Event invitation",
       "openFull": "Open the full-size invitation"
     },
-    "rateLimited": "Too many requests. Please try again in a moment."
+    "meta": {
+      "title": ""
+    },
+    "rateLimited": "Too many requests. Please try again in a moment.",
+    "success": {
+      "saved": "",
+      "unchanged": ""
+    }
   },
   "rate": {
+    "errors": {
+      "invalidScore": ""
+    },
     "form": {
       "comment": {
         "label": "Anything you'd like to add? (optional)",
         "placeholder": "Tell us a little more…"
       },
+      "feedback": {
+        "bad": "",
+        "great": "",
+        "ok": ""
+      },
       "heading": "How was our service?",
       "legend": "Service rating",
+      "option": {
+        "bad": "",
+        "great": "",
+        "ok": ""
+      },
       "submit": "Send rating",
       "submitting": "Sending…"
     },
     "invalidLink": "This link is invalid or no longer available.",
+    "meta": {
+      "title": ""
+    },
     "rateLimited": "Too many requests. Please try again in a moment.",
     "thanks": {
       "body": "It helps us improve for next time",
@@ -117,11 +186,30 @@
   },
   "site": {
     "about": {
+      "breadcrumb": "",
       "cta": {
         "createEvent": "Create a new event",
         "newEvent": "New event"
       },
       "does": {
+        "items": {
+          "guestList": {
+            "body": "",
+            "title": ""
+          },
+          "personalInvite": {
+            "body": "",
+            "title": ""
+          },
+          "privateLink": {
+            "body": "",
+            "title": ""
+          },
+          "snapshot": {
+            "body": "",
+            "title": ""
+          }
+        },
         "limits": "What it doesn't do: it doesn't manage your venue, vendors or budget, and it doesn't send mass advertising. Messages go only to the event's invited guests, and only about that event.",
         "title": "What KALFA does"
       },
@@ -130,12 +218,65 @@
         "intro": "KALFA is an Israeli RSVP management system for private events: weddings, bar and bat mitzvahs, brit milah ceremonies, family celebrations and company events. It does one thing: it helps the host know who's coming, without spreadsheets or dozens of phone calls.",
         "title": "About KALFA"
       },
+      "meta": {
+        "title": ""
+      },
+      "moreLinks": "",
       "operator": {
+        "body": "",
+        "contact": "",
         "title": "Who runs the service"
       },
       "principles": {
+        "items": {
+          "dataOwnership": {
+            "body": "",
+            "title": ""
+          },
+          "hebrewFirst": {
+            "title": ""
+          },
+          "noShabbat": {
+            "body": "",
+            "title": ""
+          },
+          "openPrice": {
+            "body": "",
+            "title": ""
+          }
+        },
         "title": "How we work"
       }
+    },
+    "callMe": {
+      "busy": "",
+      "close": "",
+      "codeAria": "",
+      "codePrompt": "",
+      "disclosureAccept": "",
+      "errors": {
+        "generic": "",
+        "sendCodeFailed": ""
+      },
+      "noAgent": "",
+      "phoneLabel": "",
+      "refusal": {
+        "balance": "",
+        "concurrency": "",
+        "dailyBreaker": "",
+        "dnc": "",
+        "flagDisabled": "",
+        "liveCallsDisabled": "",
+        "otp": "",
+        "perPhoneRate": "",
+        "quietHours": "",
+        "registryPending": ""
+      },
+      "retry": "",
+      "ringingSoon": "",
+      "sendCode": "",
+      "title": "",
+      "verifyAndCall": ""
     },
     "contact": {
       "callbackSection": {
@@ -149,6 +290,7 @@
         "rateLimited": "",
         "sendFailed": ""
       },
+      "faqHint": "",
       "form": {
         "email": "Email",
         "fullName": "Full name",
@@ -158,6 +300,10 @@
         "reachHint": "Please fill in an email or a phone number (at least one)",
         "submitCallback": "Call me back",
         "submitContact": "Send message"
+      },
+      "meta": {
+        "description": "",
+        "title": ""
       },
       "subtitle": "Have a question, a request or a problem? Write to us or leave your number, and we'll get back to you.",
       "success": {
@@ -178,12 +324,358 @@
         "title": "The site has been updated"
       }
     },
+    "eventPage": {
+      "closing": {
+        "subtitle": "",
+        "title": ""
+      },
+      "cta": {
+        "createEvent": "",
+        "howItWorks": "",
+        "newEvent": "",
+        "template": ""
+      },
+      "faq": {
+        "eyebrow": "",
+        "moreLink": "",
+        "title": ""
+      },
+      "guide": {
+        "eyebrow": ""
+      },
+      "related": {
+        "ariaLabel": "",
+        "template": "",
+        "title": "",
+        "whatsapp": ""
+      },
+      "timing": {
+        "cadenceBody": "",
+        "cadenceTitle": "",
+        "eyebrow": "",
+        "quietHours": "",
+        "subtitle": ""
+      }
+    },
+    "eventType": {
+      "barMitzva": {
+        "challenges": {
+          "c1": {
+            "body": "",
+            "title": ""
+          },
+          "c2": {
+            "body": "",
+            "title": ""
+          },
+          "c3": {
+            "body": "",
+            "title": ""
+          },
+          "c4": {
+            "body": "",
+            "title": ""
+          },
+          "eyebrow": "",
+          "title": ""
+        },
+        "faq": {
+          "q1": {
+            "answer": "",
+            "question": ""
+          },
+          "q2": {
+            "answer": "",
+            "question": ""
+          },
+          "q3": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "",
+            "heading": ""
+          },
+          "g2": {
+            "body": "",
+            "heading": ""
+          },
+          "g3": {
+            "body": "",
+            "heading": ""
+          },
+          "title": ""
+        },
+        "hero": {
+          "lede": "",
+          "title": ""
+        },
+        "meta": {
+          "description": "",
+          "title": ""
+        },
+        "navLabel": "",
+        "timing": {
+          "t1": "",
+          "t2": "",
+          "t3": "",
+          "t4": "",
+          "title": ""
+        }
+      },
+      "brit": {
+        "challenges": {
+          "c1": {
+            "body": "",
+            "title": ""
+          },
+          "c2": {
+            "body": "",
+            "title": ""
+          },
+          "c3": {
+            "body": "",
+            "title": ""
+          },
+          "c4": {
+            "body": "",
+            "title": ""
+          },
+          "eyebrow": "",
+          "title": ""
+        },
+        "faq": {
+          "q1": {
+            "answer": "",
+            "question": ""
+          },
+          "q2": {
+            "answer": "",
+            "question": ""
+          },
+          "q3": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "",
+            "heading": ""
+          },
+          "g2": {
+            "body": "",
+            "heading": ""
+          },
+          "g3": {
+            "body": "",
+            "heading": ""
+          },
+          "title": ""
+        },
+        "hero": {
+          "lede": "",
+          "title": ""
+        },
+        "meta": {
+          "description": "",
+          "title": ""
+        },
+        "navLabel": "",
+        "timing": {
+          "t1": "",
+          "t2": "",
+          "t3": "",
+          "title": ""
+        }
+      },
+      "event": {
+        "challenges": {
+          "c1": {
+            "body": "",
+            "title": ""
+          },
+          "c2": {
+            "body": "",
+            "title": ""
+          },
+          "c3": {
+            "body": "",
+            "title": ""
+          },
+          "c4": {
+            "body": "",
+            "title": ""
+          },
+          "eyebrow": "",
+          "title": ""
+        },
+        "faq": {
+          "q1": {
+            "answer": "",
+            "question": ""
+          },
+          "q2": {
+            "answer": "",
+            "question": ""
+          },
+          "q3": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "",
+            "heading": ""
+          },
+          "g2": {
+            "body": "",
+            "heading": ""
+          },
+          "g3": {
+            "body": "",
+            "heading": ""
+          },
+          "title": ""
+        },
+        "hero": {
+          "lede": "",
+          "title": ""
+        },
+        "meta": {
+          "description": "",
+          "title": ""
+        },
+        "navLabel": "",
+        "timing": {
+          "t1": "",
+          "t2": "",
+          "t3": "",
+          "title": ""
+        }
+      },
+      "wedding": {
+        "challenges": {
+          "c1": {
+            "body": "",
+            "title": ""
+          },
+          "c2": {
+            "body": "",
+            "title": ""
+          },
+          "c3": {
+            "body": "",
+            "title": ""
+          },
+          "c4": {
+            "body": "",
+            "title": ""
+          },
+          "eyebrow": "",
+          "title": ""
+        },
+        "faq": {
+          "q1": {
+            "answer": "",
+            "question": ""
+          },
+          "q2": {
+            "answer": "",
+            "question": ""
+          },
+          "q3": {
+            "answer": "",
+            "question": ""
+          },
+          "q4": {
+            "answer": "",
+            "question": ""
+          },
+          "q5": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "",
+            "heading": ""
+          },
+          "g2": {
+            "body": "",
+            "heading": ""
+          },
+          "g3": {
+            "body": "",
+            "heading": ""
+          },
+          "g4": {
+            "body": "",
+            "heading": ""
+          },
+          "title": ""
+        },
+        "hero": {
+          "lede": "",
+          "title": ""
+        },
+        "meta": {
+          "description": "",
+          "title": ""
+        },
+        "navLabel": "",
+        "timing": {
+          "t1": "",
+          "t2": "",
+          "t3": "",
+          "t4": "",
+          "t5": "",
+          "title": ""
+        }
+      }
+    },
     "faq": {
       "categoriesAriaLabel": "Question categories",
+      "contactFallback": "",
+      "eyebrow": {
+        "about": "",
+        "howItWorks": "",
+        "legalSupport": "",
+        "pricing": ""
+      },
+      "meta": {
+        "description": "",
+        "title": ""
+      },
+      "notFound": "",
       "subtitle": "Everything you need to know about KALFA: what it is, how it works, what it costs and what happens if you want to cancel.",
       "title": "Frequently asked questions"
     },
+    "footer": {
+      "copyright": "",
+      "legal": {
+        "about": "",
+        "contact": "",
+        "cookies": "",
+        "faq": "",
+        "privacy": "",
+        "terms": ""
+      },
+      "legalAriaLabel": "",
+      "manageCookies": "",
+      "pages": {
+        "template": "",
+        "whatsapp": ""
+      },
+      "pagesAriaLabel": "",
+      "tagline": ""
+    },
     "guestListTemplate": {
+      "breadcrumb": "",
       "closing": {
         "subtitle": "Import this file to send a personal invitation for every row, with automatic reminders only to those who haven't replied yet.",
         "title": "Your list is ready. What about the replies?"
@@ -195,9 +687,36 @@
       },
       "faq": {
         "eyebrow": "FAQ",
+        "items": {
+          "googleSheets": {
+            "answer": "",
+            "question": ""
+          },
+          "howToBuild": {
+            "answer": "",
+            "question": ""
+          },
+          "importToKalfa": {
+            "answer": "",
+            "question": ""
+          },
+          "listGrows": {
+            "answer": "",
+            "question": ""
+          },
+          "opensInExcel": {
+            "answer": "",
+            "question": ""
+          },
+          "rowPerInvite": {
+            "answer": "",
+            "question": ""
+          }
+        },
         "title": "About the template"
       },
       "file": {
+        "intro": "",
         "sampleNote": "The row with no phone number is there on purpose: you can still manage a guest who has no number. They just won't get an automatic message.",
         "tableCaption": "Guest list template layout",
         "title": "What's in the file"
@@ -207,22 +726,91 @@
         "subtitle": "A ready-made file with the right columns that opens in Excel and Google Sheets. You can start filling it in right away, and if you later want to manage your event on KALFA, it's the same template the system imports.",
         "title": "Guest list template"
       },
+      "meta": {
+        "description": "",
+        "title": ""
+      },
       "mistakes": {
         "eyebrow": "Good to know",
+        "items": {
+          "excelPhone": {
+            "body": "",
+            "title": ""
+          },
+          "mixedPhones": {
+            "body": "",
+            "title": ""
+          },
+          "noGroup": {
+            "body": "",
+            "title": ""
+          },
+          "rowPerPerson": {
+            "body": "",
+            "title": ""
+          }
+        },
         "title": "Four mistakes that show up in almost every spreadsheet guest list"
       },
       "steps": {
+        "items": {
+          "groupPerRow": {
+            "body": "",
+            "title": ""
+          },
+          "mergeDedupe": {
+            "body": "",
+            "title": ""
+          },
+          "ownCopy": {
+            "body": "",
+            "title": ""
+          },
+          "phoneFormat": {
+            "body": "",
+            "title": ""
+          },
+          "rowPerInvite": {
+            "body": "",
+            "title": ""
+          }
+        },
         "title": "How to build a wedding guest list in five steps"
       }
+    },
+    "header": {
+      "createEvent": "",
+      "login": ""
     },
     "home": {
       "audiences": {
         "eyebrow": "Who it's for",
+        "items": {
+          "barBatMitzva": {
+            "title": ""
+          },
+          "brit": {
+            "title": ""
+          },
+          "company": {
+            "title": ""
+          },
+          "conferences": {
+            "title": ""
+          },
+          "family": {
+            "title": ""
+          },
+          "weddings": {
+            "title": ""
+          }
+        },
         "subtitle": "From an intimate family gathering to a large company conference, KALFA adapts to your size and style.",
         "title": "One event or hundreds, with the same control"
       },
       "closing": {
-        "subtitle": "Start managing your event's RSVPs today. Orderly, clear and all in one place."
+        "subtitle": "Start managing your event's RSVPs today. Orderly, clear and all in one place.",
+        "title": ""
       },
       "cta": {
         "createEvent": "Create a new event",
@@ -235,6 +823,36 @@
       "features": {
         "closing": "Everything's connected. Nothing gets lost.",
         "eyebrow": "Key features",
+        "items": {
+          "communication": {
+            "body": "",
+            "title": ""
+          },
+          "guestList": {
+            "body": "",
+            "title": ""
+          },
+          "import": {
+            "body": "",
+            "title": ""
+          },
+          "invites": {
+            "body": "",
+            "title": ""
+          },
+          "liveStatus": {
+            "body": "",
+            "title": ""
+          },
+          "reports": {
+            "body": "",
+            "title": ""
+          },
+          "tracking": {
+            "body": "",
+            "title": ""
+          }
+        },
         "subtitle": "Seven features that work together, from the guest list to the final report.",
         "title": "Everything you need to manage RSVPs"
       },
@@ -242,12 +860,46 @@
         "eyebrow": "Smart management for a perfect event",
         "private": "Private and secure",
         "readyInMinutes": "Ready in minutes",
-        "subtitle": "Send invitations, track replies in real time and manage your guest list and plus-ones. No spreadsheets, no scattered messages, no mess."
+        "subtitle": "Send invitations, track replies in real time and manage your guest list and plus-ones. No spreadsheets, no scattered messages, no mess.",
+        "title": ""
       },
       "how": {
         "eyebrow": "How it works",
+        "items": {
+          "addGuests": {
+            "body": "",
+            "title": ""
+          },
+          "arrive": {
+            "body": "",
+            "title": ""
+          },
+          "createEvent": {
+            "body": "",
+            "title": ""
+          },
+          "sendInvites": {
+            "body": "",
+            "title": ""
+          },
+          "sendUpdates": {
+            "body": "",
+            "title": ""
+          },
+          "trackReplies": {
+            "body": "",
+            "title": ""
+          }
+        },
         "subtitle": "No complicated tutorials. Set up an event and get going.",
         "title": "Six simple steps, from first idea to the big day"
+      },
+      "jsonLd": {
+        "appDescription": ""
+      },
+      "meta": {
+        "ogDescription": "",
+        "ogTitle": ""
       },
       "preview": {
         "ariaLabel": "Sample view of an event dashboard",
@@ -256,16 +908,57 @@
       },
       "problem": {
         "eyebrow": "The reality today",
+        "items": {
+          "lastMinuteLoad": {
+            "body": "",
+            "title": ""
+          },
+          "manualTracking": {
+            "body": "",
+            "title": ""
+          },
+          "scatteredMessages": {
+            "body": "",
+            "title": ""
+          },
+          "uncertainty": {
+            "body": "",
+            "title": ""
+          }
+        },
         "subtitle": "Hosts run into the same problems again and again, and it all adds up to needless stress.",
         "title": "Managing an event shouldn't feel like a full-time job"
       },
       "solution": {
         "eyebrow": "The solution",
+        "items": {
+          "autoReminders": "",
+          "clearSnapshot": "",
+          "liveStatus": "",
+          "oneList": ""
+        },
         "subtitle": "Guests, invitations, RSVPs, reminders, statuses and updates: one orderly system that gives you full control.",
         "title": "KALFA brings everything together in one place"
       },
       "trust": {
         "eyebrow": "Trust",
+        "items": {
+          "control": {
+            "body": "",
+            "title": ""
+          },
+          "easeOfUse": {
+            "title": ""
+          },
+          "order": {
+            "body": "",
+            "title": ""
+          },
+          "privacy": {
+            "body": "",
+            "title": ""
+          }
+        },
         "subtitle": "The goal is simple: prevent confusion, save time and give you full control of the process, with peace of mind.",
         "title": "Built to reduce stress, not add to it"
       }
@@ -278,6 +971,25 @@
       },
       "faq": {
         "eyebrow": "FAQ",
+        "items": {
+          "anyText": {
+            "answer": "",
+            "question": ""
+          },
+          "guestsSeeEachOther": {
+            "answer": "",
+            "question": ""
+          },
+          "howToSend": {
+            "answer": "",
+            "question": ""
+          },
+          "noWhatsapp": {
+            "answer": "",
+            "question": ""
+          }
+        },
+        "moreLink": "",
         "title": "Sending on WhatsApp: common questions"
       },
       "hero": {
@@ -287,9 +999,37 @@
       },
       "limits": {
         "eyebrow": "Important to know up front",
+        "items": {
+          "approvedTemplate": "",
+          "eventOnly": "",
+          "noGuarantee": "",
+          "stopRequest": ""
+        },
         "title": "WhatsApp is a platform with rules, and we follow them"
       },
+      "meta": {
+        "description": "",
+        "title": ""
+      },
       "points": {
+        "items": {
+          "autoRecorded": {
+            "body": "",
+            "title": ""
+          },
+          "personal": {
+            "body": "",
+            "title": ""
+          },
+          "reach": {
+            "body": "",
+            "title": ""
+          },
+          "remindersOnly": {
+            "body": "",
+            "title": ""
+          }
+        },
         "title": "Why WhatsApp"
       }
     }
@@ -300,6 +1040,36 @@
       "imageAlt": "Event invitation",
       "openFull": "Open the full-size invitation"
     },
+    "meta": {
+      "title": ""
+    },
     "rateLimited": "Too many requests. Please try again in a moment."
+  },
+  "validation": {
+    "email": {
+      "invalidShort": ""
+    },
+    "inquiry": {
+      "contact": {
+        "required": ""
+      },
+      "message": {
+        "required": "",
+        "tooLong": ""
+      },
+      "topic": {
+        "required": ""
+      }
+    },
+    "name": {
+      "required": "",
+      "tooLong": ""
+    },
+    "note": {
+      "tooLong": ""
+    },
+    "phone": {
+      "invalidShort": ""
+    }
   }
 }

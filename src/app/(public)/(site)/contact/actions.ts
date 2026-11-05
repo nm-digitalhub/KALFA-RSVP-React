@@ -90,7 +90,9 @@ export const submitContactAction = actionClient
       return { notice: messages.contactSent };
     }
 
-    const parsed = contactMessageSchema.safeParse({
+    const { t } = await getT('public');
+    const schema = contactMessageSchema(t);
+    const parsed = schema.safeParse({
       name: input.name,
       email: trimmedOrUndefined(input.email),
       phone: trimmedOrUndefined(input.phone),
@@ -98,7 +100,7 @@ export const submitContactAction = actionClient
       message: input.message,
     });
     if (!parsed.success) {
-      returnValidationErrors(contactMessageSchema, { ...z.formatError(parsed.error), _errors: [messages.checkFields] });
+      returnValidationErrors(schema, { ...z.formatError(parsed.error), _errors: [messages.checkFields] });
     }
 
     // Identity comes from the verified server session only (null = anonymous).
@@ -126,7 +128,9 @@ export const submitCallbackAction = actionClient
       return { notice: messages.callbackSent };
     }
 
-    const parsed = callbackRequestSchema.safeParse({
+    const { t } = await getT('public');
+    const schema = callbackRequestSchema(t);
+    const parsed = schema.safeParse({
       full_name: input.full_name,
       phone: input.phone,
       topic: input.topic,
@@ -136,7 +140,7 @@ export const submitCallbackAction = actionClient
       preference: trimmedOrUndefined(input.preference),
     });
     if (!parsed.success) {
-      returnValidationErrors(callbackRequestSchema, { ...z.formatError(parsed.error), _errors: [messages.checkFields] });
+      returnValidationErrors(schema, { ...z.formatError(parsed.error), _errors: [messages.checkFields] });
     }
 
     const user = await getUser();

@@ -1,6 +1,8 @@
+import type { TFunction } from 'i18next';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, ListChecks, MessageCircle, ShieldCheck } from 'lucide-react';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
@@ -21,65 +23,70 @@ import { pageOpenGraph } from '@/lib/seo/open-graph';
 
 // Title and description are declared once and reused for the Open Graph
 // block — the share preview and the search snippet must not drift apart.
-const TITLE = 'אישורי הגעה בוואטסאפ';
-const DESCRIPTION =
-  'שליחת הזמנות ותזכורות לאישורי הגעה בוואטסאפ דרך הפלטפורמה הרשמית: הודעה אישית לכל מוזמן, תשובה בלחיצה ומעקב אוטומטי אחר התגובות.';
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  const pageTitle = t('site.whatsapp.meta.title', 'אישורי הגעה בוואטסאפ');
+  const pageDescription = t(
+    'site.whatsapp.meta.description',
+    'שליחת הזמנות ותזכורות לאישורי הגעה בוואטסאפ דרך הפלטפורמה הרשמית: הודעה אישית לכל מוזמן, תשובה בלחיצה ומעקב אוטומטי אחר התגובות.',
+  );
+  return {
+    title: pageTitle,
+    description: pageDescription,
+    // Nested metadata objects are REPLACED, not merged: a page that sets no
+    // openGraph inherits the root layout's wholesale, so its share preview
+    // would show the site-wide blurb instead of this page's.
+    openGraph: pageOpenGraph(pageTitle, pageDescription, '/whatsapp'),
+    alternates: { canonical: '/whatsapp' },
+  };
+}
 
-export const metadata: Metadata = {
-  title: TITLE,
-  description: DESCRIPTION,
-  // Nested metadata objects are REPLACED, not merged: a page that sets no
-  // openGraph inherits the root layout's wholesale, so its share preview
-  // would show the site-wide blurb instead of this page's.
-  openGraph: pageOpenGraph(TITLE, DESCRIPTION, '/whatsapp'),
-  alternates: { canonical: '/whatsapp' },
-};
-
-const POINTS: { t: string; d: string }[] = [
+const points = (t: TFunction<'public'>): { title: string; d: string }[] => [
   {
-    t: 'ההודעה מגיעה לאן שכבר מסתכלים',
-    d: 'מוזמן לא תמיד פותח מייל ולא תמיד עונה לטלפון לא מוכר. וואטסאפ הוא הערוץ שכמעט כולם בודקים באותו יום.',
+    title: t('site.whatsapp.points.items.reach.title', 'ההודעה מגיעה לאן שכבר מסתכלים'),
+    d: t('site.whatsapp.points.items.reach.body', 'מוזמן לא תמיד פותח מייל ולא תמיד עונה לטלפון לא מוכר. וואטסאפ הוא הערוץ שכמעט כולם בודקים באותו יום.'),
   },
   {
-    t: 'הודעה אישית, לא הודעה קבוצתית',
-    d: 'כל מוזמן מקבל הודעה משלו עם הפרטים שלו. אין קבוצה, אין רשימת תפוצה שכולם רואים, ואף אחד לא נחשף לרשימת המוזמנים.',
+    title: t('site.whatsapp.points.items.personal.title', 'הודעה אישית, לא הודעה קבוצתית'),
+    d: t('site.whatsapp.points.items.personal.body', 'כל מוזמן מקבל הודעה משלו עם הפרטים שלו. אין קבוצה, אין רשימת תפוצה שכולם רואים, ואף אחד לא נחשף לרשימת המוזמנים.'),
   },
   {
-    t: 'התשובה נרשמת מעצמה',
-    d: 'המוזמן עונה מתוך ההודעה או מהקישור האישי שלו, והסטטוס מתעדכן ברשימה בלי שמישהו יקליד אותו ידנית.',
+    title: t('site.whatsapp.points.items.autoRecorded.title', 'התשובה נרשמת מעצמה'),
+    d: t('site.whatsapp.points.items.autoRecorded.body', 'המוזמן עונה מתוך ההודעה או מהקישור האישי שלו, והסטטוס מתעדכן ברשימה בלי שמישהו יקליד אותו ידנית.'),
   },
   {
-    t: 'תזכורת רק לממתינים',
-    d: 'התזכורת האוטומטית מדלגת על מי שכבר השיב. זה ההבדל בין תזכורת מועילה לבין הטרדה.',
+    title: t('site.whatsapp.points.items.remindersOnly.title', 'תזכורת רק לממתינים'),
+    d: t('site.whatsapp.points.items.remindersOnly.body', 'התזכורת האוטומטית מדלגת על מי שכבר השיב. זה ההבדל בין תזכורת מועילה לבין הטרדה.'),
   },
 ];
 
-const FAQ = [
+const faqItems = (t: TFunction<'public'>) => [
   {
-    q: 'איך שולחים אישורי הגעה בוואטסאפ?',
-    a: 'מייבאים את רשימת המוזמנים, והמערכת שולחת לכל מספר הודעה אישית דרך הפלטפורמה העסקית הרשמית של וואטסאפ. אין צורך לשלוח מהטלפון הפרטי ואין צורך לפתוח קבוצה.',
+    q: t('site.whatsapp.faq.items.howToSend.question', 'איך שולחים אישורי הגעה בוואטסאפ?'),
+    a: t('site.whatsapp.faq.items.howToSend.answer', 'מייבאים את רשימת המוזמנים, והמערכת שולחת לכל מספר הודעה אישית דרך הפלטפורמה העסקית הרשמית של וואטסאפ. אין צורך לשלוח מהטלפון הפרטי ואין צורך לפתוח קבוצה.'),
   },
   {
-    q: 'האם אפשר לשלוח כל טקסט שרוצים?',
-    a: 'לא. וואטסאפ מאשרת מראש את מבנה ההודעות שנשלחות ביוזמת העסק, והמערכת שולחת רק תבניות מאושרות. הפרטים האישיים — שם, תאריך ומקום — משתנים בכל הודעה.',
+    q: t('site.whatsapp.faq.items.anyText.question', 'האם אפשר לשלוח כל טקסט שרוצים?'),
+    a: t('site.whatsapp.faq.items.anyText.answer', 'לא. וואטסאפ מאשרת מראש את מבנה ההודעות שנשלחות ביוזמת העסק, והמערכת שולחת רק תבניות מאושרות. הפרטים האישיים — שם, תאריך ומקום — משתנים בכל הודעה.'),
   },
   {
-    q: 'מה קורה אם למוזמן אין וואטסאפ?',
-    a: 'הוא פשוט לא יקבל בערוץ הזה. הקישור האישי שלו ממשיך לעבוד בכל דרך אחרת, ואפשר גם לנהל מוזמן בלי מספר טלפון כלל.',
+    q: t('site.whatsapp.faq.items.noWhatsapp.question', 'מה קורה אם למוזמן אין וואטסאפ?'),
+    a: t('site.whatsapp.faq.items.noWhatsapp.answer', 'הוא פשוט לא יקבל בערוץ הזה. הקישור האישי שלו ממשיך לעבוד בכל דרך אחרת, ואפשר גם לנהל מוזמן בלי מספר טלפון כלל.'),
   },
   {
-    q: 'המוזמנים רואים אחד את השני?',
-    a: 'לא. כל הודעה נשלחת בנפרד, וכל מוזמן רואה רק את הפרטים שלו — לא את רשימת המוזמנים ולא את תשובות האחרים.',
+    q: t('site.whatsapp.faq.items.guestsSeeEachOther.question', 'המוזמנים רואים אחד את השני?'),
+    a: t('site.whatsapp.faq.items.guestsSeeEachOther.answer', 'לא. כל הודעה נשלחת בנפרד, וכל מוזמן רואה רק את הפרטים שלו — לא את רשימת המוזמנים ולא את תשובות האחרים.'),
   },
 ];
 
 export default async function WhatsappRsvpPage() {
-  const { t } = await getT('public');
+  const { t, i18n } = await getT('public');
   const user = await getUser();
   const startHref = user ? '/app/events/new' : '/auth/signup';
   const startLabel = user ? t('site.whatsapp.cta.newEvent', 'אירוע חדש') : t('site.whatsapp.cta.createEvent', 'צרו אירוע חדש');
 
-  const jsonLd = buildFaqJsonLd(FAQ.map((f) => ({ question: f.q, answer: f.a })));
+  const faq = faqItems(t);
+  const jsonLd = buildFaqJsonLd(faq.map((f) => ({ question: f.q, answer: f.a })));
 
   return (
     <div className="bg-background">
@@ -127,9 +134,9 @@ export default async function WhatsappRsvpPage() {
               {t('site.whatsapp.points.title', 'למה דווקא בערוץ הזה')}
             </h2>
             <div className="k-reveal-group mt-10 grid gap-4 sm:grid-cols-2">
-              {POINTS.map(({ t, d }) => (
-                <div key={t} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
-                  <h3 className="text-lg font-bold">{t}</h3>
+              {points(t).map(({ title, d }) => (
+                <div key={title} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
+                  <h3 className="text-lg font-bold">{title}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
                 </div>
               ))}
@@ -150,10 +157,10 @@ export default async function WhatsappRsvpPage() {
             </h2>
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
               {[
-                'הודעה שנשלחת ביוזמת העסק חייבת להיות בתבנית שאושרה מראש על ידי וואטסאפ.',
-                'ההודעות הן לאירוע ולמוזמן הספציפי — לא דיוור פרסומי.',
-                'מוזמן שמבקש להפסיק לקבל הודעות מפסיק לקבל אותן.',
-                'מסירה תלויה בוואטסאפ עצמה, ולכן היא לא מובטחת לכל מספר.',
+                t('site.whatsapp.limits.items.approvedTemplate', 'הודעה שנשלחת ביוזמת העסק חייבת להיות בתבנית שאושרה מראש על ידי וואטסאפ.'),
+                t('site.whatsapp.limits.items.eventOnly', 'ההודעות הן לאירוע ולמוזמן הספציפי — לא דיוור פרסומי.'),
+                t('site.whatsapp.limits.items.stopRequest', 'מוזמן שמבקש להפסיק לקבל הודעות מפסיק לקבל אותן.'),
+                t('site.whatsapp.limits.items.noGuarantee', 'מסירה תלויה בוואטסאפ עצמה, ולכן היא לא מובטחת לכל מספר.'),
               ].map((line) => (
                 <li
                   key={line}
@@ -176,7 +183,7 @@ export default async function WhatsappRsvpPage() {
               {t('site.whatsapp.faq.title', 'שליחה בוואטסאפ: שאלות שחוזרות')}
             </h2>
             <div className="k-reveal-group mt-8 space-y-8">
-              {FAQ.map((f) => (
+              {faq.map((f) => (
                 <div key={f.q} className="border-b border-border pb-6 last:border-b-0 last:pb-0">
                   <h3 className="text-lg font-bold">{f.q}</h3>
                   <p className="mt-2 max-w-prose text-base leading-relaxed text-muted-foreground">
@@ -186,11 +193,13 @@ export default async function WhatsappRsvpPage() {
               ))}
             </div>
             <p className="mt-10 text-muted-foreground">
-              על המחיר ועל שאר הערוצים —{' '}
-              <Link href="/faq" className="font-semibold text-primary hover:underline">
-                בעמוד השאלות הנפוצות
-              </Link>
-              .
+              <Trans
+                t={t}
+                i18n={i18n}
+                i18nKey="site.whatsapp.faq.moreLink"
+                defaults="על המחיר ועל שאר הערוצים — <faq>בעמוד השאלות הנפוצות</faq>."
+                components={{ faq: <Link href="/faq" className="font-semibold text-primary hover:underline" /> }}
+              />
             </p>
           </div>
         </section>

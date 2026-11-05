@@ -1,8 +1,10 @@
+import type { TFunction } from 'i18next';
 import Link from 'next/link';
 
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
+import { getT } from '@/i18n.server';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
-import { EVENT_TYPES } from '@/lib/marketing/event-types';
+import { EVENT_TYPES, getEventTypeContent } from '@/lib/marketing/event-types';
 
 // Shared footer for the public MARKETING pages — mounted once in
 // src/app/(public)/(site)/layout.tsx (a nested layout: it wraps every page of
@@ -36,19 +38,19 @@ import { EVENT_TYPES } from '@/lib/marketing/event-types';
 // fallback (the v3 behaviour is now `outline-hidden`). White/70 on the dark
 // surface instead of the indigo `ring` token, which cannot reach contrast here.
 
-export const FOOTER_LINKS: readonly { href: string; label: string }[] = [
-  { href: '/faq', label: 'שאלות נפוצות' },
-  { href: '/contact', label: 'יצירת קשר' },
-  { href: '/about', label: 'אודות' },
-  { href: '/privacy', label: 'מדיניות פרטיות' },
-  { href: '/terms', label: 'תקנון' },
-  { href: '/cookies', label: 'מדיניות עוגיות' },
+export const footerLinks = (t: TFunction<'public'>): readonly { href: string; label: string }[] => [
+  { href: '/faq', label: t('site.footer.legal.faq', 'שאלות נפוצות') },
+  { href: '/contact', label: t('site.footer.legal.contact', 'יצירת קשר') },
+  { href: '/about', label: t('site.footer.legal.about', 'אודות') },
+  { href: '/privacy', label: t('site.footer.legal.privacy', 'מדיניות פרטיות') },
+  { href: '/terms', label: t('site.footer.legal.terms', 'תקנון') },
+  { href: '/cookies', label: t('site.footer.legal.cookies', 'מדיניות עוגיות') },
 ];
 
-export const FOOTER_PAGE_LINKS: readonly { href: string; label: string }[] = [
-  ...EVENT_TYPES.map((e) => ({ href: e.path, label: e.navLabel })),
-  { href: '/whatsapp', label: 'שליחה בוואטסאפ' },
-  { href: '/guest-list-template', label: 'תבנית רשימת מוזמנים' },
+export const footerPageLinks = (t: TFunction<'public'>): readonly { href: string; label: string }[] => [
+  ...EVENT_TYPES.map((e) => ({ href: e.path, label: getEventTypeContent(e.slug, t).navLabel })),
+  { href: '/whatsapp', label: t('site.footer.pages.whatsapp', 'שליחה בוואטסאפ') },
+  { href: '/guest-list-template', label: t('site.footer.pages.template', 'תבנית רשימת מוזמנים') },
 ];
 
 const LINK_CLASS = [
@@ -65,6 +67,7 @@ export async function SiteFooter({
   // the last footer row is never hidden under the button.
   widgetClearance?: boolean;
 }) {
+  const { t } = await getT('public');
   const year = new Date().getFullYear();
   // Same React-cache()d read the root and (site) layouts already make for this
   // request — no extra DB round trip. Hides the cookie control when the admin
@@ -81,14 +84,14 @@ export async function SiteFooter({
             KALFA
           </Link>
           <p className="max-w-md text-sm leading-relaxed">
-            ניהול אישורי הגעה לאירועים פרטיים ועסקיים — במקום אחד.
+            {t('site.footer.tagline', 'ניהול אישורי הגעה לאירועים פרטיים ועסקיים — במקום אחד.')}
           </p>
         </div>
         <nav
           className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-0 border-t border-white/10 pt-3 text-sm"
-          aria-label="אישורי הגעה לפי סוג אירוע"
+          aria-label={t('site.footer.pagesAriaLabel', 'אישורי הגעה לפי סוג אירוע')}
         >
-          {FOOTER_PAGE_LINKS.map((l) => (
+          {footerPageLinks(t).map((l) => (
             <Link key={l.href} href={l.href} className={LINK_CLASS}>
               {l.label}
             </Link>
@@ -96,16 +99,16 @@ export async function SiteFooter({
         </nav>
         <nav
           className="flex flex-wrap items-center gap-x-5 gap-y-0 border-t border-white/10 pt-3 text-sm"
-          aria-label="משפטי ותמיכה"
+          aria-label={t('site.footer.legalAriaLabel', 'משפטי ותמיכה')}
         >
-          {FOOTER_LINKS.map((l) => (
+          {footerLinks(t).map((l) => (
             <Link key={l.href} href={l.href} className={LINK_CLASS}>
               {l.label}
             </Link>
           ))}
-          <ManageCookiesButton enabled={consentEnabled} className={LINK_CLASS}>ניהול עוגיות</ManageCookiesButton>
+          <ManageCookiesButton enabled={consentEnabled} className={LINK_CLASS}>{t('site.footer.manageCookies', 'ניהול עוגיות')}</ManageCookiesButton>
         </nav>
-        <p className="mt-3 text-xs">© {year} KALFA · כל הזכויות שמורות</p>
+        <p className="mt-3 text-xs">{t('site.footer.copyright', '© {{year}} KALFA · כל הזכויות שמורות', { year })}</p>
       </div>
     </footer>
   );

@@ -20,6 +20,7 @@ vi.mock('@/lib/security/rate-limit', () => ({ getClientIp: () => '203.0.113.7', 
 vi.mock('@/lib/auth/dal', () => ({ getUser }));
 vi.mock('@/lib/data/inquiries', () => ({ createContactMessage, createCallbackRequest }));
 
+import { getT } from '@/lib/i18n';
 import { callbackRequestSchema, contactMessageSchema } from '@/lib/validation/inquiries';
 import { submitCallbackAction, submitContactAction } from './actions';
 
@@ -79,7 +80,7 @@ describe('submitContactAction', () => {
 
     const result = await submitContactAction({}, fd(fields));
 
-    const old = contactMessageSchema.safeParse({ ...fields, email: undefined, phone: undefined });
+    const old = contactMessageSchema(getT('public')).safeParse({ ...fields, email: undefined, phone: undefined });
     expect(result).toEqual({
       validationErrors: { formErrors: [CHECK_FIELDS], fieldErrors: z.flattenError(old.error!).fieldErrors },
     });
@@ -122,7 +123,7 @@ describe('submitCallbackAction', () => {
 
     const result = await submitCallbackAction({}, fd(fields));
 
-    const old = callbackRequestSchema.safeParse(fields);
+    const old = callbackRequestSchema(getT('public')).safeParse(fields);
     expect(result).toEqual({
       validationErrors: { formErrors: [CHECK_FIELDS], fieldErrors: z.flattenError(old.error!).fieldErrors },
     });

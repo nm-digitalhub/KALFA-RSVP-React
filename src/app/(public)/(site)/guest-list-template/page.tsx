@@ -1,6 +1,8 @@
+import type { TFunction } from 'i18next';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, Download, ListChecks, TriangleAlert } from 'lucide-react';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
@@ -25,36 +27,40 @@ import { pageOpenGraph } from '@/lib/seo/open-graph';
 
 // Title and description are declared once and reused for the Open Graph
 // block — the share preview and the search snippet must not drift apart.
-const TITLE = 'רשימת מוזמנים לחתונה — תבנית לאקסל להורדה';
-const DESCRIPTION =
-  'תבנית מוכנה לניהול רשימת מוזמנים לחתונה או לכל אירוע: נפתחת באקסל ובגוגל שיטס, עם עמודות לשם, טלפון, כמות וקבוצה — והורדה חינם.';
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  const pageTitle = t('site.guestListTemplate.meta.title', 'רשימת מוזמנים לחתונה — תבנית לאקסל להורדה');
+  const pageDescription = t(
+    'site.guestListTemplate.meta.description',
+    'תבנית מוכנה לניהול רשימת מוזמנים לחתונה או לכל אירוע: נפתחת באקסל ובגוגל שיטס, עם עמודות לשם, טלפון, כמות וקבוצה — והורדה חינם.',
+  );
+  return {
+    title: pageTitle,
+    description: pageDescription,
+    // Nested metadata objects are REPLACED, not merged: a page that sets no
+    // openGraph inherits the root layout's wholesale, so its share preview
+    // would show the site-wide blurb instead of this page's.
+    openGraph: pageOpenGraph(pageTitle, pageDescription, '/guest-list-template'),
+    alternates: { canonical: '/guest-list-template' },
+  };
+}
 
-export const metadata: Metadata = {
-  title: TITLE,
-  description: DESCRIPTION,
-  // Nested metadata objects are REPLACED, not merged: a page that sets no
-  // openGraph inherits the root layout's wholesale, so its share preview
-  // would show the site-wide blurb instead of this page's.
-  openGraph: pageOpenGraph(TITLE, DESCRIPTION, '/guest-list-template'),
-  alternates: { canonical: '/guest-list-template' },
-};
-
-const MISTAKES: { t: string; d: string }[] = [
+const mistakes = (t: TFunction<'public'>): { title: string; d: string }[] => [
   {
-    t: 'שורה לכל אדם במקום לכל הזמנה',
-    d: 'משפחה אחת היא הזמנה אחת עם כמות, לא ארבע שורות נפרדות. פיצול לאנשים מנפח את הרשימה ומקשה לספור כמה הזמנות באמת נשלחו.',
+    title: t('site.guestListTemplate.mistakes.items.rowPerPerson.title', 'שורה לכל אדם במקום לכל הזמנה'),
+    d: t('site.guestListTemplate.mistakes.items.rowPerPerson.body', 'משפחה אחת היא הזמנה אחת עם כמות, לא ארבע שורות נפרדות. פיצול לאנשים מנפח את הרשימה ומקשה לספור כמה הזמנות באמת נשלחו.'),
   },
   {
-    t: 'טלפונים בפורמטים מעורבים',
-    d: '‎050-1234567‎, ‎+972501234567‎ ו‑‎0501234567‎ הם אותו מספר בשלוש צורות. עמודה אחידה חוסכת כפילויות שמתגלות רק אחרי השליחה.',
+    title: t('site.guestListTemplate.mistakes.items.mixedPhones.title', 'טלפונים בפורמטים מעורבים'),
+    d: t('site.guestListTemplate.mistakes.items.mixedPhones.body', '‎050-1234567‎, ‎+972501234567‎ ו‑‎0501234567‎ הם אותו מספר בשלוש צורות. עמודה אחידה חוסכת כפילויות שמתגלות רק אחרי השליחה.'),
   },
   {
-    t: 'אקסל הופך מספר טלפון למספר',
-    d: 'האפס בהתחלה נעלם ו‑0501234567 הופך ל‑501234567. הגדרת העמודה כטקסט לפני ההדבקה פותרת את זה.',
+    title: t('site.guestListTemplate.mistakes.items.excelPhone.title', 'אקסל הופך מספר טלפון למספר'),
+    d: t('site.guestListTemplate.mistakes.items.excelPhone.body', 'האפס בהתחלה נעלם ו‑0501234567 הופך ל‑501234567. הגדרת העמודה כטקסט לפני ההדבקה פותרת את זה.'),
   },
   {
-    t: 'אין עמודת קבוצה',
-    d: 'בלי חלוקה לקבוצות אי אפשר לדעת איזה חלק מהרשימה מפגר בתשובות, ואי אפשר לרכז את המאמץ רק בחלק שעוד לא ענה.',
+    title: t('site.guestListTemplate.mistakes.items.noGroup.title', 'אין עמודת קבוצה'),
+    d: t('site.guestListTemplate.mistakes.items.noGroup.body', 'בלי חלוקה לקבוצות אי אפשר לדעת איזה חלק מהרשימה מפגר בתשובות, ואי אפשר לרכז את המאמץ רק בחלק שעוד לא ענה.'),
   },
 ];
 
@@ -62,64 +68,65 @@ const MISTAKES: { t: string; d: string }[] = [
 // "אקסל מוזמנים לחתונה" (Keyword Planner IL, 2026-09-27: 110/mo at competition
 // index 6, 40/mo at 2). Organiser steps only; every KALFA mention is a shipped
 // capability (CSV import, groups, duplicate-phone flag in the import draft).
-const STEPS: { t: string; d: string }[] = [
+const steps = (t: TFunction<'public'>): { title: string; d: string }[] => [
   {
-    t: 'כל צד ממלא עותק משלו',
-    d: 'כשכל משפחה עובדת על קובץ נפרד מאותה תבנית, אף אחד לא דורס שינויים של אחר. את האיחוד עושים פעם אחת, בסוף.',
+    title: t('site.guestListTemplate.steps.items.ownCopy.title', 'כל צד ממלא עותק משלו'),
+    d: t('site.guestListTemplate.steps.items.ownCopy.body', 'כשכל משפחה עובדת על קובץ נפרד מאותה תבנית, אף אחד לא דורס שינויים של אחר. את האיחוד עושים פעם אחת, בסוף.'),
   },
   {
-    t: 'שורה לכל הזמנה, עם כמות',
-    d: 'זוג הוא שורה אחת עם כמות 2, משפחה עם ילדים היא שורה אחת עם הכמות שלה. כך מספר ההזמנות ומספר האורחים נשארים שני מספרים נפרדים.',
+    title: t('site.guestListTemplate.steps.items.rowPerInvite.title', 'שורה לכל הזמנה, עם כמות'),
+    d: t('site.guestListTemplate.steps.items.rowPerInvite.body', 'זוג הוא שורה אחת עם כמות 2, משפחה עם ילדים היא שורה אחת עם הכמות שלה. כך מספר ההזמנות ומספר האורחים נשארים שני מספרים נפרדים.'),
   },
   {
-    t: 'קבוצה לכל שורה',
-    d: 'צד החתן, צד הכלה, עבודה, חברים — קבוצה אחת לכל שורה. בהמשך זה מה שמאפשר לראות איזה חלק מהרשימה עוד לא ענה.',
+    title: t('site.guestListTemplate.steps.items.groupPerRow.title', 'קבוצה לכל שורה'),
+    d: t('site.guestListTemplate.steps.items.groupPerRow.body', 'צד החתן, צד הכלה, עבודה, חברים — קבוצה אחת לכל שורה. בהמשך זה מה שמאפשר לראות איזה חלק מהרשימה עוד לא ענה.'),
   },
   {
-    t: 'טלפון נייד בפורמט אחד',
-    d: 'עמודת הטלפון מוגדרת כטקסט ומכילה מספר נייד אחד לכל שורה. בלי מספר אפשר לנהל את המוזמן, אבל הוא לא יקבל הזמנה אוטומטית.',
+    title: t('site.guestListTemplate.steps.items.phoneFormat.title', 'טלפון נייד בפורמט אחד'),
+    d: t('site.guestListTemplate.steps.items.phoneFormat.body', 'עמודת הטלפון מוגדרת כטקסט ומכילה מספר נייד אחד לכל שורה. בלי מספר אפשר לנהל את המוזמן, אבל הוא לא יקבל הזמנה אוטומטית.'),
   },
   {
-    t: 'איחוד ובדיקת כפילויות',
-    d: 'כשמייבאים את הקבצים ל‑KALFA, מספר טלפון שכבר קיים ברשימה מסומן בטיוטת הייבוא עם שם המוזמן הקיים — וכך חבר משותף לא מקבל שתי הזמנות.',
+    title: t('site.guestListTemplate.steps.items.mergeDedupe.title', 'איחוד ובדיקת כפילויות'),
+    d: t('site.guestListTemplate.steps.items.mergeDedupe.body', 'כשמייבאים את הקבצים ל‑KALFA, מספר טלפון שכבר קיים ברשימה מסומן בטיוטת הייבוא עם שם המוזמן הקיים — וכך חבר משותף לא מקבל שתי הזמנות.'),
   },
 ];
 
-const FAQ = [
+const faqItems = (t: TFunction<'public'>) => [
   {
-    q: 'האם התבנית נפתחת באקסל?',
-    a: 'כן. הקובץ הוא CSV בקידוד UTF-8 עם סימן BOM, שזה מה שגורם לאקסל להציג עברית כמו שצריך. הוא נפתח גם בגוגל שיטס ובנומברס בלי המרה.',
+    q: t('site.guestListTemplate.faq.items.opensInExcel.question', 'האם התבנית נפתחת באקסל?'),
+    a: t('site.guestListTemplate.faq.items.opensInExcel.answer', 'כן. הקובץ הוא CSV בקידוד UTF-8 עם סימן BOM, שזה מה שגורם לאקסל להציג עברית כמו שצריך. הוא נפתח גם בגוגל שיטס ובנומברס בלי המרה.'),
   },
   {
-    q: 'למה שורה אחת לכל הזמנה ולא לכל אדם?',
-    a: 'כי ההזמנה היא היחידה שנשלחת. משפחת כהן מקבלת הזמנה אחת שמכסה ארבעה אנשים — עמודת הכמות אומרת כמה, וכך מספר ההזמנות ומספר האורחים נשארים שני מספרים נפרדים וברורים.',
+    q: t('site.guestListTemplate.faq.items.rowPerInvite.question', 'למה שורה אחת לכל הזמנה ולא לכל אדם?'),
+    a: t('site.guestListTemplate.faq.items.rowPerInvite.answer', 'כי ההזמנה היא היחידה שנשלחת. משפחת כהן מקבלת הזמנה אחת שמכסה ארבעה אנשים — עמודת הכמות אומרת כמה, וכך מספר ההזמנות ומספר האורחים נשארים שני מספרים נפרדים וברורים.'),
   },
   {
-    q: 'אפשר לייבא את הקובץ הזה ל-KALFA?',
-    a: 'כן. זו בדיוק אותה תבנית שמופיעה במסך ייבוא המוזמנים במערכת, עם אותן עמודות — אפשר למלא אותה עכשיו ולייבא אותה בהמשך בלי לשנות דבר.',
+    q: t('site.guestListTemplate.faq.items.importToKalfa.question', 'אפשר לייבא את הקובץ הזה ל-KALFA?'),
+    a: t('site.guestListTemplate.faq.items.importToKalfa.answer', 'כן. זו בדיוק אותה תבנית שמופיעה במסך ייבוא המוזמנים במערכת, עם אותן עמודות — אפשר למלא אותה עכשיו ולייבא אותה בהמשך בלי לשנות דבר.'),
   },
   {
-    q: 'איך בונים רשימת מוזמנים לחתונה?',
-    a: 'מתחילים מקובץ אחד לכל צד, שורה לכל הזמנה עם עמודת כמות, קבוצה לכל שורה ומספר נייד בפורמט אחיד. בסוף מאחדים את הקבצים ובודקים כפילויות לפי מספר הטלפון — לפני שמישהו מקבל הזמנה.',
+    q: t('site.guestListTemplate.faq.items.howToBuild.question', 'איך בונים רשימת מוזמנים לחתונה?'),
+    a: t('site.guestListTemplate.faq.items.howToBuild.answer', 'מתחילים מקובץ אחד לכל צד, שורה לכל הזמנה עם עמודת כמות, קבוצה לכל שורה ומספר נייד בפורמט אחיד. בסוף מאחדים את הקבצים ובודקים כפילויות לפי מספר הטלפון — לפני שמישהו מקבל הזמנה.'),
   },
   {
-    q: 'אפשר לעבוד על הרשימה בגוגל שיטס עם בן או בת הזוג?',
-    a: 'כן. מעלים את הקובץ לגוגל שיטס ומשתפים אותו, וכשהרשימה מוכנה מורידים אותה שוב כ‑CSV. זה אותו פורמט שהמערכת מייבאת.',
+    q: t('site.guestListTemplate.faq.items.googleSheets.question', 'אפשר לעבוד על הרשימה בגוגל שיטס עם בן או בת הזוג?'),
+    a: t('site.guestListTemplate.faq.items.googleSheets.answer', 'כן. מעלים את הקובץ לגוגל שיטס ומשתפים אותו, וכשהרשימה מוכנה מורידים אותה שוב כ‑CSV. זה אותו פורמט שהמערכת מייבאת.'),
   },
   {
-    q: 'מה קורה כשהרשימה גדלה?',
-    a: 'גיליון עובד מצוין לבנייה הראשונית של הרשימה. הוא מפסיק לעבוד כשצריך לשלוח הזמנה אישית לכל שורה, לעקוב מי ענה ולשלוח תזכורת רק לממתינים — עדכון ידני של מאות שורות הוא מקור הטעויות העיקרי.',
+    q: t('site.guestListTemplate.faq.items.listGrows.question', 'מה קורה כשהרשימה גדלה?'),
+    a: t('site.guestListTemplate.faq.items.listGrows.answer', 'גיליון עובד מצוין לבנייה הראשונית של הרשימה. הוא מפסיק לעבוד כשצריך לשלוח הזמנה אישית לכל שורה, לעקוב מי ענה ולשלוח תזכורת רק לממתינים — עדכון ידני של מאות שורות הוא מקור הטעויות העיקרי.'),
   },
 ];
 
 export default async function GuestListTemplatePage() {
-  const { t } = await getT('public');
+  const { t, i18n } = await getT('public');
   const user = await getUser();
   const startHref = user ? '/app/events/new' : '/auth/signup';
   const startLabel = user ? t('site.guestListTemplate.cta.newEvent', 'אירוע חדש') : t('site.guestListTemplate.cta.createEvent', 'צרו אירוע חדש');
 
-  const jsonLd = buildFaqJsonLd(FAQ.map((f) => ({ question: f.q, answer: f.a })));
-  const breadcrumb = buildBreadcrumbJsonLd(await getAppOrigin(), 'תבנית רשימת מוזמנים');
+  const faq = faqItems(t);
+  const jsonLd = buildFaqJsonLd(faq.map((f) => ({ question: f.q, answer: f.a })));
+  const breadcrumb = buildBreadcrumbJsonLd(await getAppOrigin(), t('site.guestListTemplate.breadcrumb', 'תבנית רשימת מוזמנים'));
 
   return (
     <div className="bg-background">
@@ -174,8 +181,13 @@ export default async function GuestListTemplatePage() {
           <div className="mx-auto max-w-6xl px-6 py-16">
             <h2 className="text-balance text-display font-bold tracking-tight">{t('site.guestListTemplate.file.title', 'מה יש בקובץ')}</h2>
             <p className="mt-3 max-w-prose text-lg text-muted-foreground">
-              ארבע עמודות, ושורה אחת לכל <strong className="font-semibold text-foreground">הזמנה</strong> —
-              לא לכל אדם.
+              <Trans
+                t={t}
+                i18n={i18n}
+                i18nKey="site.guestListTemplate.file.intro"
+                defaults="ארבע עמודות, ושורה אחת לכל <invite>הזמנה</invite> — לא לכל אדם."
+                components={{ invite: <strong className="font-semibold text-foreground" /> }}
+              />
             </p>
             {/* Wide content scrolls inside its own container so the page body
                 never scrolls horizontally on a phone. */}
@@ -227,9 +239,9 @@ export default async function GuestListTemplatePage() {
             {t('site.guestListTemplate.mistakes.title', 'ארבע טעויות שחוזרות כמעט בכל רשימה בגיליון')}
           </h2>
           <div className="k-reveal-group mt-10 grid gap-4 sm:grid-cols-2">
-            {MISTAKES.map(({ t, d }) => (
-              <div key={t} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
-                <h3 className="text-lg font-bold">{t}</h3>
+            {mistakes(t).map(({ title, d }) => (
+              <div key={title} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
+                <h3 className="text-lg font-bold">{title}</h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
               </div>
             ))}
@@ -243,16 +255,16 @@ export default async function GuestListTemplatePage() {
               {t('site.guestListTemplate.steps.title', 'איך בונים רשימת מוזמנים לחתונה: חמישה צעדים')}
             </h2>
             <ol className="mt-8 grid gap-4">
-              {STEPS.map(({ t, d }, i) => (
+              {steps(t).map(({ title, d }, i) => (
                 <li
-                  key={t}
+                  key={title}
                   className="flex items-start gap-3.5 rounded-lg border border-border bg-background px-4 py-4"
                 >
                   <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#0b0f1a] text-xs font-semibold text-white">
                     {i + 1}
                   </span>
                   <span>
-                    <span className="block font-bold">{t}</span>
+                    <span className="block font-bold">{title}</span>
                     <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">{d}</span>
                   </span>
                 </li>
@@ -269,7 +281,7 @@ export default async function GuestListTemplatePage() {
             </span>
             <h2 className="mt-3 text-balance text-display font-bold tracking-tight">{t('site.guestListTemplate.faq.title', 'על התבנית')}</h2>
             <div className="k-reveal-group mt-8 space-y-8">
-              {FAQ.map((f) => (
+              {faq.map((f) => (
                 <div key={f.q} className="border-b border-border pb-6 last:border-b-0 last:pb-0">
                   <h3 className="text-lg font-bold">{f.q}</h3>
                   <p className="mt-2 max-w-prose text-base leading-relaxed text-muted-foreground">

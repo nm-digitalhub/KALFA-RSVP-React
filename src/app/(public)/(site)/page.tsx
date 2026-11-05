@@ -1,5 +1,7 @@
+import type { TFunction } from 'i18next';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { HeroParallax, ParallaxLayer } from '@/components/motion/hero-parallax';
 import { TiltCard } from '@/components/motion/tilt-card';
@@ -55,60 +57,66 @@ import {
 // openGraph is declared here too (same title/description as the root layout)
 // so the home page carries og:url like every other (site) page; the helper
 // restates og:image, which the page-level object would otherwise drop.
-export const metadata: Metadata = {
-  alternates: { canonical: '/' },
-  openGraph: pageOpenGraph(
-    'KALFA — ניהול אישורי הגעה',
-    'ניהול מוזמנים, הזמנות ותזכורות, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד.',
-    '/',
-  ),
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  return {
+    alternates: { canonical: '/' },
+    openGraph: pageOpenGraph(
+      t('site.home.meta.ogTitle', 'KALFA — ניהול אישורי הגעה'),
+      t('site.home.meta.ogDescription', 'ניהול מוזמנים, הזמנות ותזכורות, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד.'),
+      '/',
+    ),
+  };
+}
 
-const PROBLEMS: { icon: LucideIcon; t: string; d: string }[] = [
-  { icon: ListX, t: 'מעקב ידני אחרי אורחים', d: 'גיליונות, פתקים ורשימות שמתעדכנות לאט ומלאות טעויות.' },
-  { icon: MessagesSquare, t: 'הודעות מפוזרות', d: 'תשובות שמגיעות בוואטסאפ, בטלפון ובמייל — וקשה לאחד אותן.' },
-  { icon: CircleQuestionMark, t: 'חוסר ודאות מי מגיע', d: 'אי אפשר לדעת בזמן אמת כמה אורחים באמת יגיעו.' },
-  { icon: AlarmClock, t: 'עומס לפני האירוע', d: 'הרגעים הכי לחוצים מתבזבזים על תיאומים במקום על האירוע.' },
+const problems = (t: TFunction<'public'>): { icon: LucideIcon; title: string; d: string }[] => [
+  { icon: ListX, title: t('site.home.problem.items.manualTracking.title', 'מעקב ידני אחרי אורחים'), d: t('site.home.problem.items.manualTracking.body', 'גיליונות, פתקים ורשימות שמתעדכנות לאט ומלאות טעויות.') },
+  { icon: MessagesSquare, title: t('site.home.problem.items.scatteredMessages.title', 'הודעות מפוזרות'), d: t('site.home.problem.items.scatteredMessages.body', 'תשובות שמגיעות בוואטסאפ, בטלפון ובמייל — וקשה לאחד אותן.') },
+  { icon: CircleQuestionMark, title: t('site.home.problem.items.uncertainty.title', 'חוסר ודאות מי מגיע'), d: t('site.home.problem.items.uncertainty.body', 'אי אפשר לדעת בזמן אמת כמה אורחים באמת יגיעו.') },
+  { icon: AlarmClock, title: t('site.home.problem.items.lastMinuteLoad.title', 'עומס לפני האירוע'), d: t('site.home.problem.items.lastMinuteLoad.body', 'הרגעים הכי לחוצים מתבזבזים על תיאומים במקום על האירוע.') },
 ];
 
-const SOLUTIONS = [
-  'אורחים והזמנות במקום אחד',
-  'אישורי הגעה ותזכורות אוטומטיות',
-  'סטטוסים ועדכונים בזמן אמת',
-  'תמונת מצב ברורה בכל רגע',
+const solutions = (t: TFunction<'public'>) => [
+  t('site.home.solution.items.oneList', 'אורחים והזמנות במקום אחד'),
+  t('site.home.solution.items.autoReminders', 'אישורי הגעה ותזכורות אוטומטיות'),
+  t('site.home.solution.items.liveStatus', 'סטטוסים ועדכונים בזמן אמת'),
+  t('site.home.solution.items.clearSnapshot', 'תמונת מצב ברורה בכל רגע'),
 ];
 
-const FEATURES: {
+const features = (
+  t: TFunction<'public'>,
+): {
   n: string;
   icon: LucideIcon;
-  t: string;
+  title: string;
   d: string;
   anim?: string; // animates the icon container (pulse)
   iconAnim?: string; // animates inside the icon svg (bars)
-}[] = [
-  { n: '01', icon: Users, t: 'ניהול רשימת אורחים', d: 'רשימה מסודרת אחת — קבוצות, מלווים והערות, תמיד מעודכנת.' },
-  { n: '02', icon: Send, t: 'שליחת הזמנות ותזכורות', d: 'הזמנות אישיות ותזכורות אוטומטיות למי שעוד לא השיב.' },
-  { n: '03', icon: CircleCheck, t: 'מעקב אחר אישורי הגעה', d: 'כל תגובה נרשמת מיד — מי מגיע, מי לא, וכמה מלווים.' },
-  { n: '04', icon: Activity, t: 'סטטוס אירוע בזמן אמת', d: 'תמונת מצב חיה של היענות, אישורים והתקדמות.', anim: 'k-ico-pulse' },
-  { n: '05', icon: FileUp, t: 'ייבוא מוזמנים מהיר', d: 'ייבוא רשימה קיימת מקובץ או מוואטסאפ — בלי הקלדה ידנית.' },
-  { n: '06', icon: MessageCircle, t: 'תקשורת מסודרת', d: 'עדכונים ופניות לאורחים בערוץ אחד ברור.' },
-  { n: '07', icon: ChartColumnBig, t: 'דוחות וסיכומים', d: 'סיכום מספרים ברור למארגן — לפני האירוע ואחריו.', iconAnim: 'k-ico-bars' },
+}[] => [
+  { n: '01', icon: Users, title: t('site.home.features.items.guestList.title', 'ניהול רשימת אורחים'), d: t('site.home.features.items.guestList.body', 'רשימה מסודרת אחת — קבוצות, מלווים והערות, תמיד מעודכנת.') },
+  { n: '02', icon: Send, title: t('site.home.features.items.invites.title', 'שליחת הזמנות ותזכורות'), d: t('site.home.features.items.invites.body', 'הזמנות אישיות ותזכורות אוטומטיות למי שעוד לא השיב.') },
+  { n: '03', icon: CircleCheck, title: t('site.home.features.items.tracking.title', 'מעקב אחר אישורי הגעה'), d: t('site.home.features.items.tracking.body', 'כל תגובה נרשמת מיד — מי מגיע, מי לא, וכמה מלווים.') },
+  { n: '04', icon: Activity, title: t('site.home.features.items.liveStatus.title', 'סטטוס אירוע בזמן אמת'), d: t('site.home.features.items.liveStatus.body', 'תמונת מצב חיה של היענות, אישורים והתקדמות.'), anim: 'k-ico-pulse' },
+  { n: '05', icon: FileUp, title: t('site.home.features.items.import.title', 'ייבוא מוזמנים מהיר'), d: t('site.home.features.items.import.body', 'ייבוא רשימה קיימת מקובץ או מוואטסאפ — בלי הקלדה ידנית.') },
+  { n: '06', icon: MessageCircle, title: t('site.home.features.items.communication.title', 'תקשורת מסודרת'), d: t('site.home.features.items.communication.body', 'עדכונים ופניות לאורחים בערוץ אחד ברור.') },
+  { n: '07', icon: ChartColumnBig, title: t('site.home.features.items.reports.title', 'דוחות וסיכומים'), d: t('site.home.features.items.reports.body', 'סיכום מספרים ברור למארגן — לפני האירוע ואחריו.'), iconAnim: 'k-ico-bars' },
 ];
 
-const STEPS: { n: string; icon: LucideIcon; t: string; d: string }[] = [
-  { n: '1', icon: CalendarPlus, t: 'יוצרים אירוע', d: 'שם, תאריך ומקום — והאירוע מוכן לניהול.' },
-  { n: '2', icon: UserPlus, t: 'מוסיפים אורחים', d: 'ידנית או בייבוא רשימה קיימת, עם קבוצות ומלווים.' },
-  { n: '3', icon: Send, t: 'שולחים הזמנות', d: 'הזמנה אישית לכל אורח, בערוץ הנוח לכם.' },
-  { n: '4', icon: MessageSquareReply, t: 'עוקבים אחרי תגובות', d: 'כל אישור נרשם בזמן אמת, עם תזכורת לממתינים.' },
-  { n: '5', icon: MessageCircle, t: 'שולחים עדכונים ותזכורות', d: 'תזכורות אוטומטיות לממתינים ועדכונים שוטפים לאורחים.' },
-  { n: '6', icon: PartyPopper, t: 'מגיעים לאירוע מסודר', d: 'עם תמונת מצב ברורה של מי שמגיע.' },
+const steps = (t: TFunction<'public'>): { n: string; icon: LucideIcon; title: string; d: string }[] => [
+  { n: '1', icon: CalendarPlus, title: t('site.home.how.items.createEvent.title', 'יוצרים אירוע'), d: t('site.home.how.items.createEvent.body', 'שם, תאריך ומקום — והאירוע מוכן לניהול.') },
+  { n: '2', icon: UserPlus, title: t('site.home.how.items.addGuests.title', 'מוסיפים אורחים'), d: t('site.home.how.items.addGuests.body', 'ידנית או בייבוא רשימה קיימת, עם קבוצות ומלווים.') },
+  { n: '3', icon: Send, title: t('site.home.how.items.sendInvites.title', 'שולחים הזמנות'), d: t('site.home.how.items.sendInvites.body', 'הזמנה אישית לכל אורח, בערוץ הנוח לכם.') },
+  { n: '4', icon: MessageSquareReply, title: t('site.home.how.items.trackReplies.title', 'עוקבים אחרי תגובות'), d: t('site.home.how.items.trackReplies.body', 'כל אישור נרשם בזמן אמת, עם תזכורת לממתינים.') },
+  { n: '5', icon: MessageCircle, title: t('site.home.how.items.sendUpdates.title', 'שולחים עדכונים ותזכורות'), d: t('site.home.how.items.sendUpdates.body', 'תזכורות אוטומטיות לממתינים ועדכונים שוטפים לאורחים.') },
+  { n: '6', icon: PartyPopper, title: t('site.home.how.items.arrive.title', 'מגיעים לאירוע מסודר'), d: t('site.home.how.items.arrive.body', 'עם תמונת מצב ברורה של מי שמגיע.') },
 ];
 
-const TRUST: { icon: LucideIcon; t: string; d: string }[] = [
-  { icon: ShieldCheck, t: 'פרטיות ואבטחה', d: 'רשימת האורחים והנתונים שלכם שמורים ופרטיים — שלכם בלבד.' },
-  { icon: LayoutGrid, t: 'סדר במקום בלבול', d: 'מקור אמת אחד לכל המידע, בלי גרסאות סותרות.' },
-  { icon: HandHeart, t: 'נוחות שימוש', d: 'ממשק בהיר בעברית, בלי עקומת למידה ובלי ז׳רגון טכני.' },
-  { icon: Gauge, t: 'שליטה מלאה', d: 'אתם רואים הכול ומחליטים הכול — בכל רגע נתון.' },
+const trust = (t: TFunction<'public'>): { icon: LucideIcon; title: string; d: string }[] => [
+  { icon: ShieldCheck, title: t('site.home.trust.items.privacy.title', 'פרטיות ואבטחה'), d: t('site.home.trust.items.privacy.body', 'רשימת האורחים והנתונים שלכם שמורים ופרטיים — שלכם בלבד.') },
+  { icon: LayoutGrid, title: t('site.home.trust.items.order.title', 'סדר במקום בלבול'), d: t('site.home.trust.items.order.body', 'מקור אמת אחד לכל המידע, בלי גרסאות סותרות.') },
+  // Its description is not translated yet: it says the interface is in Hebrew, and the owner decides that wording for en and fr first.
+  { icon: HandHeart, title: t('site.home.trust.items.easeOfUse.title', 'נוחות שימוש'), d: 'ממשק בהיר בעברית, בלי עקומת למידה ובלי ז׳רגון טכני.' },
+  { icon: Gauge, title: t('site.home.trust.items.control.title', 'שליטה מלאה'), d: t('site.home.trust.items.control.body', 'אתם רואים הכול ומחליטים הכול — בכל רגע נתון.') },
 ];
 
 // The four entries with an `href` are the strongest internal links on the
@@ -118,13 +126,13 @@ const TRUST: { icon: LucideIcon; t: string; d: string }[] = [
 // (the reason the old footer's placeholder columns were removed).
 // 'ברית' is a real, distinct event type with its own page and its own search
 // demand.
-const AUDIENCES: { icon: LucideIcon; t: string; href?: string }[] = [
-  { icon: Heart, t: 'חתונות', href: '/wedding' },
-  { icon: Star, t: 'בר/בת מצווה', href: '/bar-mitzva' },
-  { icon: Gift, t: 'ברית', href: '/brit' },
-  { icon: Presentation, t: 'כנסים', href: '/event' },
-  { icon: House, t: 'אירועים משפחתיים' },
-  { icon: Building2, t: 'אירועי חברה' },
+const audiences = (t: TFunction<'public'>): { icon: LucideIcon; title: string; href?: string }[] => [
+  { icon: Heart, title: t('site.home.audiences.items.weddings.title', 'חתונות'), href: '/wedding' },
+  { icon: Star, title: t('site.home.audiences.items.barBatMitzva.title', 'בר/בת מצווה'), href: '/bar-mitzva' },
+  { icon: Gift, title: t('site.home.audiences.items.brit.title', 'ברית'), href: '/brit' },
+  { icon: Presentation, title: t('site.home.audiences.items.conferences.title', 'כנסים'), href: '/event' },
+  { icon: House, title: t('site.home.audiences.items.family.title', 'אירועים משפחתיים') },
+  { icon: Building2, title: t('site.home.audiences.items.company.title', 'אירועי חברה') },
 ];
 
 const PREVIEW_GUESTS = [
@@ -153,7 +161,7 @@ function Eyebrow({
 }
 
 export default async function HomePage() {
-  const { t } = await getT('public');
+  const { t, i18n } = await getT('public');
   // Recognise a signed-in visitor (verified server-side; null when anonymous)
   // so the landing points returning users to their dashboard, not to sign-up.
   // (getUser is React-cache()d — the (site) layout's SiteHeader already made
@@ -242,7 +250,7 @@ export default async function HomePage() {
         inLanguage: 'he',
         url: `${origin}/`,
         description:
-          'מערכת לניהול אישורי הגעה לאירועים: ניהול רשימת מוזמנים ומלווים, שליחת הזמנות ותזכורות ומעקב תשובות בזמן אמת.',
+          t('site.home.jsonLd.appDescription', 'מערכת לניהול אישורי הגעה לאירועים: ניהול רשימת מוזמנים ומלווים, שליחת הזמנות ותזכורות ומעקב תשובות בזמן אמת.'),
       },
     ],
   };
@@ -289,9 +297,13 @@ export default async function HomePage() {
             <ParallaxLayer depth={-16}>
               <Eyebrow icon={Sparkles} className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">{t('site.home.hero.eyebrow', 'ניהול חכם לאירוע מושלם')}</Eyebrow>
               <h1 className="mt-4 text-balance text-hero font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
-                אישורי הגעה,
-                <br />
-                <span className="text-primary">במקום אחד.</span>
+                <Trans
+                  t={t}
+                  i18n={i18n}
+                  i18nKey="site.home.hero.title"
+                  defaults="אישורי הגעה,<br/><accent>במקום אחד.</accent>"
+                  components={{ accent: <span className="text-primary" /> }}
+                />
               </h1>
               <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-200">
                 {t('site.home.hero.subtitle', 'שלחו הזמנות, עקבו אחר התגובות בזמן אמת ונהלו את רשימת המוזמנים והמלווים — בלי גיליונות, בלי הודעות מפוזרות, בלי בלגן.')}
@@ -426,13 +438,13 @@ export default async function HomePage() {
                 {t('site.home.problem.subtitle', 'בעלי אירועים נתקלים שוב ושוב באותן בעיות, והתוצאה היא לחץ מיותר.')}
               </p>
               <div className="k-reveal-group mt-6 grid gap-4">
-                {PROBLEMS.map(({ icon: Icon, t, d }) => (
-                  <div key={t} className="flex items-start gap-4">
+                {problems(t).map(({ icon: Icon, title, d }) => (
+                  <div key={title} className="flex items-start gap-4">
                     <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#f3f4f6] text-foreground">
                       <Icon className="size-5" aria-hidden />
                     </span>
                     <div>
-                      <div className="font-bold">{t}</div>
+                      <div className="font-bold">{title}</div>
                       <div className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{d}</div>
                     </div>
                   </div>
@@ -448,7 +460,7 @@ export default async function HomePage() {
                 {t('site.home.solution.subtitle', 'אורחים, הזמנות, אישורי הגעה, תזכורות, סטטוסים ועדכונים — מערכת אחת מסודרת שנותנת לכם שליטה מלאה.')}
               </p>
               <div className="mt-6 grid gap-2.5">
-                {SOLUTIONS.map((s) => (
+                {solutions(t).map((s) => (
                   <div key={s} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3.5 py-3">
                     <CircleCheck className="size-5 shrink-0 text-indigo-300" aria-hidden />
                     <span className="text-sm font-semibold">{s}</span>
@@ -473,7 +485,7 @@ export default async function HomePage() {
             {/* `k-reveal-3d` (= k-reveal-group + a 6° stand-up on touch devices)
                 and `k-press` (touch press-in on the card) — motion spec §10. */}
             <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {FEATURES.map(({ n, icon: Icon, t, d, anim, iconAnim }) => (
+              {features(t).map(({ n, icon: Icon, title, d, anim, iconAnim }) => (
                 <TiltCard key={n} maxAngle={5} scale={1.01} glare={false}>
                 <div
                   className="k-card k-press rounded-xl border border-border bg-background p-6 hover:shadow-md"
@@ -486,7 +498,7 @@ export default async function HomePage() {
                     </span>
                     <span className="text-xs text-muted-foreground">{n}</span>
                   </div>
-                  <h3 className="text-lg font-bold">{t}</h3>
+                  <h3 className="text-lg font-bold">{title}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
                 </div>
                 </TiltCard>
@@ -513,13 +525,13 @@ export default async function HomePage() {
             <p className="mt-2.5 text-pretty text-lg text-muted-foreground">{t('site.home.how.subtitle', 'בלי הדרכות מסובכות. בונים אירוע ומתחילים לעבוד.')}</p>
           </div>
           <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {STEPS.map(({ n, icon: Icon, t, d }) => (
+            {steps(t).map(({ n, icon: Icon, title, d }) => (
               <div key={n} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
                 <div className="mb-3.5 flex items-center gap-3.5">
                   <span className="grid size-8 place-items-center rounded-full bg-[#0b0f1a] text-sm font-semibold text-white">{n}</span>
                   <Icon className="size-5 text-primary" aria-hidden />
                 </div>
-                <h3 className="text-lg font-bold">{t}</h3>
+                <h3 className="text-lg font-bold">{title}</h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
               </div>
             ))}
@@ -539,10 +551,10 @@ export default async function HomePage() {
               </p>
             </div>
             <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {TRUST.map(({ icon: Icon, t, d }) => (
-                <div key={t} className="k-card rounded-xl border border-white/10 bg-white/5 p-6 hover:bg-white/10">
+              {trust(t).map(({ icon: Icon, title, d }) => (
+                <div key={title} className="k-card rounded-xl border border-white/10 bg-white/5 p-6 hover:bg-white/10">
                   <Icon className="mb-3.5 size-6 text-indigo-300" aria-hidden />
-                  <h3 className="font-bold text-white">{t}</h3>
+                  <h3 className="font-bold text-white">{title}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-white/60">{d}</p>
                 </div>
               ))}
@@ -565,25 +577,25 @@ export default async function HomePage() {
                 so the grid stays even, but without the hover border/shadow —
                 a tile that reacts like a link and goes nowhere is a false cue. */}
             <div className="k-reveal-group grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {AUDIENCES.map(({ icon: Icon, t, href }) => {
+              {audiences(t).map(({ icon: Icon, title, href }) => {
                 const body = (
                   <>
                     <Icon className="size-5 shrink-0 text-primary" aria-hidden />
-                    <span className="text-sm font-semibold">{t}</span>
+                    <span className="text-sm font-semibold">{title}</span>
                   </>
                 );
                 const shell =
                   'k-card flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-4 py-4';
                 return href ? (
                   <Link
-                    key={t}
+                    key={title}
                     href={href}
                     className={`${shell} hover:border-primary hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring`}
                   >
                     {body}
                   </Link>
                 ) : (
-                  <div key={t} className={shell}>
+                  <div key={title} className={shell}>
                     {body}
                   </div>
                 );
@@ -599,9 +611,12 @@ export default async function HomePage() {
               button already uses) — depth without a second colour. */}
           <div className="k-reveal k-sheen relative isolate overflow-hidden rounded-3xl bg-primary px-8 py-14 text-center before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_start] before:from-white/15 before:to-transparent sm:py-16">
             <h2 className="text-balance text-3xl font-extrabold leading-tight tracking-tight text-primary-foreground sm:text-5xl">
-              פחות התעסקות, יותר שליטה.
-              <br />
-              אירוע מסודר יותר.
+              <Trans
+                t={t}
+                i18n={i18n}
+                i18nKey="site.home.closing.title"
+                defaults="פחות התעסקות, יותר שליטה.<br/>אירוע מסודר יותר."
+              />
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-pretty text-primary-foreground/90">
               {t('site.home.closing.subtitle', 'התחילו לנהל את אישורי ההגעה לאירוע שלכם עוד היום. מסודר, ברור ובמקום אחד.')}

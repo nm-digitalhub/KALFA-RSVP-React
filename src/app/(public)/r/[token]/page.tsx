@@ -17,11 +17,14 @@ import { GuestShell } from '@/components/guest/guest-shell';
 // `/r/:token*` in next.config.
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'אישור הגעה',
-  // Personal, link-only page — keep it out of search indexes.
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  return {
+    title: t('r.meta.title', 'אישור הגעה'),
+    // Personal, link-only page — keep it out of search indexes.
+    robots: { index: false, follow: false },
+  };
+}
 
 export default async function RsvpPage({
   params,

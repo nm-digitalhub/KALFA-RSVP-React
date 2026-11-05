@@ -1,6 +1,8 @@
+import type { TFunction } from 'i18next';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowLeft, Sparkles } from 'lucide-react';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
@@ -25,61 +27,68 @@ import { getAppOrigin } from '@/lib/url';
 // 4. Pricing is not restated here; it links to /faq, whose numbers come from
 //    the live package row.
 
-const TITLE = 'אודות KALFA — מערכת ישראלית לאישורי הגעה';
+const aboutTitle = (t: TFunction<'public'>) => t('site.about.meta.title', 'אודות KALFA — מערכת ישראלית לאישורי הגעה');
+
+// Not translated yet: it says the system is in Hebrew, and the owner decides that wording for en and fr first.
 const DESCRIPTION =
   'מי אנחנו ומה KALFA עושה: מערכת ישראלית בעברית לניהול אישורי הגעה לאירועים פרטיים — רשימת מוזמנים, הזמנות, תזכורות ומעקב תשובות.';
 
-export const metadata: Metadata = {
-  title: TITLE,
-  description: DESCRIPTION,
-  openGraph: pageOpenGraph(TITLE, DESCRIPTION, '/about'),
-  alternates: { canonical: '/about' },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  const pageTitle = aboutTitle(t);
+  return {
+    title: pageTitle,
+    description: DESCRIPTION,
+    openGraph: pageOpenGraph(pageTitle, DESCRIPTION, '/about'),
+    alternates: { canonical: '/about' },
+  };
+}
 
 // Reads the company settings per request, like /terms and /privacy.
 export const dynamic = 'force-dynamic';
 
-const DOES: readonly { t: string; d: string }[] = [
+const doesItems = (t: TFunction<'public'>): readonly { title: string; d: string }[] => [
   {
-    t: 'רשימת מוזמנים אחת',
-    d: 'קבוצות, מלווים, הערות וסטטוסים במקום אחד, עם ייבוא מקובץ או מוואטסאפ.',
+    title: t('site.about.does.items.guestList.title', 'רשימת מוזמנים אחת'),
+    d: t('site.about.does.items.guestList.body', 'קבוצות, מלווים, הערות וסטטוסים במקום אחד, עם ייבוא מקובץ או מוואטסאפ.'),
   },
   {
-    t: 'הזמנה אישית ותזכורות',
-    d: 'פנייה אישית לכל מוזמן, ותזכורות אוטומטיות רק למי שעוד לא ענה.',
+    title: t('site.about.does.items.personalInvite.title', 'הזמנה אישית ותזכורות'),
+    d: t('site.about.does.items.personalInvite.body', 'פנייה אישית לכל מוזמן, ותזכורות אוטומטיות רק למי שעוד לא ענה.'),
   },
   {
-    t: 'תשובה דרך קישור פרטי',
-    d: 'כל מוזמן עונה דרך קישור משלו ורואה רק את הפרטים שלו — לא את הרשימה ולא את תשובות האחרים.',
+    title: t('site.about.does.items.privateLink.title', 'תשובה דרך קישור פרטי'),
+    d: t('site.about.does.items.privateLink.body', 'כל מוזמן עונה דרך קישור משלו ורואה רק את הפרטים שלו — לא את הרשימה ולא את תשובות האחרים.'),
   },
   {
-    t: 'תמונת מצב למארגן',
-    d: 'מי אישר, מי ממתין וכמה מגיעים — מתעדכן עם כל תשובה.',
+    title: t('site.about.does.items.snapshot.title', 'תמונת מצב למארגן'),
+    d: t('site.about.does.items.snapshot.body', 'מי אישר, מי ממתין וכמה מגיעים — מתעדכן עם כל תשובה.'),
   },
 ];
 
-const PRINCIPLES: readonly { t: string; d: string }[] = [
+const principles = (t: TFunction<'public'>): readonly { title: string; d: string }[] => [
   {
-    t: 'עברית קודם',
+    title: t('site.about.principles.items.hebrewFirst.title', 'עברית קודם'),
+    // Not translated yet: it says the text was not translated, and the owner decides that wording for en and fr first.
     d: 'הממשק, ההודעות ודפי התשובה נכתבו בעברית ומימין לשמאל מההתחלה — לא תורגמו.',
   },
   {
-    t: 'בלי פניות בשבת ובחג',
-    d: 'פנייה שמועדה נופל בשבת, בחג או בשעות הלילה מתוזמנת מחדש אוטומטית לחלון השליחה הבא.',
+    title: t('site.about.principles.items.noShabbat.title', 'בלי פניות בשבת ובחג'),
+    d: t('site.about.principles.items.noShabbat.body', 'פנייה שמועדה נופל בשבת, בחג או בשעות הלילה מתוזמנת מחדש אוטומטית לחלון השליחה הבא.'),
   },
   {
-    t: 'הנתונים של האירוע שייכים לבעל האירוע',
+    title: t('site.about.principles.items.dataOwnership.title', 'הנתונים של האירוע שייכים לבעל האירוע'),
     // Mirrors the owner-approved /faq answer on data ownership, not new wording.
-    d: 'נתוני המוזמנים שייכים לבעל האירוע. KALFA מעבדת אותם בשמו ולא מוכרת מידע אישי לצד שלישי. הפירוט המלא נמצא במדיניות הפרטיות.',
+    d: t('site.about.principles.items.dataOwnership.body', 'נתוני המוזמנים שייכים לבעל האירוע. KALFA מעבדת אותם בשמו ולא מוכרת מידע אישי לצד שלישי. הפירוט המלא נמצא במדיניות הפרטיות.'),
   },
   {
-    t: 'מחיר גלוי מראש',
-    d: 'התמחור, מה כלול בו ומתי מתווסף חיוב מפורטים בשאלות הנפוצות ובתקנון — לפני שמתחייבים.',
+    title: t('site.about.principles.items.openPrice.title', 'מחיר גלוי מראש'),
+    d: t('site.about.principles.items.openPrice.body', 'התמחור, מה כלול בו ומתי מתווסף חיוב מפורטים בשאלות הנפוצות ובתקנון — לפני שמתחייבים.'),
   },
 ];
 
 export default async function AboutPage() {
-  const { t } = await getT('public');
+  const { t, i18n } = await getT('public');
   const [user, origin] = await Promise.all([getUser(), getAppOrigin()]);
   const startHref = user ? '/app/events/new' : '/auth/signup';
   const startLabel = user ? t('site.about.cta.newEvent', 'אירוע חדש') : t('site.about.cta.createEvent', 'צרו אירוע חדש');
@@ -103,12 +112,12 @@ export default async function AboutPage() {
     '@context': 'https://schema.org',
     '@type': 'AboutPage',
     url: `${origin}/about`,
-    name: TITLE,
+    name: aboutTitle(t),
     description: DESCRIPTION,
     inLanguage: 'he-IL',
     about: { '@id': `${origin}/#organization` },
   };
-  const breadcrumb = buildBreadcrumbJsonLd(origin, 'אודות');
+  const breadcrumb = buildBreadcrumbJsonLd(origin, t('site.about.breadcrumb', 'אודות'));
 
   return (
     <div className="bg-background">
@@ -139,9 +148,9 @@ export default async function AboutPage() {
           <div className="mx-auto max-w-6xl px-6 py-16">
             <h2 className="text-balance text-display font-bold tracking-tight">{t('site.about.does.title', 'מה המערכת עושה')}</h2>
             <div className="mt-10 grid gap-4 sm:grid-cols-2">
-              {DOES.map(({ t, d }) => (
-                <div key={t} className="rounded-xl border border-border bg-background p-6">
-                  <h3 className="text-lg font-bold">{t}</h3>
+              {doesItems(t).map(({ title, d }) => (
+                <div key={title} className="rounded-xl border border-border bg-background p-6">
+                  <h3 className="text-lg font-bold">{title}</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
                 </div>
               ))}
@@ -155,26 +164,25 @@ export default async function AboutPage() {
         <section className="mx-auto max-w-3xl px-6 py-16">
           <h2 className="text-balance text-display font-bold tracking-tight">{t('site.about.principles.title', 'איך אנחנו עובדים')}</h2>
           <div className="mt-8 space-y-8">
-            {PRINCIPLES.map(({ t, d }) => (
-              <div key={t}>
-                <h3 className="text-xl font-bold">{t}</h3>
+            {principles(t).map(({ title, d }) => (
+              <div key={title}>
+                <h3 className="text-xl font-bold">{title}</h3>
                 <p className="mt-2 max-w-prose text-base leading-relaxed text-muted-foreground">{d}</p>
               </div>
             ))}
           </div>
           <p className="mt-10 text-muted-foreground">
-            לפרטים:{' '}
-            <Link href="/faq" className="font-semibold text-primary hover:underline">
-              שאלות נפוצות
-            </Link>
-            {' · '}
-            <Link href="/privacy" className="font-semibold text-primary hover:underline">
-              מדיניות פרטיות
-            </Link>
-            {' · '}
-            <Link href="/terms" className="font-semibold text-primary hover:underline">
-              תקנון
-            </Link>
+            <Trans
+              t={t}
+              i18n={i18n}
+              i18nKey="site.about.moreLinks"
+              defaults="לפרטים: <faq>שאלות נפוצות</faq> · <privacy>מדיניות פרטיות</privacy> · <terms>תקנון</terms>"
+              components={{
+                faq: <Link href="/faq" className="font-semibold text-primary hover:underline" />,
+                privacy: <Link href="/privacy" className="font-semibold text-primary hover:underline" />,
+                terms: <Link href="/terms" className="font-semibold text-primary hover:underline" />,
+              }}
+            />
           </p>
         </section>
 
@@ -183,16 +191,19 @@ export default async function AboutPage() {
             <h2 className="text-balance text-display font-bold tracking-tight">{t('site.about.operator.title', 'מי מפעיל את השירות')}</h2>
             {operatorName ? (
               <p className="mt-4 max-w-prose text-base leading-relaxed text-muted-foreground">
-                השירות מופעל על ידי {operatorName}
-                {operatorAddress ? `, ${operatorAddress}` : ''}. פרטי העסק המלאים מופיעים בתקנון.
+                {t('site.about.operator.body', 'השירות מופעל על ידי {{operator}}. פרטי העסק המלאים מופיעים בתקנון.', {
+                  operator: operatorAddress ? `${operatorName}, ${operatorAddress}` : operatorName,
+                })}
               </p>
             ) : null}
             <p className="mt-4 max-w-prose text-base leading-relaxed text-muted-foreground">
-              שאלה, בקשה או הערה?{' '}
-              <Link href="/contact" className="font-semibold text-primary hover:underline">
-                אפשר לפנות אלינו בעמוד יצירת הקשר
-              </Link>
-              , כולל בקשה לשיחה חוזרת.
+              <Trans
+                t={t}
+                i18n={i18n}
+                i18nKey="site.about.operator.contact"
+                defaults="שאלה, בקשה או הערה? <contact>אפשר לפנות אלינו בעמוד יצירת הקשר</contact>, כולל בקשה לשיחה חוזרת."
+                components={{ contact: <Link href="/contact" className="font-semibold text-primary hover:underline" /> }}
+              />
             </p>
           </div>
         </section>

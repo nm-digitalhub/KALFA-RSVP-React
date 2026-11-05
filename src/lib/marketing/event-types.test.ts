@@ -3,7 +3,9 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { EVENT_TYPES, getEventType, type EventTypeSlug } from './event-types';
+import { getT } from '@/lib/i18n';
+
+import { EVENT_TYPES, getEventTypeContent, type EventTypeSlug } from './event-types';
 
 // Source-level guards for the public marketing pages. Vitest runs in a Node
 // environment (vitest.config), so these pin structure through the files rather
@@ -17,8 +19,21 @@ const MARKETING_PAGES = [
   '/guest-list-template',
 ];
 
+// The copy is built per call, so every check on text reads this output and never
+// EVENT_TYPES, which holds only slug and path. The fixed getT returns each Hebrew
+// default, the same text a visitor sees.
+const t = getT('public');
+const CONTENT = EVENT_TYPES.map((e) => getEventTypeContent(e.slug, t));
+
 function pageSrc(path: string): string {
   return readFileSync(join(siteDir, path.slice(1), 'page.tsx'), 'utf8');
+}
+
+function copyStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(copyStrings);
+  if (typeof value === 'object' && value !== null) return Object.values(value).flatMap(copyStrings);
+  return [];
 }
 
 describe('event-type catalogue', () => {
@@ -34,39 +49,53 @@ describe('event-type catalogue', () => {
     expect(new Set(EVENT_TYPES.map((e) => e.path)).size).toBe(EVENT_TYPES.length);
   });
 
-  it('getEventType returns the matching entry and throws on an unknown slug', () => {
-    expect(getEventType('wedding').slug).toBe('wedding');
-    expect(() => getEventType('nope' as EventTypeSlug)).toThrow(/unknown event type/);
+  it('getEventTypeContent returns the matching entry and throws on an unknown slug', () => {
+    expect(getEventTypeContent('wedding', t).slug).toBe('wedding');
+    expect(() => getEventTypeContent('nope' as EventTypeSlug, t)).toThrow(/unknown event type/);
+  });
+
+  // Every check below reads CONTENT. If it came back empty, or t returned keys
+  // instead of the Hebrew, they would all pass while checking nothing.
+  it('builds real Hebrew copy for every entry, never a raw key', () => {
+    expect(CONTENT.map((e) => e.path)).toEqual(EVENT_TYPES.map((e) => e.path));
+    for (const e of CONTENT) {
+      const texts = copyStrings({ ...e, slug: undefined, path: undefined });
+      expect(texts.length, e.slug).toBeGreaterThan(20);
+      for (const text of texts) {
+        expect(text, e.slug).toMatch(/[\u0590-\u05FF]/);
+        expect(text, e.slug).not.toContain('site.eventType.');
+      }
+    }
   });
 
   // The whole reason four pages exist instead of one: if their copy converges,
   // they become duplicates and rank worse than the single page they replaced.
   it('the four pages are genuinely different, not one template with a word swapped', () => {
-    const titles = EVENT_TYPES.map((e) => e.title);
+    const titles = CONTENT.map((e) => e.title);
     expect(new Set(titles).size).toBe(EVENT_TYPES.length);
-    expect(new Set(EVENT_TYPES.map((e) => e.description)).size).toBe(EVENT_TYPES.length);
-    expect(new Set(EVENT_TYPES.map((e) => e.lede)).size).toBe(EVENT_TYPES.length);
+    expect(new Set(CONTENT.map((e) => e.description)).size).toBe(EVENT_TYPES.length);
+    expect(new Set(CONTENT.map((e) => e.lede)).size).toBe(EVENT_TYPES.length);
 
     // No challenge or FAQ text is reused across two event types.
-    const challenges = EVENT_TYPES.flatMap((e) => e.challenges.map((c) => c.d));
+    const challenges = CONTENT.flatMap((e) => e.challenges.map((c) => c.d));
     expect(new Set(challenges).size).toBe(challenges.length);
-    const answers = EVENT_TYPES.flatMap((e) => e.faq.map((f) => f.a));
+    const answers = CONTENT.flatMap((e) => e.faq.map((f) => f.a));
     expect(new Set(answers).size).toBe(answers.length);
-    const questions = EVENT_TYPES.flatMap((e) => e.faq.map((f) => f.q));
+    const questions = CONTENT.flatMap((e) => e.faq.map((f) => f.q));
     expect(new Set(questions).size).toBe(questions.length);
     // The guide is the bulk of each page's text — the place duplication would
     // do the most damage.
-    expect(new Set(EVENT_TYPES.map((e) => e.guideTitle)).size).toBe(EVENT_TYPES.length);
-    const guideHeads = EVENT_TYPES.flatMap((e) => e.guide.map((g) => g.h));
+    expect(new Set(CONTENT.map((e) => e.guideTitle)).size).toBe(EVENT_TYPES.length);
+    const guideHeads = CONTENT.flatMap((e) => e.guide.map((g) => g.h));
     expect(new Set(guideHeads).size).toBe(guideHeads.length);
-    const guideBodies = EVENT_TYPES.flatMap((e) => e.guide.map((g) => g.p));
+    const guideBodies = CONTENT.flatMap((e) => e.guide.map((g) => g.p));
     expect(new Set(guideBodies).size).toBe(guideBodies.length);
-    const timing = EVENT_TYPES.flatMap((e) => e.timing);
+    const timing = CONTENT.flatMap((e) => e.timing);
     expect(new Set(timing).size).toBe(timing.length);
   });
 
   it('every entry carries an in-depth guide, not a stub', () => {
-    for (const e of EVENT_TYPES) {
+    for (const e of CONTENT) {
       expect(e.guide.length, e.slug).toBeGreaterThanOrEqual(3);
       for (const g of e.guide) {
         expect(g.h.trim(), e.slug).not.toBe('');
@@ -82,7 +111,7 @@ describe('event-type catalogue', () => {
   // package sent it ten days before — copy must describe the ORGANISER's steps,
   // never pin a date on the system's messages.
   it('never hand-types a send date for the system\'s own invitation', () => {
-    const everything = JSON.stringify(EVENT_TYPES);
+    const everything = JSON.stringify(CONTENT);
     expect(everything).not.toMatch(/ההזמנה האישית\s*—\s*כ?(ארבעה|שלושה|שבועיים|שבועות)/);
     expect(everything).not.toMatch(/ההזמנה האישית יוצאת בדרך כלל/);
   });
@@ -90,13 +119,13 @@ describe('event-type catalogue', () => {
   // Files are imported as CSV only — src/lib/csv.ts rejects .xlsx by magic
   // bytes, so promising an Excel-file import would be false.
   it('never promises an .xlsx import', () => {
-    const everything = JSON.stringify(EVENT_TYPES);
+    const everything = JSON.stringify(CONTENT);
     expect(everything).not.toMatch(/xlsx/i);
     expect(everything).not.toContain('מקובץ אקסל');
   });
 
   it('every entry carries the content the page renders', () => {
-    for (const e of EVENT_TYPES) {
+    for (const e of CONTENT) {
       expect(e.challenges.length, e.slug).toBeGreaterThanOrEqual(3);
       expect(e.timing.length, e.slug).toBeGreaterThanOrEqual(2);
       expect(e.faq.length, e.slug).toBeGreaterThanOrEqual(2);
@@ -114,7 +143,7 @@ describe('event-type catalogue', () => {
   // home page once and had to be removed; this stops it coming back through
   // the marketing catalogue.
   it('claims no capability the product does not have', () => {
-    const everything = JSON.stringify(EVENT_TYPES);
+    const everything = JSON.stringify(CONTENT);
     for (const forbidden of ['הושבה', 'שולחנות', 'סידורי הושבה', 'מכירת כרטיסים']) {
       expect(everything, forbidden).not.toContain(forbidden);
     }
@@ -123,7 +152,7 @@ describe('event-type catalogue', () => {
   // The home page owns the generic head term. A page that also targets it
   // competes with the home page instead of adding reach.
   it('no event-type page targets the generic head term in its own title', () => {
-    for (const e of EVENT_TYPES) {
+    for (const e of CONTENT) {
       expect(e.title.startsWith('אישורי הגעה |'), e.slug).toBe(false);
       expect(e.title.trim(), e.slug).not.toBe('אישורי הגעה');
     }

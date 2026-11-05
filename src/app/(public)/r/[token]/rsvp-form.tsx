@@ -22,12 +22,6 @@ import { useT } from 'next-i18next/client';
 
 import { submitRsvpAction } from './actions';
 
-const STATUS_LABELS: Record<RsvpStatus, string> = {
-  attending: 'מגיע/ה',
-  maybe: 'אולי',
-  declined: 'לא מגיע/ה',
-};
-
 // Absolute fallback cap when the guest has no invited count (expected_count
 // NULL) — mirrors COUNT_MAX in the Zod schema so the UI never offers a value
 // the server would reject.
@@ -64,6 +58,8 @@ function Stepper({
   // id of a FieldError shared by several steppers (the adults/kids total).
   describedBy?: string;
 }) {
+  const { t } = useT('public');
+
   return (
     <div>
       <span id={`${name}-label`} className="mb-1 block text-sm font-medium">
@@ -78,7 +74,7 @@ function Stepper({
         <button
           type="button"
           onClick={() => onChange(Math.max(0, value - 1))}
-          aria-label={`הפחתת ${label}`}
+          aria-label={t('r.form.stepper.decrease', 'הפחתת {{label}}', { label })}
           className={STEPPER_BUTTON_CLASS}
           disabled={value <= 0}
         >
@@ -90,7 +86,7 @@ function Stepper({
         <button
           type="button"
           onClick={() => onChange(Math.min(max, value + 1))}
-          aria-label={`הוספת ${label}`}
+          aria-label={t('r.form.stepper.increase', 'הוספת {{label}}', { label })}
           className={STEPPER_BUTTON_CLASS}
           disabled={value >= max}
         >
@@ -125,6 +121,11 @@ export function RsvpForm({
   calendar?: React.ReactNode;
 }) {
   const { t } = useT('public');
+  const statusLabels: Record<RsvpStatus, string> = {
+    attending: t('r.form.status.attending', 'מגיע/ה'),
+    maybe: t('r.form.status.maybe', 'אולי'),
+    declined: t('r.form.status.declined', 'לא מגיע/ה'),
+  };
   const { guest, event, questions, can_respond: canRespond } = view;
   const eventType = asEventType(event.event_type);
   const heading = eventHeadingFor(eventType, event.celebrants, event.name);
@@ -249,7 +250,7 @@ export function RsvpForm({
                     aria-describedby={statusErrors?.length ? 'status-err' : undefined}
                     className="sr-only"
                   />
-                  {STATUS_LABELS[option]}
+                  {statusLabels[option]}
                 </label>
               ))}
             </div>
@@ -391,8 +392,13 @@ export function RsvpForm({
                 </p>
                 {attending ? (
                   <p className="mt-1 text-sm text-muted-foreground">
-                    נתראה ב{EVENT_TYPE_LABELS[eventType]} — נרשמו {adults + kids}{' '}
-                    {adults + kids === 1 ? 'משתתף/ת' : 'משתתפים'}.
+                    {t('r.form.success.summary', {
+                      count: adults + kids,
+                      eventType: EVENT_TYPE_LABELS[eventType],
+                      defaultValue: 'נתראה ב{{eventType}} — נרשמו {{count}} משתתפים.',
+                      defaultValue_one: 'נתראה ב{{eventType}} — נרשמו {{count}} משתתף/ת.',
+                      defaultValue_other: 'נתראה ב{{eventType}} — נרשמו {{count}} משתתפים.',
+                    })}
                   </p>
                 ) : null}
                 <p className="mt-1 text-xs text-muted-foreground">

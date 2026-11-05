@@ -1,4 +1,5 @@
-import { getEventType } from '@/lib/marketing/event-types';
+import { getT } from '@/lib/i18n';
+import { getEventTypeContent } from '@/lib/marketing/event-types';
 import { getAppOrigin } from '@/lib/url';
 
 // /llms.txt — AI-readable site index (llmstxt.org convention; the custom
@@ -15,11 +16,13 @@ export async function GET(): Promise<Response> {
   const origin = await getAppOrigin();
   // The four event-type pages read their one-line description from the same
   // catalogue that renders the page and its <meta name="description">, so the
-  // note here can never drift from what the page itself says.
-  const wedding = getEventType('wedding');
-  const barMitzva = getEventType('bar-mitzva');
-  const brit = getEventType('brit');
-  const event = getEventType('event');
+  // note here can never drift from what the page itself says. The fixed getT,
+  // because a prerendered file has no request language: this text stays Hebrew.
+  const t = getT('public');
+  const wedding = getEventTypeContent('wedding', t);
+  const barMitzva = getEventTypeContent('bar-mitzva', t);
+  const brit = getEventTypeContent('brit', t);
+  const event = getEventTypeContent('event', t);
   // Layout follows the llmstxt.org spec: H1, blockquote summary, then free-form
   // prose (paragraphs/lists, NO headings), and only then H2 sections that hold
   // nothing but `- [name](url): notes` link lists. The prose uses numbered

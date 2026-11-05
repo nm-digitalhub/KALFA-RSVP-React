@@ -15,11 +15,14 @@ import { GuestShell } from '@/components/guest/guest-shell';
 // are set for `/g/:token*` in next.config.
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'שליחת מתנה',
-  // Link-only page — keep it out of search indexes.
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  return {
+    title: t('g.meta.title', 'שליחת מתנה'),
+    // Link-only page — keep it out of search indexes.
+    robots: { index: false, follow: false },
+  };
+}
 
 // The gift token is exactly 32 hex chars (encode(gen_random_bytes(16),'hex')).
 // Reject anything else before touching the DB.

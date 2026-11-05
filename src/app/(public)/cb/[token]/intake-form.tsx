@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { actionFormError } from '@/lib/action-result';
-import { useT } from 'next-i18next/client';
+import { Trans, useT } from 'next-i18next/client';
 
 import { submitIntakeAction } from './actions';
 
@@ -185,10 +185,12 @@ export function IntakeForm({
           htmlFor="cbi-note"
           className="text-[17px] font-bold leading-6 tracking-[-0.02em] text-[#171717]"
         >
-          על מה רצית לדבר?{' '}
-          <span className="font-normal text-[#666b72]">
-            (לא חובה)
-          </span>
+          <Trans
+            t={t}
+            i18nKey="cb.form.note.label"
+            defaults="על מה רצית לדבר? <optional>(לא חובה)</optional>"
+            components={{ optional: <span className="font-normal text-[#666b72]" /> }}
+          />
         </Label>
 
         <div className="group relative">

@@ -5,6 +5,7 @@ import { LandingHeaderNav } from '@/components/landing-header-nav';
 import { LandingMobileNav } from '@/components/landing-mobile-nav';
 import { LandingUserMenu } from '@/components/landing-user-menu';
 import { siteCta } from '@/components/site/cta';
+import { getT } from '@/i18n.server';
 import { getUser } from '@/lib/auth/dal';
 import { getProfile } from '@/lib/data/profiles';
 import { cn } from '@/lib/utils';
@@ -24,6 +25,7 @@ import { cn } from '@/lib/utils';
 // (link.md "Scrolling to an id").
 
 export async function SiteHeader() {
+  const { t } = await getT('public');
   const user = await getUser();
   // Full name for the account menu; same lookup and fallback rule as the
   // customer app shell (src/app/(customer)/app/layout.tsx).
@@ -56,10 +58,10 @@ export async function SiteHeader() {
                 href="/auth/login"
                 className="inline-flex min-h-11 items-center rounded-sm px-1 text-sm font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
-                כניסה
+                {t('site.header.login', 'כניסה')}
               </Link>
               <Link href="/auth/signup" className={cn(siteCta({ size: 'sm' }), 'min-h-11')}>
-                צרו אירוע
+                {t('site.header.createEvent', 'צרו אירוע')}
                 <ArrowLeft className="size-4" aria-hidden />
               </Link>
             </div>

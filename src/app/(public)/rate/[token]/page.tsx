@@ -15,11 +15,14 @@ import { GuestShell } from '@/components/guest/guest-shell';
 // noindex) are set for `/rate/:token*` in next.config.
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'דירוג שירות',
-  // Link-only page — keep it out of search indexes.
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  return {
+    title: t('rate.meta.title', 'דירוג שירות'),
+    // Link-only page — keep it out of search indexes.
+    robots: { index: false, follow: false },
+  };
+}
 
 // rating_token is exactly 32 hex chars (randomBytes(16).toString('hex')) —
 // no legacy generation path to tolerate, unlike guests.rsvp_token, so the

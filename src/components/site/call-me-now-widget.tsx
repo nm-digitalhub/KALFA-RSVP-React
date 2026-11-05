@@ -3,6 +3,7 @@
 import { useId, useState } from 'react';
 import { DirectionProvider } from '@base-ui/react/direction-provider';
 import { Loader2, Phone, X } from 'lucide-react';
+import { useT } from 'next-i18next/client';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,32 +43,8 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-const REFUSAL_MESSAGE: Record<string, string> = {
-  flag_disabled: 'שירות ההתקשרות אינו פעיל כרגע.',
-  live_calls_disabled: 'ערוץ השיחות אינו פעיל כרגע.',
-  balance: 'לא ניתן לבצע שיחה כעת. נסו שוב מאוחר יותר.',
-  concurrency: 'המוקד עמוס כרגע. נסו שוב בעוד מספר דקות.',
-  per_phone_rate: 'כבר ביקשתם שיחה חוזרת לאחרונה. נסו שוב מאוחר יותר.',
-  daily_breaker: 'הגענו למכסת השיחות היומית. נסו שוב מחר.',
-  dnc: 'לא ניתן להתקשר למספר זה.',
-  // Shabbat/Yom-Tov only — this flow skips the daily call window
-  // (availability gates the dial, not the clock — see console-calls.ts's
-  // evaluateCallMeNowConsent), so this reason surfaces only for that one
-  // basis.
-  quiet_hours: 'לא ניתן לבצע שיחה בשבת ובחג. נסו שוב לאחר צאת החג.',
-  otp: 'קוד האימות שגוי או שפג תוקפו.',
-  // A call-me-now request is exempt from the national Do-Not-Call registry (the visitor asked to be called), so the
-  // only registry outcome this flow can meet is a decision record that could not be written.
-  registry_pending: 'לא ניתן לבצע שיחה כעת. נסו שוב בעוד מספר דקות.',
-};
-
-// Same wording NO_AGENT_LINE_HE uses in ConsoleInbound.voxengine.js — reused
-// verbatim, not paraphrased, so the promise reads identically whether it is
-// made here (the common case, checked BEFORE any call is placed) or by the
-// scenario's own ring-exhausted branch for the narrow race case.
-const NO_AGENT_MESSAGE = 'אין נציג זמין כרגע. נחזור אליכם בהקדם.';
-
 export function CallMeNowWidget() {
+  const { t } = useT('public');
   const [open, setOpen] = useState(false);
   const [disclosureAccepted, setDisclosureAccepted] = useState(false);
   const [phone, setPhone] = useState('');
@@ -76,6 +53,31 @@ export function CallMeNowWidget() {
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();
   const phoneId = useId();
+
+  const refusalMessage: Record<string, string> = {
+    flag_disabled: t('site.callMe.refusal.flagDisabled', 'שירות ההתקשרות אינו פעיל כרגע.'),
+    live_calls_disabled: t('site.callMe.refusal.liveCallsDisabled', 'ערוץ השיחות אינו פעיל כרגע.'),
+    balance: t('site.callMe.refusal.balance', 'לא ניתן לבצע שיחה כעת. נסו שוב מאוחר יותר.'),
+    concurrency: t('site.callMe.refusal.concurrency', 'המוקד עמוס כרגע. נסו שוב בעוד מספר דקות.'),
+    per_phone_rate: t('site.callMe.refusal.perPhoneRate', 'כבר ביקשתם שיחה חוזרת לאחרונה. נסו שוב מאוחר יותר.'),
+    daily_breaker: t('site.callMe.refusal.dailyBreaker', 'הגענו למכסת השיחות היומית. נסו שוב מחר.'),
+    dnc: t('site.callMe.refusal.dnc', 'לא ניתן להתקשר למספר זה.'),
+    // Shabbat/Yom-Tov only — this flow skips the daily call window
+    // (availability gates the dial, not the clock — see console-calls.ts's
+    // evaluateCallMeNowConsent), so this reason surfaces only for that one
+    // basis.
+    quiet_hours: t('site.callMe.refusal.quietHours', 'לא ניתן לבצע שיחה בשבת ובחג. נסו שוב לאחר צאת החג.'),
+    otp: t('site.callMe.refusal.otp', 'קוד האימות שגוי או שפג תוקפו.'),
+    // A call-me-now request is exempt from the national Do-Not-Call registry (the visitor asked to be called), so the
+    // only registry outcome this flow can meet is a decision record that could not be written.
+    registry_pending: t('site.callMe.refusal.registryPending', 'לא ניתן לבצע שיחה כעת. נסו שוב בעוד מספר דקות.'),
+  };
+
+  // Same wording NO_AGENT_LINE_HE uses in ConsoleInbound.voxengine.js — reused
+  // verbatim, not paraphrased, so the promise reads identically whether it is
+  // made here (the common case, checked BEFORE any call is placed) or by the
+  // scenario's own ring-exhausted branch for the narrow race case.
+  const noAgentMessage = t('site.callMe.noAgent', 'אין נציג זמין כרגע. נחזור אליכם בהקדם.');
 
   function reset() {
     setStep('phone');
@@ -98,7 +100,7 @@ export function CallMeNowWidget() {
       { phone },
     );
     if (!res.ok) {
-      setError(res.error ?? 'שליחת קוד האימות נכשלה.');
+      setError(res.error ?? t('site.callMe.errors.sendCodeFailed', 'שליחת קוד האימות נכשלה.'));
       setStep('phone');
       return;
     }
@@ -121,7 +123,7 @@ export function CallMeNowWidget() {
         return;
       }
       setError(
-        (res.reason && REFUSAL_MESSAGE[res.reason]) ?? 'לא ניתן היה להשלים את הבקשה. נסו שוב.',
+        (res.reason && refusalMessage[res.reason]) ?? t('site.callMe.errors.generic', 'לא ניתן היה להשלים את הבקשה. נסו שוב.'),
       );
       setStep('error');
       return;
@@ -142,7 +144,7 @@ export function CallMeNowWidget() {
             onClick={() => setOpen(true)}
           >
             <Phone aria-hidden />
-            התקשרו אליי עכשיו
+            {t('site.callMe.title', 'התקשרו אליי עכשיו')}
           </Button>
         ) : (
           // Non-modal dialog: the page behind stays usable, so no aria-modal.
@@ -153,10 +155,10 @@ export function CallMeNowWidget() {
           >
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <Phone className="size-4 text-muted-foreground" aria-hidden />
-              <p id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">התקשרו אליי עכשיו</p>
+              <p id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">{t('site.callMe.title', 'התקשרו אליי עכשיו')}</p>
               <button
                 type="button"
-                aria-label="סגירה"
+                aria-label={t('site.callMe.close', 'סגירה')}
                 onClick={onClose}
                 className="-my-2.5 -me-2.5 grid size-11 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted"
               >
@@ -172,7 +174,7 @@ export function CallMeNowWidget() {
                     השיחה מוקלטת לצורך תיעוד ושיפור השירות.
                   </p>
                   <Button type="button" className="w-full" onClick={() => setDisclosureAccepted(true)}>
-                    הבנתי, המשך
+                    {t('site.callMe.disclosureAccept', 'הבנתי, המשך')}
                   </Button>
                 </>
               ) : null}
@@ -184,7 +186,7 @@ export function CallMeNowWidget() {
                       wrapping label named the button, not the number field. */}
                   <div className="space-y-1">
                     <label htmlFor={phoneId} className="block text-muted-foreground">
-                      מספר טלפון
+                      {t('site.callMe.phoneLabel', 'מספר טלפון')}
                     </label>
                     <PhoneInput
                       id={phoneId}
@@ -200,19 +202,19 @@ export function CallMeNowWidget() {
                     disabled={!phone.trim()}
                     onClick={() => void onRequestCode()}
                   >
-                    שליחת קוד אימות
+                    {t('site.callMe.sendCode', 'שליחת קוד אימות')}
                   </Button>
                 </>
               ) : null}
 
               {step === 'code' ? (
                 <>
-                  <p className="text-muted-foreground">שלחנו קוד אימות בהודעת SMS. הזינו אותו כאן:</p>
+                  <p className="text-muted-foreground">{t('site.callMe.codePrompt', 'שלחנו קוד אימות בהודעת SMS. הזינו אותו כאן:')}</p>
                   <Input
                     type="text"
                     inputMode="numeric"
                     autoComplete="one-time-code"
-                    aria-label="קוד אימות"
+                    aria-label={t('site.callMe.codeAria', 'קוד אימות')}
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     className="tracking-widest"
@@ -227,7 +229,7 @@ export function CallMeNowWidget() {
                     onClick={() => void onVerifyAndCall()}
                   >
                     <Phone aria-hidden />
-                    אימות והתקשרות
+                    {t('site.callMe.verifyAndCall', 'אימות והתקשרות')}
                   </Button>
                 </>
               ) : null}
@@ -235,21 +237,21 @@ export function CallMeNowWidget() {
               {busy ? (
                 <div className="flex items-center justify-center gap-2 py-2 text-muted-foreground">
                   <Loader2 className="size-4 animate-spin" aria-hidden />
-                  רק רגע…
+                  {t('site.callMe.busy', 'רק רגע…')}
                 </div>
               ) : null}
 
               {step === 'done' ? (
                 <p className="text-center font-medium text-emerald-600 dark:text-emerald-400">
-                  הטלפון שלכם אמור לצלצל בקרוב.
+                  {t('site.callMe.ringingSoon', 'הטלפון שלכם אמור לצלצל בקרוב.')}
                 </p>
               ) : null}
 
               {step === 'callback_offered' ? (
                 <>
-                  <p className="text-center font-medium">{NO_AGENT_MESSAGE}</p>
+                  <p className="text-center font-medium">{noAgentMessage}</p>
                   <Button type="button" variant="outline" className="w-full" onClick={reset}>
-                    סגירה
+                    {t('site.callMe.close', 'סגירה')}
                   </Button>
                 </>
               ) : null}
@@ -258,7 +260,7 @@ export function CallMeNowWidget() {
                 <>
                   <p role="alert" className="text-destructive">{error}</p>
                   <Button type="button" variant="outline" className="w-full" onClick={reset}>
-                    ניסיון נוסף
+                    {t('site.callMe.retry', 'ניסיון נוסף')}
                   </Button>
                 </>
               ) : null}

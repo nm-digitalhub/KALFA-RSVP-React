@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { MailOpen, PhoneCall } from 'lucide-react';
+import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { getUser } from '@/lib/auth/dal';
 import { getT } from '@/i18n.server';
@@ -9,19 +10,23 @@ import { pageOpenGraph } from '@/lib/seo/open-graph';
 
 // Title and description are declared once and reused for the Open Graph
 // block — the share preview and the search snippet must not drift apart.
-const TITLE = 'יצירת קשר ותמיכה';
-const DESCRIPTION =
-  'יצירת קשר עם KALFA: שליחת פנייה לתמיכה או שאלה לפני הרשמה, או בקשת חזרה טלפונית מהצוות.';
-
-export const metadata: Metadata = {
-  title: TITLE,
-  description: DESCRIPTION,
-  // Nested metadata objects are REPLACED, not merged: a page that sets no
-  // openGraph inherits the root layout's wholesale, so its share preview
-  // would show the site-wide blurb instead of this page's.
-  openGraph: pageOpenGraph(TITLE, DESCRIPTION, '/contact'),
-  alternates: { canonical: '/contact' },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT('public');
+  const pageTitle = t('site.contact.meta.title', 'יצירת קשר ותמיכה');
+  const pageDescription = t(
+    'site.contact.meta.description',
+    'יצירת קשר עם KALFA: שליחת פנייה לתמיכה או שאלה לפני הרשמה, או בקשת חזרה טלפונית מהצוות.',
+  );
+  return {
+    title: pageTitle,
+    description: pageDescription,
+    // Nested metadata objects are REPLACED, not merged: a page that sets no
+    // openGraph inherits the root layout's wholesale, so its share preview
+    // would show the site-wide blurb instead of this page's.
+    openGraph: pageOpenGraph(pageTitle, pageDescription, '/contact'),
+    alternates: { canonical: '/contact' },
+  };
+}
 
 // Session-aware (prefill for signed-in customers) → render per-request.
 export const dynamic = 'force-dynamic';
@@ -35,7 +40,7 @@ export default async function ContactPage({
 }: {
   searchParams: Promise<{ t?: string | string[] }>;
 }) {
-  const { t } = await getT('public');
+  const { t, i18n } = await getT('public');
   const { t: topicParam } = await searchParams;
   const defaultTopic = topicParam === 'support' ? 'תמיכה' : undefined;
   const user = await getUser();
@@ -50,11 +55,13 @@ export default async function ContactPage({
             {t('site.contact.subtitle', 'יש לכם שאלה, בקשה או תקלה? כתבו לנו או השאירו מספר, ונחזור אליכם.')}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
-            לפני שפונים, כדאי לבדוק את{' '}
-            <Link href="/faq" className="font-semibold text-primary hover:underline">
-              השאלות הנפוצות
-            </Link>{' '}
-            — יכול להיות שהתשובה כבר שם.
+            <Trans
+              t={t}
+              i18n={i18n}
+              i18nKey="site.contact.faqHint"
+              defaults="לפני שפונים, כדאי לבדוק את <faq>השאלות הנפוצות</faq> — יכול להיות שהתשובה כבר שם."
+              components={{ faq: <Link href="/faq" className="font-semibold text-primary hover:underline" /> }}
+            />
           </p>
         </div>
 
