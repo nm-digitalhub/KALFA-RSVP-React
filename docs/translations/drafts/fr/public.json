@@ -2,7 +2,7 @@
   "cb": {
     "form": {
       "contact": {
-        "label": "Comment vous joindre ?",
+        "label": "Comment vous appeler ?",
         "placeholder": "Par exemple : nom, téléphone ou e-mail"
       },
       "lockedNotice": "Votre créneau d’appel est déjà fixé et ne changera pas.",
@@ -90,7 +90,7 @@
       "greeting": "Bonjour {{name}},",
       "wazeLink": "Y aller avec Waze"
     },
-    "invalidLink": "Ce lien de réponse n’est pas valide, a expiré ou a été annulé.",
+    "invalidLink": "Ce lien d’invitation n’est pas valide, a expiré ou a été annulé.",
     "invite": {
       "imageAlt": "Invitation à l’événement",
       "openFull": "Ouvrir l’invitation en grand format"
@@ -127,7 +127,7 @@
       },
       "hero": {
         "eyebrow": "À propos",
-        "intro": "KALFA est une plateforme israélienne de gestion des confirmations de présence pour les événements privés : mariages, bar-mitsva et bat-mitsva, brit-mila, fêtes de famille et événements d’entreprise. Elle fait une seule chose : aider la personne qui organise l’événement à savoir qui vient, sans tableurs ni coups de fil à n’en plus finir.",
+        "intro": "KALFA est une plateforme israélienne de gestion des confirmations de présence pour les événements privés : mariages, bar-mitsva et bat-mitsva, brit-mila, fêtes de famille et événements d’entreprise. Elle fait une seule chose : aider la personne qui organise l’événement à savoir qui vient, sans tableurs ni dizaines de coups de fil.",
         "title": "À propos de KALFA"
       },
       "operator": {
@@ -142,7 +142,7 @@
         "title": "Faites-vous rappeler"
       },
       "contactSection": {
-        "title": "Envoyer une demande"
+        "title": "Envoyer un message"
       },
       "form": {
         "email": "E-mail",
@@ -152,7 +152,7 @@
         "phone": "Téléphone",
         "reachHint": "Renseignez au moins un e-mail ou un numéro de téléphone",
         "submitCallback": "Rappelez-moi",
-        "submitContact": "Envoyer une demande"
+        "submitContact": "Envoyer un message"
       },
       "subtitle": "Une question, une demande ou un problème ? Écrivez-nous ou laissez votre numéro, et nous vous recontacterons.",
       "title": "Contact et assistance"
@@ -176,7 +176,7 @@
     },
     "guestListTemplate": {
       "closing": {
-        "subtitle": "Importez ce fichier, envoyez une invitation personnelle pour chaque ligne et un rappel automatique uniquement aux personnes qui n’ont pas encore répondu.",
+        "subtitle": "Importez ce fichier : une invitation personnelle pour chaque ligne et un rappel automatique uniquement aux personnes qui n’ont pas encore répondu.",
         "title": "La liste est prête. Et les réponses ?"
       },
       "cta": {
@@ -189,7 +189,7 @@
         "title": "À propos du modèle"
       },
       "file": {
-        "sampleNote": "La ligne « Mamie Rachel », sans téléphone, est un exemple voulu : vous pouvez aussi gérer une personne invitée sans numéro. Elle ne recevra simplement pas de message automatique.",
+        "sampleNote": "La dernière ligne, sans téléphone, est un exemple voulu : vous pouvez aussi gérer une personne invitée sans numéro. Elle ne recevra simplement pas de message automatique.",
         "tableCaption": "Structure du modèle de liste d’invités",
         "title": "Ce que contient le fichier"
       },
@@ -209,7 +209,7 @@
     "home": {
       "audiences": {
         "eyebrow": "Pour qui ?",
-        "subtitle": "De la fête de famille intime au grand congrès d’entreprise, KALFA s’adapte à la taille et au style de votre événement.",
+        "subtitle": "De la fête de famille intime à la grande convention d’entreprise, KALFA s’adapte à la taille et au style de votre événement.",
         "title": "Un événement ou des centaines : la même maîtrise"
       },
       "closing": {
@@ -273,7 +273,7 @@
       },
       "hero": {
         "eyebrow": "Canal d’envoi",
-        "subtitle": "Chaque invité reçoit son invitation personnelle via la plateforme professionnelle officielle de WhatsApp : ni groupe, ni liste de diffusion, ni envoi manuel depuis votre téléphone.",
+        "subtitle": "Une invitation personnelle pour chaque invité, via la plateforme professionnelle officielle de WhatsApp : ni groupe, ni liste de diffusion, ni envoi manuel depuis votre téléphone.",
         "title": "Confirmations de présence par WhatsApp"
       },
       "limits": {

@@ -81,4 +81,14 @@
 ## שינויים במקור העברי
 
 - `r.closed.notice`: המקור שונה ל"למי שהזמין אתכם". האנגלית עכשיו "you can contact the person who invited you". החלופה "whoever invited you" שומרת על סתמיות המספר, אבל נשמעת מזלזלת יותר.
-- `site.home.trust.subtitle`: המקור שונה ל"לתת לכם". האנגלית עכשיו "give you full, calm control", במקום "give the host".
+- `site.home.trust.subtitle`: המקור שונה ל"לתת לכם", והאנגלית פונה עכשיו ל-"you". הנוסח הסופי בקטע "יישום הביקורת".
+
+## יישום הביקורת
+
+- `site.whatsapp.limits.eyebrow`: יושם, "Important to know up front".
+- `site.guestListTemplate.closing.subtitle`: נשאר. ההצעה היא שבר משפט בלי פועל, והאיברים בה לא מקבילים.
+- `site.home.closing.subtitle`: יושמה החלופה "Orderly", כי "organized" מפצל איות. הנקודתיים הוחלפו בנקודה, כמו במקור הנוכחי.
+- `site.home.solution.subtitle`: יושם עם "orderly", מאותה סיבה.
+- `site.home.trust.subtitle`: יושם והותאם ל-"give you", "full control of the process, with peace of mind".
+- `error.generic.body`: יושם, "come back later".
+- `site.error.generic.body`: יושם, "come back later".

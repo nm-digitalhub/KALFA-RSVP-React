@@ -1,6 +1,6 @@
 # English and French translation drafts
 
-Drafts of the 148 keys in `src/locales/he/public.json`, as of main `2014385e`. Each language was translated by one agent and reviewed by a separate one.
+Drafts of the 148 keys in `src/locales/he/public.json`. Each language was translated by one agent and reviewed by a separate one.
 
 These files stay outside `src/locales` on purpose: `npx i18next-cli locize-download` overwrites the target-language files there. Nothing here reaches the site or Locize yet.
 
@@ -10,4 +10,4 @@ These files stay outside `src/locales` on purpose: `npx i18next-cli locize-downl
 - `<lng>/review.md`: the independent review.
 - `brief.md`, `review-brief.md`: the instructions the agents worked from.
 
-The review findings are not applied yet: English has 1 should-fix and 5 preferences, French has 1 error, 3 should-fix and 5 preferences. Legal and consent wording waits for the owner.
+The review findings are applied, and the same reviewers rechecked the changed keys. Two preferences were kept on the translator's reasoning: `site.guestListTemplate.closing.subtitle` in English and `site.home.features.subtitle` in French. Legal and consent wording, and the problems found in the Hebrew source, wait for the owner.

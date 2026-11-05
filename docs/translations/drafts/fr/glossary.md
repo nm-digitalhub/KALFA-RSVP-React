@@ -25,18 +25,18 @@
 | שליחת מתנה | Offrir un cadeau | offrir הוא הפועל הרגיל, גם למתנה בכסף. | [Joy](https://withjoy.com/glossary/what-is-cash-fund-registry/?l=fr-FR) | תקציר |
 | ניווט עם Waze | Y aller avec Waze | ביטוי טבעי. הטענה שזה שם הכפתור ב־Waze לא אומתה. | לא אומת: העמוד היחיד שנמצא החזיר 403. | לא אומת |
 | ניווט ויומן | Itinéraire et agenda | agenda ולא calendrier: כך Google קוראת ליומן שלה בצרפתית. | [App Store FR](https://apps.apple.com/FR/app/id909319292), [Google Workspace](https://workspace.google.com/intl/fr_ch/products/calendar) | תקציר |
-| קישור | lien | המונח הרגיל. ב־`r.invalidLink` בחרתי ב־lien de réponse כדי להתאים גם למי שמסרב. הצירוף עצמו לא נמצא בעמודים שנקראו. | [Joy](https://withjoy.com/online-rsvp/?l=fr-FR) | נקרא: lien. הצירוף lien de réponse לא נמצא |
+| קישור | lien | המונח הרגיל. ב־`r.invalidLink` כתוב lien d'invitation, שמתאים גם למי שמסרב. | [Joy](https://withjoy.com/online-rsvp/?l=fr-FR) | נקרא: lien. הצירוף lien d'invitation לא נמצא |
 | מערכת | plateforme, site | système נשמע טכני מדי. בהודעת עדכון: le site. | [Larousse](https://www.larousse.fr/dictionnaires/francais/plateforme), [OQLF](https://vitrinelinguistique.oqlf.gouv.qc.ca/fiche-gdt/fiche/26541165/plateforme-numerique) | תקציר |
 | גיליון, גיליונות | tableur, tableurs | המונח המומלץ רשמית בצרפת. chiffrier הוא של קוויבק וקנדה. | [OQLF](https://vitrinelinguistique.oqlf.gouv.qc.ca/fiche-gdt/fiche/2069983/tableur) | תקציר |
 | תבנית | modèle | כך כתוב באתרי חתונות: modèle de liste d'invités. | [Planning.wedding](https://planning.wedding/fr/guest-list/template) | תקציר |
 | אזור אישי | mon espace | קצר לכפתור, ובנוי כמו שם השירות הציבורי Mon espace santé. התווית המדויקת לא נמצאה. | [esante.gouv.fr](https://esante.gouv.fr/index%2ephp/strategie-nationale/mon-espace-sante) (דפוס בלבד) | תקציר |
-| פנייה | demande | כולל שאלה, בקשה ותקלה. | [Generali](https://www.generali.fr/agence/dax/aquitaine/assurance/contact-form) | תקציר |
+| פנייה | message | כותרת וכפתור בטופס יצירת הקשר. מתאים ל־Écrivez-nous ול־Votre message. | לא נמצא מקור לכפתור המדויק. קרוב: [Nous envoyer un message](https://docs.google.com/forms/d/e/1FAIpQLSd_fpk6Pnqxd3oHWeiYvm0vxBTWSReG2Io01Hfrs3PZ5ItqQw/viewform) | תקציר |
 | לא חובה | facultatif | המילה הרגילה בטפסים. מתארת את השדה, ולכן לא תלויה במין הקורא. | [Qualtir](https://qualtir.com/fr/blog/google-forms-rsvp) | תקציר |
 | הערה | remarque | ניטרלי, ומתאים גם לטופס האורח וגם לטופס יצירת הקשר. | [Jotform](https://www.jotform.com/fr/form-templates/formulaire-rsvp) | תקציר |
 | דירוג | avis | כך כתוב בסקרי שביעות רצון בצרפתית. קצר וחם יותר מ־évaluation. | [QuestionPro](https://www.questionpro.com/fr/survey-templates/product-satisfaction-survey-template/), [Modèle Lettre](https://www.modele-lettre-gratuit.com/modele-de-lettre/entreprise/client/modeles-d-emails-pour-solliciter-un-retour-ou-un-avis-client-1841.html) | נקרא |
 | שליטה | maîtrise | לפי Larousse, garder le contrôle de הוא אנגליציזם שמקובל בדיבור, ובכתיבה מוקפדת עדיף conserver la maîtrise de. | [Larousse](https://www.larousse.fr/dictionnaires/francais/contr%C3%B4ler) | תקציר |
 | תמונת מצב | vue d'ensemble | המונח הרגיל בלוח ניהול. | [ESET](https://help.eset.com/ecos/fr-FR/dashboard.html) | תקציר |
-| יכולות | fonctionnalités | המונח הרגיל למוצר דיגיטלי. | [OQLF](https://vitrinelinguistique.oqlf.gouv.qc.ca/fiche-gdt/fiche/26559312/fonctionnalite), [La langue française](https://www.lalanguefrancaise.com/dictionnaire/definition/fonctionnalite) | תקציר |
+| יכולות | fonctionnalités | המונח הרגיל למוצר דיגיטלי. ב־`site.home.features.subtitle` כתוב outils, כדי לא לכתוב fonctionnalités qui fonctionnent. | [OQLF](https://vitrinelinguistique.oqlf.gouv.qc.ca/fiche-gdt/fiche/26559312/fonctionnalite), [La langue française](https://www.lalanguefrancaise.com/dictionnaire/definition/fonctionnalite) | תקציר |
 | אימייל | e-mail | רשום במילון האקדמיה, וזה מה שכותבים בצרפת ביום־יום. courriel נולד בקוויבק, ובצרפת הוא המלצה רשמית. | [Académie](https://dictionnaire-academie.fr/article/B0E00101), [OQLF](https://vitrinelinguistique.oqlf.gouv.qc.ca/fiche-gdt/fiche/8353974/courriel), [Le Robert](https://dictionnaire.lerobert.com/en/synonyms/mail) | תקציר |
 | שם מלא | prénom et nom | כך מבקשים בטפסי תשובה בצרפת. | [Mariages.net](https://www.mariages.net/articles/le-coupon-reponse-du-faire-part--c3577) | תקציר |
 | בלגן | pagaille | אותו טון קליל. Larousse מסמן אותה כמילה יום־יומית (familier), כמו בלגן בעברית. | [Larousse](https://www.larousse.fr/dictionnaires/francais/pagaille) | תקציר |
@@ -62,7 +62,7 @@
 - **לא אושר בקריאה:**
   - relancer לא מופיע במאמר של Mariages.net, ולכן הסרתי את הטענה עליו.
   - garder le contrôle לא מופיע בעמוד של planning.wedding, שבו כתוב reprenez le contrôle de vos finances. לכן חזרתי ל־maîtrise.
-  - lien de réponse לא מופיע בעמודים שנקראו.
+  - הצירוף lien d'invitation לא נמצא בחיפוש.
   - Comment ça marche לא מופיע בעמוד של Joy. אין לו שורה בטבלה.
   - Y aller לא אומת, כי העמוד החזיר 403.
   - hôte מופיע ב־Torah-Box רק בכותרת העמוד.

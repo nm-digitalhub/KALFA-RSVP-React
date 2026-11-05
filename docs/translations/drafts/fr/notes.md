@@ -18,7 +18,7 @@
 
 ### 3. `site.whatsapp.hero.subtitle`
 - **עברית:** הזמנה אישית לכל מוזמן דרך הפלטפורמה העסקית הרשמית של וואטסאפ — לא קבוצה, לא רשימת תפוצה, ולא שליחה ידנית מהטלפון שלכם.
-- **בחירה:** Chaque invité reçoit son invitation personnelle via la plateforme professionnelle officielle de WhatsApp : ni groupe, ni liste de diffusion, ni envoi manuel depuis votre téléphone.
+- **בחירה:** Une invitation personnelle pour chaque invité, via la plateforme professionnelle officielle de WhatsApp : ni groupe, ni liste de diffusion, ni envoi manuel depuis votre téléphone.
 - **חלופה:** la plateforme officielle WhatsApp Business
 - **למה זה חשוב:** טענה על שימוש במוצר של צד שלישי. החלופה נוקבת בשם מוצר שהעברית לא נוקבת בו, ולכן לא נבחרה.
 
@@ -65,12 +65,25 @@
 
 ### 10. `cb.form.contact.label` ו־`cb.form.contact.placeholder`
 - **עברית:** איך לפנות אליך? / לדוגמה: שם, טלפון או אימייל
-- **בחירה:** Comment vous joindre ? / Par exemple : nom, téléphone ou e-mail
-- **חלופה:** Comment vous appeler ? עם placeholder של שם בלבד
-- **למה זה חשוב:** העברית דו־משמעית: איך לקרוא לך או איך להשיג אותך. השדה בקוד הוא `full_name` עם `autoComplete="name"`, אבל הטקסט המסייע מזכיר גם טלפון ואימייל. בחרתי לפי הטקסט המסייע. אם השדה נועד לשם בלבד, צריך לתקן גם את העברית.
+- **בחירה:** Comment vous appeler ? / Par exemple : nom, téléphone ou e-mail
+- **חלופה:** Comment vous joindre ?
+- **למה זה חשוב:** העברית דו־משמעית: איך לקרוא לך או איך להשיג אותך. השדה בקוד הוא `full_name` עם `autoComplete="name"`, אבל הטקסט המסייע מזכיר גם טלפון ואימייל. Comment vous appeler דו־משמעי כמו העברית, ומתאים גם לטקסט המסייע. אם השדה נועד לשם בלבד, צריך לתקן את הטקסט המסייע, גם בעברית.
 
 ### 11. `site.guestListTemplate.file.sampleNote`
 - **עברית:** שורת "סבתא רחל" בלי טלפון היא דוגמה מכוונת: אפשר לנהל גם מוזמן שאין לו מספר, הוא פשוט לא יקבל הודעה אוטומטית.
-- **בחירה:** La ligne « Mamie Rachel », sans téléphone, est un exemple voulu : vous pouvez aussi gérer une personne invitée sans numéro. Elle ne recevra simplement pas de message automatique.
-- **חלופה:** להשאיר בצרפתית את השם כפי שמופיע בטבלה, או לתרגם את שורות הדוגמה.
-- **למה זה חשוב:** ההערה מתארת שורה בטבלה, והטבלה נבנית מ־`TEMPLATE_SAMPLE_ROWS` בקוד, בעברית. עד שהשורות יתורגמו, קורא צרפתי יראה את "Mamie Rachel" ליד שורה בעברית. אותן שורות נכנסות גם לקובץ ה־CSV שמורידים.
+- **בחירה:** La dernière ligne, sans téléphone, est un exemple voulu : vous pouvez aussi gérer une personne invitée sans numéro. Elle ne recevra simplement pas de message automatique.
+- **חלופה:** לתרגם את שורות הדוגמה בקוד ולנקוב שוב בשם.
+- **למה זה חשוב:** ההערה מתארת שורה בטבלה, והטבלה נבנית מ־`TEMPLATE_SAMPLE_ROWS` בקוד, בעברית. לכן הניסוח הצרפתי לא נוקב בשם, ונכון גם אם השורות יתורגמו. אותן שורות נכנסות גם לקובץ ה־CSV שמורידים.
+
+## שינויים לפי הביקורת
+
+- `site.whatsapp.hero.subtitle`: הוסר reçoit, כי העברית לא מבטיחה מסירה.
+- `cb.form.contact.label`: עכשיו Comment vous appeler ?, ראו סעיף 10.
+- `site.guestListTemplate.file.sampleNote`: בלי השם, לפי מיקום השורה בטבלה. ראו סעיף 11.
+- `site.guestListTemplate.closing.subtitle`: הוסר envoyez. הציווי היחיד הוא Importez, ולכן הקורא לא מתבקש לשלוח תזכורות.
+- `site.about.hero.intro`: חזר dizaines, כמו "עשרות" בעברית.
+- `r.invalidLink`: עכשיו lien d'invitation. לא נמצא מקור לצירוף המדויק.
+- `site.home.audiences.subtitle`: convention במקום congrès, כי זה אירוע של חברה אחת.
+- `site.home.features.subtitle`: נשאר outils. travaillent ensemble הוא תרגום מילולי, ו־fonctionnalités qui fonctionnent חוזר על עצמו.
+- `site.contact.contactSection.title`: עכשיו Envoyer un message, שמתאים ל־Écrivez-nous ול־Votre message.
+- `site.contact.form.submitContact`: אותו שינוי, כדי שהכותרת והכפתור יישארו זהים.

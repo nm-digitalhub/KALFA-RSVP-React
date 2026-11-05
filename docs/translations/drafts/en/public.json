@@ -18,7 +18,7 @@
   },
   "error": {
     "generic": {
-      "body": "There was a problem loading this page. Please try again, or come back a little later if it keeps happening.",
+      "body": "There was a problem loading this page. Please try again, or come back later if it keeps happening.",
       "retry": "Try again",
       "title": "Something went wrong"
     },
@@ -159,7 +159,7 @@
     },
     "error": {
       "generic": {
-        "body": "There was a problem loading this page. Please try again, or come back a little later if it keeps happening.",
+        "body": "There was a problem loading this page. Please try again, or come back later if it keeps happening.",
         "home": "Back to homepage",
         "retry": "Try again",
         "title": "Something went wrong"
@@ -213,7 +213,7 @@
         "title": "One event or hundreds, with the same control"
       },
       "closing": {
-        "subtitle": "Start managing your event's RSVPs today: tidy, clear and all in one place."
+        "subtitle": "Start managing your event's RSVPs today. Orderly, clear and all in one place."
       },
       "cta": {
         "createEvent": "Create a new event",
@@ -252,12 +252,12 @@
       },
       "solution": {
         "eyebrow": "The solution",
-        "subtitle": "Guests, invitations, RSVPs, reminders, statuses and updates: one tidy system that gives you full control.",
+        "subtitle": "Guests, invitations, RSVPs, reminders, statuses and updates: one orderly system that gives you full control.",
         "title": "KALFA brings everything together in one place"
       },
       "trust": {
         "eyebrow": "Trust",
-        "subtitle": "The goal is simple: prevent confusion, save time and give you full, calm control of the process.",
+        "subtitle": "The goal is simple: prevent confusion, save time and give you full control of the process, with peace of mind.",
         "title": "Built to reduce stress, not add to it"
       }
     },
@@ -277,7 +277,7 @@
         "title": "RSVPs on WhatsApp"
       },
       "limits": {
-        "eyebrow": "Good to know up front",
+        "eyebrow": "Important to know up front",
         "title": "WhatsApp is a platform with rules, and we follow them"
       },
       "points": {
