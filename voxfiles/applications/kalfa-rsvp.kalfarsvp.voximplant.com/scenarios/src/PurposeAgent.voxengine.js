@@ -297,7 +297,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             postFinalCallbackOnce({
                 call_status: 'no_answer',
                 call_duration: 0,
-                error_reason: 'sip_' + ((ev && ev.code) || 0)
+                error_reason: 'sip_' + ((ev && ev.code) || 0) + (ev && ev.headers && ev.headers.Reason ? ':' + String(ev.headers.Reason).slice(0, 200) : '')
             }, function () {
                 cleanupAndTerminate();
             });

@@ -57,7 +57,8 @@ export const voxCallbackSchema = z
     // Disposition of a COMPLETED call, sent by the bridge scenario:
     // 'agent_end_call' (the agent hung up after its farewell) or
     // 'guest_hangup' (the far end dropped first). Kept separate from
-    // error_reason, which carries FAILURE codes (sip_*, session_terminating).
+    // error_reason, which carries FAILURE codes (sip_*, optionally with the
+    // carrier's raw cause as sip_480:Q.850;cause=19, and session_terminating).
     finish_reason: z.enum(['agent_end_call', 'guest_hangup']).nullish(),
     // ADDITIVE (a second link vector besides the pre-call nonce): the ElevenLabs
     // conversation_id, sent by the bridge scenario (RSVPAgent) on its

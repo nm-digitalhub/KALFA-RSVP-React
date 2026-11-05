@@ -175,7 +175,8 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
   // billing/RSVP action, both of which live only on the completed path and are
   // themselves idempotent + reached only via the webhook_inbox claim.)
   // Persist the disposition too. The scenario reports the SIP code as
-  // error_reason ('sip_408' / 'sip_486' / 'sip_603' …) — that is what separates
+  // error_reason ('sip_408', or 'sip_480:Q.850;cause=19' when the carrier sends a
+  // cause) — that is what separates
   // "no one picked up, try again" from "the number does not exist, fix the
   // list".
   const { applied } = await recordCallOutcome(attemptId, {

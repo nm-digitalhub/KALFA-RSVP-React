@@ -1651,6 +1651,11 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
         //   408 timeout / 486 busy / 480 unavailable → no_answer  (retryable)
         //   603 declined                             → no_response (they saw it and refused)
         //   404 / 484 bad number                     → failed      (never retry; fix the list)
+        // The carrier's own cause rides in ev.headers.Reason (measured: code 480 with
+        // "Q.850;cause=19"), and it says more than the code: 480 covers both a phone that
+        // rang unanswered and one that is switched off. It is passed on raw, beside the
+        // code, and may be absent (a 408 carried none). The cap keeps error_reason inside
+        // the callback schema's 256 limit, because an oversized value rejects the callback.
         call.addEventListener(CallEvents.Failed, function (ev) {
             log('Call failed: ' + safeStringify(ev));
             var code = (ev && typeof ev.code === 'number') ? ev.code : 0;
@@ -1670,7 +1675,7 @@ VoxEngine.addEventListener(AppEvents.Started, function () {
             postFinalCallbackOnce({
                 call_status: status,
                 call_duration: 0,
-                error_reason: 'sip_' + code
+                error_reason: 'sip_' + code + (ev && ev.headers && ev.headers.Reason ? ':' + String(ev.headers.Reason).slice(0, 200) : '')
             }, function () {
                 cleanupAndTerminate();
             });

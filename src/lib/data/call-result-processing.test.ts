@@ -210,6 +210,14 @@ describe('processCallResult', () => {
     expect(writeReach).not.toHaveBeenCalled();
   });
 
+  it('keeps the carrier cause beside the SIP code in finish_reason', async () => {
+    await processCallResult(row({ call_status: 'no_answer', error_reason: 'sip_480:Q.850;cause=19' }));
+    expect(recordCallOutcome).toHaveBeenCalledWith(
+      AID,
+      expect.objectContaining({ status: 'no_answer', finish_reason: 'sip_480:Q.850;cause=19' }),
+    );
+  });
+
   it('the SIP disposition (error_reason) is persisted as finish_reason', async () => {
     // Without this the code that separates "try again tomorrow" (408/486) from
     // "this number does not exist" (404) is silently discarded at the drain.
