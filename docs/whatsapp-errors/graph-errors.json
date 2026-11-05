@@ -1,0 +1,115 @@
+{
+  "provenance": "Structured transcription of Graph API Handling Errors text supplied by the user in this conversation; no independent live-page verification.",
+  "sourceUrl": "https://developers.facebook.com/docs/graph-api/guides/error-handling/",
+  "errors": [
+    {
+      "code": 102,
+      "name": "API Session",
+      "recovery": "If no subcode is present, the login status or access token has expired, been revoked, or is otherwise invalid. Get a new access token. If a subcode is present, see the subcode."
+    },
+    {
+      "code": 1,
+      "name": "API Unknown",
+      "recovery": "Possibly a temporary issue due to downtime. Wait and retry the operation. If it occurs again, check that you are requesting an existing API."
+    },
+    {
+      "code": 2,
+      "name": "API Service",
+      "recovery": "Temporary issue due to downtime. Wait and retry the operation."
+    },
+    {
+      "code": 3,
+      "name": "API Method",
+      "recovery": "Capability or permissions issue. Make sure your app has the necessary capability or permissions to make this call."
+    },
+    {
+      "code": 4,
+      "name": "API Too Many Calls",
+      "recovery": "Temporary issue due to throttling. Wait and retry the operation, or examine your API request volume."
+    },
+    {
+      "code": 17,
+      "name": "API User Too Many Calls",
+      "recovery": "Temporary issue due to throttling. Wait and retry the operation, or examine your API request volume."
+    },
+    {
+      "code": 10,
+      "name": "API Permission Denied",
+      "recovery": "Permission is either not granted or has been removed. Handle the missing permissions."
+    },
+    {
+      "code": 190,
+      "name": "Access token has expired",
+      "recovery": "Get a new access token."
+    },
+    {
+      "code": 341,
+      "name": "Application limit reached",
+      "recovery": "Temporary issue due to downtime or throttling. Wait and retry the operation, or examine your API request volume."
+    },
+    {
+      "code": 368,
+      "name": "Temporarily blocked for policies violations",
+      "recovery": "Wait and retry the operation."
+    },
+    {
+      "code": 506,
+      "name": "Duplicate Post",
+      "recovery": "Duplicate posts cannot be published consecutively. Change the content of the post and try again."
+    },
+    {
+      "code": 1609005,
+      "name": "Error Posting Link",
+      "recovery": "There was a problem scraping data from the provided link. Check the URL and try again."
+    },
+    {
+      "min": 200,
+      "max": 299,
+      "name": "API Permission (Multiple values depending on permission)",
+      "recovery": "Permission is either not granted or has been removed. Handle the missing permissions."
+    }
+  ],
+  "subcodes": [
+    {
+      "code": 458,
+      "name": "App Not Installed",
+      "recovery": "The User has not logged into your app. Reauthenticate the User."
+    },
+    {
+      "code": 459,
+      "name": "User Checkpointed",
+      "recovery": "The User needs to log in at https://www.facebook.com or https://m.facebook.com to correct an issue."
+    },
+    {
+      "code": 460,
+      "name": "Password Changed",
+      "recovery": "On iOS 6 and above, if the person logged in using the OS-integrated flow, direct them to Facebook OS settings on the device to update their password. Otherwise, they must log in to the app again."
+    },
+    {
+      "code": 463,
+      "name": "Expired",
+      "recovery": "Login status or access token has expired, been revoked, or is otherwise invalid. Handle expired access tokens."
+    },
+    {
+      "code": 464,
+      "name": "Unconfirmed User",
+      "recovery": "The User needs to log in at https://www.facebook.com or https://m.facebook.com to correct an issue."
+    },
+    {
+      "code": 467,
+      "name": "Invalid Access Token",
+      "recovery": "Access token has expired, been revoked, or is otherwise invalid. Handle expired access tokens."
+    },
+    {
+      "code": 492,
+      "name": "Invalid Session",
+      "recovery": "User associated with the Page access token does not have an appropriate role on the Page."
+    }
+  ],
+  "typeRules": [
+    {
+      "type": "OAuthException",
+      "recovery": "If no subcode is present, the login status or access token has expired, been revoked, or is otherwise invalid. Get a new access token. If a subcode is present, see the subcode."
+    }
+  ]
+}
