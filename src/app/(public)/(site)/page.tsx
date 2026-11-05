@@ -423,7 +423,7 @@ export default async function HomePage() {
                 {t('site.home.problem.title', 'ניהול אירוע לא צריך להרגיש כמו עבודה במשרה מלאה')}
               </h2>
               <p className="mt-3 text-pretty text-lg text-muted-foreground">
-                {t('site.home.problem.subtitle', 'בעלי אירועים נתקלים שוב ושוב באותן בעיות — והן מתנקזות ללחץ מיותר.')}
+                {t('site.home.problem.subtitle', 'בעלי אירועים נתקלים שוב ושוב באותן בעיות, והתוצאה היא לחץ מיותר.')}
               </p>
               <div className="k-reveal-group mt-6 grid gap-4">
                 {PROBLEMS.map(({ icon: Icon, t, d }) => (
@@ -468,7 +468,7 @@ export default async function HomePage() {
             <div className="k-reveal mx-auto mb-11 max-w-2xl text-center">
               <Eyebrow icon={Layers}>{t('site.home.features.eyebrow', 'יכולות מרכזיות')}</Eyebrow>
               <h2 className="mt-3 text-balance text-display font-bold tracking-tight">{t('site.home.features.title', 'כל מה שצריך כדי לנהל אישורי הגעה')}</h2>
-              <p className="mt-2.5 text-pretty text-lg text-muted-foreground">{t('site.home.features.subtitle', 'שבע יכולות שעובדות יחד — מרשימת האורחים ועד הדוח הסופי.')}</p>
+              <p className="mt-2.5 text-pretty text-lg text-muted-foreground">{t('site.home.features.subtitle', 'שבע יכולות שעובדות יחד, מרשימת האורחים ועד הדוח הסופי.')}</p>
             </div>
             {/* `k-reveal-3d` (= k-reveal-group + a 6° stand-up on touch devices)
                 and `k-press` (touch press-in on the card) — motion spec §10. */}
@@ -535,7 +535,7 @@ export default async function HomePage() {
               </span>
               <h2 className="mt-3 text-balance text-display font-bold tracking-tight text-white">{t('site.home.trust.title', 'נבנתה כדי להפחית לחץ — לא להוסיף אותו')}</h2>
               <p className="mt-2.5 text-pretty text-lg text-white/70">
-                {t('site.home.trust.subtitle', 'המטרה פשוטה: למנוע בלבול, לחסוך זמן ולתת למארגן האירוע שליטה מלאה ושקטה בתהליך.')}
+                {t('site.home.trust.subtitle', 'המטרה פשוטה: למנוע בלבול, לחסוך זמן ולתת לכם שליטה מלאה ושקטה בתהליך.')}
               </p>
             </div>
             <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -557,7 +557,7 @@ export default async function HomePage() {
               <Eyebrow icon={UsersRound}>{t('site.home.audiences.eyebrow', 'למי זה מתאים')}</Eyebrow>
               <h2 className="mt-4 text-balance text-display font-bold tracking-tight">{t('site.home.audiences.title', 'אירוע אחד או מאות — אותה שליטה')}</h2>
               <p className="mt-3 text-pretty text-lg text-muted-foreground">
-                {t('site.home.audiences.subtitle', 'מאירוע משפחתי אינטימי ועד כנס חברה גדול — KALFA מתאימה את עצמה לגודל ולסגנון שלכם.')}
+                {t('site.home.audiences.subtitle', 'מאירוע משפחתי אינטימי ועד כנס חברה גדול, KALFA מתאימה את עצמה לגודל ולסגנון שלכם.')}
               </p>
             </div>
             {/* Tiles that are links get the shared focus outline and
@@ -604,7 +604,7 @@ export default async function HomePage() {
               אירוע מסודר יותר.
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-pretty text-primary-foreground/90">
-              {t('site.home.closing.subtitle', 'התחילו לנהל את אישורי ההגעה לאירוע שלכם עוד היום — מסודר, ברור ובמקום אחד.')}
+              {t('site.home.closing.subtitle', 'התחילו לנהל את אישורי ההגעה לאירוע שלכם עוד היום. מסודר, ברור ובמקום אחד.')}
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               <Link href={startHref} className={siteCta({ variant: 'dark', size: 'xl' })}>

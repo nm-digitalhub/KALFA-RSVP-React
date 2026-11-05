@@ -47,7 +47,7 @@ export default async function JoinPage({
             role="alert"
             className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
           >
-            {t('join.invalid.notice', 'ההזמנה אינה תקפה, פגה או כבר נוצלה.')}
+            {t('join.invalid.notice', 'ההזמנה אינה תקפה, פג תוקפה או שכבר נוצלה.')}
           </p>
           <Link
             href="/app"

@@ -173,7 +173,7 @@ export default async function WhatsappRsvpPage() {
               {t('site.whatsapp.faq.eyebrow', 'שאלות נפוצות')}
             </span>
             <h2 className="mt-3 text-balance text-display font-bold tracking-tight">
-              {t('site.whatsapp.faq.title', 'שליחה בוואטסאפ — שאלות שחוזרות')}
+              {t('site.whatsapp.faq.title', 'שליחה בוואטסאפ: שאלות שחוזרות')}
             </h2>
             <div className="k-reveal-group mt-8 space-y-8">
               {FAQ.map((f) => (

@@ -76,7 +76,7 @@ export default async function FaqPage() {
         <div>
           <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">{t('site.faq.title', 'שאלות נפוצות')}</h1>
           <p className="mt-2 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
-            {t('site.faq.subtitle', 'כל מה שצריך לדעת על KALFA — מה זה, איך זה עובד, כמה זה עולה ומה קורה אם רוצים לבטל.')}
+            {t('site.faq.subtitle', 'כל מה שצריך לדעת על KALFA: מה זה, איך זה עובד, כמה זה עולה ומה קורה אם רוצים לבטל.')}
           </p>
         </div>
 

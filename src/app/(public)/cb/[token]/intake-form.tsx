@@ -197,7 +197,7 @@ export function IntakeForm({
             name="note"
             rows={4}
             maxLength={500}
-            placeholder={t('cb.form.note.placeholder', 'כתוב כאן את הפרטים...')}
+            placeholder={t('cb.form.note.placeholder', 'אפשר לכתוב כאן את הפרטים…')}
             className="
               min-h-[118px]
               resize-none

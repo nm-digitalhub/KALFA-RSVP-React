@@ -216,7 +216,7 @@ export function RsvpForm({
           role="status"
           className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
         >
-          {t('r.closed.notice', 'המועד לאישור הגעה חלף. לפרטים נא לפנות למארגן/ת האירוע.')}
+          {t('r.closed.notice', 'המועד לאישור הגעה חלף. לפרטים אפשר לפנות למי שהזמין אתכם.')}
         </p>
       ) : (
         // `@container`: the form lives in the md GuestShell (max 28rem), but on
@@ -334,7 +334,7 @@ export function RsvpForm({
                         required={question.required}
                         className={FIELD_CLASS}
                       >
-                        <option value="">{t('r.form.question.selectPlaceholder', 'בחר/י…')}</option>
+                        <option value="">{t('r.form.question.selectPlaceholder', 'בחרו…')}</option>
                         {options.map((opt) => (
                           <option key={opt} value={opt}>
                             {opt}

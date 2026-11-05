@@ -47,7 +47,7 @@ export default async function ContactPage({
         <div>
           <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">{t('site.contact.title', 'יצירת קשר ותמיכה')}</h1>
           <p className="mt-2 text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
-            {t('site.contact.subtitle', 'יש לכם שאלה, בקשה או תקלה? כתבו לנו או השאירו מספר — ונחזור אליכם.')}
+            {t('site.contact.subtitle', 'יש לכם שאלה, בקשה או תקלה? כתבו לנו או השאירו מספר, ונחזור אליכם.')}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
             לפני שפונים, כדאי לבדוק את{' '}

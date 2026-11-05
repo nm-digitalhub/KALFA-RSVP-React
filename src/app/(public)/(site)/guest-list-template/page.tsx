@@ -240,7 +240,7 @@ export default async function GuestListTemplatePage() {
         <section className="border-t border-border">
           <div className="mx-auto max-w-3xl px-6 py-16">
             <h2 className="text-balance text-display font-bold tracking-tight">
-              {t('site.guestListTemplate.steps.title', 'איך בונים רשימת מוזמנים לחתונה — חמישה צעדים')}
+              {t('site.guestListTemplate.steps.title', 'איך בונים רשימת מוזמנים לחתונה: חמישה צעדים')}
             </h2>
             <ol className="mt-8 grid gap-4">
               {STEPS.map(({ t, d }, i) => (

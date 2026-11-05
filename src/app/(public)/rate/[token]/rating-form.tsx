@@ -113,7 +113,7 @@ export function RatingForm({
         <form id={formId} action={formAction} className="space-y-3">
           <div className="space-y-1.5">
             <Label htmlFor="comment">{t('rate.form.comment.label', 'רוצה להוסיף הערה? (לא חובה)')}</Label>
-            <Textarea id="comment" name="comment" rows={3} maxLength={500} placeholder={t('rate.form.comment.placeholder', 'ספר/י לנו קצת יותר…')} />
+            <Textarea id="comment" name="comment" rows={3} maxLength={500} placeholder={t('rate.form.comment.placeholder', 'אפשר לספר לנו קצת יותר…')} />
           </div>
           <FormError message={actionErrorMessage(state)} />
           <Button type="submit" disabled={!selected || pending} className="w-full">
