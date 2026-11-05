@@ -5,7 +5,7 @@ import { ArrowLeft, Download, ListChecks, TriangleAlert } from 'lucide-react';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { buildBreadcrumbJsonLd, jsonLdScript } from '@/lib/seo/breadcrumb-json-ld';
 import { getAppOrigin } from '@/lib/url';
 import {
@@ -113,7 +113,7 @@ const FAQ = [
 ];
 
 export default async function GuestListTemplatePage() {
-  const t = getT('public');
+  const { t } = await getT('public');
   const user = await getUser();
   const startHref = user ? '/app/events/new' : '/auth/signup';
   const startLabel = user ? t('site.guestListTemplate.cta.newEvent', 'אירוע חדש') : t('site.guestListTemplate.cta.createEvent', 'צרו אירוע חדש');

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { FormError } from '@/components/forms';
 import { actionErrorMessage } from '@/lib/action-result';
-import { getT } from '@/lib/i18n';
+import { useT } from 'next-i18next/client';
 
 import { submitRatingAction } from './actions';
 
@@ -45,7 +45,7 @@ export function RatingForm({
   token: string;
   initialScore?: 1 | 2 | 3 | null;
 }) {
-  const t = getT('public');
+  const { t } = useT('public');
   const [state, formAction, pending] = useActionState(
     submitRatingAction.bind(null, token),
     {},

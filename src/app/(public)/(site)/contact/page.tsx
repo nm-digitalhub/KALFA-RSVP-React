@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { MailOpen, PhoneCall } from 'lucide-react';
 
 import { getUser } from '@/lib/auth/dal';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { CallbackForm, ContactForm } from './inquiry-forms';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
@@ -35,7 +35,7 @@ export default async function ContactPage({
 }: {
   searchParams: Promise<{ t?: string | string[] }>;
 }) {
-  const t = getT('public');
+  const { t } = await getT('public');
   const { t: topicParam } = await searchParams;
   const defaultTopic = topicParam === 'support' ? 'תמיכה' : undefined;
   const user = await getUser();

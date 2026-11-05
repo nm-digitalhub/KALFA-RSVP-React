@@ -3,7 +3,7 @@
 import Link from 'next/link';
 
 import { useVersionSkewReload } from '@/components/use-version-skew-reload';
-import { getT } from '@/lib/i18n';
+import { useT } from 'next-i18next/client';
 import { isVersionSkewError } from '@/lib/version-skew';
 
 // Error boundary for the marketing site (every page under (public)/(site)) —
@@ -19,7 +19,7 @@ export default function SiteError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
-  const t = getT('public');
+  const { t } = useT('public');
   useVersionSkewReload(error);
   if (isVersionSkewError(error)) {
     return (

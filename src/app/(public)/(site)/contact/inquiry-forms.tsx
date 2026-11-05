@@ -21,7 +21,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { actionFormError } from '@/lib/action-result';
-import { getT } from '@/lib/i18n';
+import { useT } from 'next-i18next/client';
 import { submitCallbackAction, submitContactAction } from './actions';
 
 type InquiryResult = Awaited<ReturnType<typeof submitContactAction | typeof submitCallbackAction>>;
@@ -76,7 +76,7 @@ export function ContactForm({
   defaultEmail?: string;
   defaultName?: string;
 }) {
-  const t = getT('public');
+  const { t } = useT('public');
   const [state, formAction] = useActionState(submitContactAction, {});
   useLeadEvent(state);
   const fe = state.validationErrors?.fieldErrors;
@@ -162,7 +162,7 @@ export function ContactForm({
  * that picks a time ever reads the note.
  */
 export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
-  const t = getT('public');
+  const { t } = useT('public');
   const [state, formAction] = useActionState(submitCallbackAction, {});
   useLeadEvent(state);
   const fe = state.validationErrors?.fieldErrors;

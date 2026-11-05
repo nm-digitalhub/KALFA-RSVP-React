@@ -5,7 +5,7 @@ import { ArrowLeft, Sparkles } from 'lucide-react';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { getCompanyLegal } from '@/lib/data/company';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { buildBreadcrumbJsonLd, jsonLdScript } from '@/lib/seo/breadcrumb-json-ld';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 import { getAppOrigin } from '@/lib/url';
@@ -79,7 +79,7 @@ const PRINCIPLES: readonly { t: string; d: string }[] = [
 ];
 
 export default async function AboutPage() {
-  const t = getT('public');
+  const { t } = await getT('public');
   const [user, origin] = await Promise.all([getUser(), getAppOrigin()]);
   const startHref = user ? '/app/events/new' : '/auth/signup';
   const startLabel = user ? t('site.about.cta.newEvent', 'אירוע חדש') : t('site.about.cta.createEvent', 'צרו אירוע חדש');

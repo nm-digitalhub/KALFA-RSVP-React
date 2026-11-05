@@ -49,6 +49,36 @@ function post(actionId?: string): NextRequest {
   return new NextRequest('https://beta.kalfa.me/app', { method: 'POST', headers });
 }
 
+describe('proxy — language URLs', () => {
+  beforeEach(() => updateSession.mockClear());
+
+  it('serves /en/about as the /about route, in English, kept out of search', async () => {
+    const response = await proxy(new NextRequest('https://beta.kalfa.me/en/about'));
+
+    const [, rewrite] = updateSession.mock.calls[0] as unknown as [NextRequest, { url: URL; headers: Headers }];
+    expect(rewrite.url.pathname).toBe('/about');
+    expect(rewrite.headers.get('x-i18next-current-language')).toBe('en');
+    expect(response.headers.get('x-robots-tag')).toBe('noindex');
+  });
+
+  it('never lets the browser choose the language through the header', async () => {
+    const request = new NextRequest('https://beta.kalfa.me/about', {
+      headers: { 'x-i18next-current-language': 'en' },
+    });
+
+    const response = await proxy(request);
+
+    expect(request.headers.get('x-i18next-current-language')).toBe('he');
+    expect(response.headers.get('x-robots-tag')).toBeNull();
+  });
+
+  it('does not open a second way into a protected route', async () => {
+    await proxy(new NextRequest('https://beta.kalfa.me/en/app'));
+
+    expect(updateSession.mock.calls[0]).toHaveLength(1);
+  });
+});
+
 describe('proxy — malformed Server Action ids', () => {
   beforeEach(() => updateSession.mockClear());
 

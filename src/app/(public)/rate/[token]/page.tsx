@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
 import { getRatingByToken } from '@/lib/data/inquiry-rating';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import { RATING_VIEW_RATE } from '@/lib/constants';
@@ -35,7 +35,7 @@ export default async function RatingPage({
   params: Promise<{ token: string }>;
   searchParams: Promise<{ score?: string }>;
 }) {
-  const t = getT('public');
+  const { t } = await getT('public');
   const { token } = await params;
   const { score } = await searchParams;
   // Pre-select the score the customer already clicked in the email — the

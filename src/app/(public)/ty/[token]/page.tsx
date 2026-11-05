@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
 import { getThankyouByToken } from '@/lib/data/thankyou';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
@@ -31,7 +31,7 @@ export default async function ThankyouPage({
 }: {
   params: Promise<{ token: string }>;
 }) {
-  const t = getT('public');
+  const { t } = await getT('public');
   const { token } = await params;
 
   const requestHeaders = await headers();

@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { SubmitButton } from '@/components/forms';
 import { getUser } from '@/lib/auth/dal';
 import { getInvitationPreview } from '@/lib/data/orgs';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 
 import { acceptInvitationAction } from './actions';
 
@@ -26,7 +26,7 @@ export default async function JoinPage({
   params: Promise<{ token: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  const t = getT('public');
+  const { t } = await getT('public');
   const { token } = await params;
   const { error } = await searchParams;
 

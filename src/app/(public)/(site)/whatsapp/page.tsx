@@ -5,7 +5,7 @@ import { ArrowLeft, ListChecks, MessageCircle, ShieldCheck } from 'lucide-react'
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
 // Public page for the WhatsApp channel — the one channel term with measurable
@@ -74,7 +74,7 @@ const FAQ = [
 ];
 
 export default async function WhatsappRsvpPage() {
-  const t = getT('public');
+  const { t } = await getT('public');
   const user = await getUser();
   const startHref = user ? '/app/events/new' : '/auth/signup';
   const startLabel = user ? t('site.whatsapp.cta.newEvent', 'אירוע חדש') : t('site.whatsapp.cta.createEvent', 'צרו אירוע חדש');

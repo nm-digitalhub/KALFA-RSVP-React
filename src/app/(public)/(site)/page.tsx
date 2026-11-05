@@ -6,7 +6,7 @@ import { TiltCard } from '@/components/motion/tilt-card';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { getCompanyLegal, toE164Israel } from '@/lib/data/company';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 import { getAppOrigin } from '@/lib/url';
 import {
@@ -153,7 +153,7 @@ function Eyebrow({
 }
 
 export default async function HomePage() {
-  const t = getT('public');
+  const { t } = await getT('public');
   // Recognise a signed-in visitor (verified server-side; null when anonymous)
   // so the landing points returning users to their dashboard, not to sign-up.
   // (getUser is React-cache()d — the (site) layout's SiteHeader already made

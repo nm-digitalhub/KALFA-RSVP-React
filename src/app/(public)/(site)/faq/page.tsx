@@ -5,7 +5,7 @@ import { Info, Route, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react'
 import { getPublishedFaqItems } from '@/lib/data/faq';
 import { getPublicBusinessFacts } from '@/lib/data/public-business-facts';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import {
   buildFaqPageModel,
   flattenFaqEntries,
@@ -52,7 +52,7 @@ const SECTION_EYEBROW: Record<FaqCategory, { icon: LucideIcon; label: string }> 
 // and hiding an answer behind a click interaction is exactly what the SEO/GEO
 // plan warns against for FAQ content (answer-first, extractable by AI search).
 export default async function FaqPage() {
-  const t = getT('public');
+  const { t } = await getT('public');
   // No getAppOrigin() call here — unlike the home page's Organization/WebSite
   // JSON-LD (which embeds absolute @id URLs), a FAQPage schema needs no site
   // origin at all (see src/lib/faq/json-ld.ts).

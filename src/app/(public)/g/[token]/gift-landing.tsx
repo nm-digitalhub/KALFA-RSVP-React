@@ -12,7 +12,7 @@ import {
 import { EVENT_THEME } from '@/lib/data/event-theme';
 import { formatEventDateLine, GIFT_BRAND } from '@/lib/data/event-display';
 import type { GiftView } from '@/lib/data/gift';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 
 // Public gift landing page — an event-type-adaptive, celebratory page shown when
 // a guest taps the WhatsApp gift/event-day button, before the payment redirect.
@@ -30,7 +30,7 @@ import { getT } from '@/lib/i18n';
 // payment CTA — a guest whose JavaScript never runs still sees the invitation
 // and can still pay. Both faces are rendered here, on the server; the island
 // holds only the flipped/not-flipped state.
-export function GiftLanding({
+export async function GiftLanding({
   view,
   token,
   inviteImageUrl,
@@ -39,7 +39,7 @@ export function GiftLanding({
   token: string;
   inviteImageUrl: string | null;
 }) {
-  const t = getT('public');
+  const { t } = await getT('public');
   const eventType = view.event_type;
   const heading = eventHeadingFor(eventType, view.celebrants, view.name);
   const AccentIcon = EVENT_TYPE_ICON[eventType];

@@ -6,21 +6,21 @@ import { EVENT_TYPE_ICON, eventHeadingFor } from '@/lib/data/celebrant-display';
 import { EVENT_THEME, EVENT_THANKYOU_GREETING } from '@/lib/data/event-theme';
 import { formatEventDateLine } from '@/lib/data/event-display';
 import type { ThankyouView } from '@/lib/data/thankyou';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 
 // Public post-event thank-you page — an event-type-adaptive page shown after a
 // guest taps the WhatsApp thank-you message's link. Server Component: no client
 // state, so the date renders once on the server in Israel time (no hydration
 // mismatch). Unlike the gift landing page, there is NO CTA — this page is pure
 // gratitude, nothing to click through to.
-export function ThankyouLanding({
+export async function ThankyouLanding({
   view,
   inviteImageUrl,
 }: {
   view: ThankyouView;
   inviteImageUrl: string | null;
 }) {
-  const t = getT('public');
+  const { t } = await getT('public');
   const eventType = view.event_type;
   const heading = eventHeadingFor(eventType, view.celebrants, view.name);
   const AccentIcon = EVENT_TYPE_ICON[eventType];

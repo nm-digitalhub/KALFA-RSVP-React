@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { actionFormError } from '@/lib/action-result';
-import { getT } from '@/lib/i18n';
+import { useT } from 'next-i18next/client';
 
 import { submitIntakeAction } from './actions';
 
@@ -36,7 +36,7 @@ export function IntakeForm({
   token: string;
   locked: boolean;
 }) {
-  const t = getT('public');
+  const { t } = useT('public');
   const action = submitIntakeAction.bind(null, token);
 
   const [state, formAction] = useActionState(action, {});

@@ -7,7 +7,9 @@ import './globals.css';
 // see cookie-consent-lazy.tsx for the doc-mandated shape.
 import { CookieConsentBannerLazy } from '@/components/consent/cookie-consent-lazy';
 import { DirectionProvider } from '@/components/ui/direction';
+import { getT } from '@/i18n.server';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
+import { directionOf } from '@/lib/i18n/site-language';
 import { getAppOrigin } from '@/lib/url';
 import { OPEN_GRAPH_BASE } from '@/lib/seo/open-graph';
 
@@ -72,8 +74,10 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieConsentAdminConfig = await getCookieConsentPublicConfig();
+  const { lng } = await getT('public');
+  const direction = directionOf(lng);
   return (
-    <html lang="he" dir="rtl" className={`${heebo.variable} h-full font-sans`}>
+    <html lang={lng} dir={direction} className={`${heebo.variable} h-full font-sans`}>
       <body className="min-h-full bg-background text-foreground antialiased">
         {/* shadcn RTL guide (ui.shadcn.com/docs/rtl + /docs/components/base/direction,
             read 2026-08-24): `rtl: true` in components.json handles the class
@@ -81,7 +85,7 @@ export default async function RootLayout({
             popups) ignore the DOM `dir` and read this provider instead, so it
             lives here at the root alongside dir="rtl" on <html>. The per-component
             providers that pre-date this are redundant but harmless. */}
-        <DirectionProvider direction="rtl">
+        <DirectionProvider direction={direction}>
           {children}
           <CookieConsentBannerLazy adminConfig={cookieConsentAdminConfig} />
         </DirectionProvider>

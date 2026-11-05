@@ -4,6 +4,7 @@ import { updateSession } from '@/lib/supabase/proxy';
 import { isPlausibleServerActionId } from '@/lib/security/server-action-id';
 import { addVary, isNegotiableRequest, negotiateMarkdown } from '@/lib/http/markdown-negotiation';
 import { serveMarkdown } from '@/lib/http/serve-markdown';
+import { DEFAULT_LANGUAGE, LANGUAGE_HEADER, parseLanguagePath } from '@/lib/i18n/site-language';
 
 // Next.js 16 renamed `middleware` to `proxy` (Node.js runtime by default). This
 // is a thin wrapper — the Supabase session refresh + optimistic auth redirect
@@ -56,6 +57,21 @@ function notAcceptable(): NextResponse {
   return new NextResponse('Not Acceptable', { status: 406, headers });
 }
 
+// /en/about shows the /about route with LANGUAGE_HEADER set to en. noindex until the translations are complete: most of
+// these pages are still Hebrew, and they stay out of sitemap.ts for the same reason.
+async function serveTranslatedPage(
+  request: NextRequest,
+  translated: NonNullable<ReturnType<typeof parseLanguagePath>>,
+): Promise<NextResponse> {
+  const url = request.nextUrl.clone();
+  url.pathname = translated.pathname;
+  const headers = new Headers(request.headers);
+  headers.set(LANGUAGE_HEADER, translated.language);
+  const response = await updateSession(request, { url, headers });
+  response.headers.set('X-Robots-Tag', 'noindex');
+  return response;
+}
+
 export async function proxy(request: NextRequest) {
   // MEASURED 2026-08-16: 819 of these reached the action pipeline between 31.07
   // and 16.08, every one of them logging a warning line. 83 of the ids were
@@ -73,6 +89,12 @@ export async function proxy(request: NextRequest) {
   if (actionId !== null && !isPlausibleServerActionId(actionId)) {
     return invalidActionRequest();
   }
+
+  const translated = parseLanguagePath(request.nextUrl.pathname);
+  if (translated) return serveTranslatedPage(request, translated);
+
+  // getT trusts this header, so a value sent by the browser must never reach it.
+  request.headers.set(LANGUAGE_HEADER, DEFAULT_LANGUAGE);
 
   if (isNegotiableRequest(request)) {
     const decision = negotiateMarkdown(request.headers.get('accept'));

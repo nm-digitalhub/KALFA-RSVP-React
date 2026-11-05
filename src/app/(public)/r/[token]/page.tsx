@@ -3,7 +3,7 @@ import { headers } from 'next/headers';
 
 import { RSVP_READ_RATE } from '@/lib/constants';
 import { getEventAttendeesPublic, getRsvpByToken, looksLikeRsvpToken } from '@/lib/data/rsvp';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
@@ -28,7 +28,7 @@ export default async function RsvpPage({
 }: {
   params: Promise<{ token: string }>;
 }) {
-  const t = getT('public');
+  const { t } = await getT('public');
   const { token } = await params;
 
   const requestHeaders = await headers();

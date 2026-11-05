@@ -18,7 +18,7 @@ import {
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 import type { RsvpAttendee, RsvpView } from '@/lib/data/rsvp';
 import { actionFormError, type ActionFormResult } from '@/lib/action-result';
-import { getT } from '@/lib/i18n';
+import { useT } from 'next-i18next/client';
 
 import { submitRsvpAction } from './actions';
 
@@ -124,7 +124,7 @@ export function RsvpForm({
   // bundle.
   calendar?: React.ReactNode;
 }) {
-  const t = getT('public');
+  const { t } = useT('public');
   const { guest, event, questions, can_respond: canRespond } = view;
   const eventType = asEventType(event.event_type);
   const heading = eventHeadingFor(eventType, event.celebrants, event.name);

@@ -4,7 +4,7 @@ import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 
 import { getCallbackIntakeByToken } from '@/lib/data/callback-intake';
-import { getT } from '@/lib/i18n';
+import { getT } from '@/i18n.server';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
@@ -28,7 +28,7 @@ export default async function CallbackIntakePage({
 }: {
   params: Promise<{ token: string }>;
 }) {
-  const t = getT('public');
+  const { t } = await getT('public');
   const { token } = await params;
 
   if (!TOKEN_RE.test(token)) {
