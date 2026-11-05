@@ -11,7 +11,11 @@ const i18nConfig: I18nConfig = {
   ns: ['public'],
   localeInPath: false,
   headerName: LANGUAGE_HEADER,
-  resourceLoader: (language, namespace) => import(`./locales/${language}/${namespace}.json`),
+  // Hebrew stays in the code, as the default of each t() call, exactly as in src/lib/i18n. Loading src/locales/he would
+  // make that file win over the code, so a wording change in the code would silently not appear on the site. The file
+  // exists only as the source Locize translates from.
+  resourceLoader: (language, namespace) =>
+    language === DEFAULT_LANGUAGE ? Promise.resolve({}) : import(`./locales/${language}/${namespace}.json`),
   i18nextOptions: {
     // `extract` writes "" for a key a language has not translated yet; show the fallback, never the blank.
     returnEmptyString: false,
