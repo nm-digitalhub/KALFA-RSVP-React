@@ -10,6 +10,8 @@ let selectResult: { data: unknown; error: unknown } = { data: null, error: null 
 // so the legacy tests below exercise exactly the legacy path.
 let mirrorResult: { data: unknown; error: unknown } = { data: null, error: null };
 const updateCalls: Array<{ table: string; payload: Record<string, unknown> }> = [];
+// A write that fails, by table. Default: every write succeeds.
+let updateErrors: Record<string, unknown> = {};
 
 vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({
@@ -25,7 +27,7 @@ vi.mock('@/lib/supabase/admin', () => ({
       update: (payload: Record<string, unknown>) => ({
         eq: async () => {
           updateCalls.push({ table, payload });
-          return { error: null };
+          return { error: updateErrors[table] ?? null };
         },
       }),
     }),
@@ -57,6 +59,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   selectResult = { data: TEMPLATE, error: null };
   mirrorResult = { data: null, error: null };
+  updateErrors = {};
   updateCalls.length = 0; // a plain array, not a vi.fn() spy — clearAllMocks doesn't touch it
 });
 
@@ -289,14 +292,127 @@ describe('mirror (whatsapp_message_templates)', () => {
     expect(updateCalls[0].payload.quality_score).toMatchObject({ score: 'YELLOW', date: expect.any(Number) });
   });
 
-  it('a mirror template no step sends: ignored here (the nightly sync keeps it current), no alert', async () => {
+  // A template no step sends today can be assigned to a step tomorrow, so its row
+  // stays current; only the alert is for templates a step actually sends.
+  describe('a mirror template no step sends: mirror updated, no alert', () => {
+    const UNUSED = { id: '9', whatsapp_template_settings: null, message_template_routes: [] };
+    const keys = { message_template_id: 9, message_template_name: 'unused', message_template_language: 'he' };
+
+    beforeEach(() => {
+      selectResult = { data: null, error: null };
+      mirrorResult = { data: UNUSED, error: null };
+    });
+
+    it('status', async () => {
+      await processTemplateStatusRow(row({ ...keys, event: 'REJECTED' }));
+      expect(updateCalls).toEqual([
+        { table: 'whatsapp_message_templates', payload: expect.objectContaining({ status: 'REJECTED' }) },
+      ]);
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    });
+
+    it('completed category change', async () => {
+      await processTemplateCategoryRow(row({ ...keys, previous_category: 'UTILITY', new_category: 'MARKETING' }));
+      expect(updateCalls).toEqual([
+        {
+          table: 'whatsapp_message_templates',
+          payload: expect.objectContaining({ category: 'MARKETING', previous_category: 'UTILITY' }),
+        },
+      ]);
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    });
+
+    it('impending category change leaves the category as it is', async () => {
+      await processTemplateCategoryRow(
+        row({ ...keys, new_category: 'UTILITY', correct_category: 'MARKETING', category_update_timestamp: 1746169200 }),
+      );
+      expect(updateCalls).toHaveLength(1);
+      expect(updateCalls[0].payload).toMatchObject({ correct_category: 'MARKETING' });
+      expect(updateCalls[0].payload).not.toHaveProperty('category');
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    });
+
+    it('category misuse', async () => {
+      await processTemplateCategoryMisuseRow(row({ ...keys, category: 'UTILITY', correct_category: 'MARKETING' }));
+      expect(updateCalls).toEqual([
+        { table: 'whatsapp_message_templates', payload: expect.objectContaining({ correct_category: 'MARKETING' }) },
+      ]);
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    });
+
+    it('quality', async () => {
+      await processTemplateQualityRow(row({ ...keys, new_quality_score: 'RED' }));
+      expect(updateCalls).toHaveLength(1);
+      expect(updateCalls[0].payload.quality_score).toMatchObject({ score: 'RED' });
+      expect(sendSlackAlert).not.toHaveBeenCalled();
+    });
+  });
+
+  it('a template Meta knows and we do not: nothing to update, nothing thrown', async () => {
     selectResult = { data: null, error: null };
-    mirrorResult = { data: { id: '9', whatsapp_template_settings: null, message_template_routes: [] }, error: null };
-    await processTemplateStatusRow(
-      row({ event: 'REJECTED', message_template_id: 9, message_template_name: 'unused', message_template_language: 'he' }),
+    await processTemplateCategoryRow(
+      row({ message_template_id: 12345678, message_template_name: 'my_message_template', message_template_language: 'en-US', new_category: 'UTILITY' }),
     );
     expect(updateCalls).toHaveLength(0);
     expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+});
+
+// handleWebhook (worker/main.ts) retries a row only when processing throws. A write
+// or read that fails quietly would be marked processed, and the change would be lost
+// until the nightly sync.
+describe('a failed read or write fails the row, so the worker retries it', () => {
+  const keys = { message_template_id: 555, message_template_name: 'x', message_template_language: 'he' };
+  const completed = row({ ...keys, previous_category: 'UTILITY', new_category: 'MARKETING' });
+  const MIRROR = {
+    id: '555',
+    whatsapp_template_settings: { requested_category: 'UTILITY' },
+    message_template_routes: [{ message_key: 'gift' }],
+  };
+
+  beforeEach(() => {
+    mirrorResult = { data: MIRROR, error: null };
+  });
+
+  it('the mirror write', async () => {
+    updateErrors = { whatsapp_message_templates: { code: 'XX000' } };
+    await expect(processTemplateCategoryRow(completed)).rejects.toThrow();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('the legacy write', async () => {
+    updateErrors = { message_templates: { code: 'XX000' } };
+    await expect(processTemplateCategoryRow(completed)).rejects.toThrow();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
+  });
+
+  it('the mirror lookup', async () => {
+    mirrorResult = { data: null, error: { code: 'XX000' } };
+    await expect(processTemplateCategoryRow(completed)).rejects.toThrow();
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it('the legacy lookup', async () => {
+    selectResult = { data: null, error: { code: 'XX000' } };
+    await expect(processTemplateCategoryRow(completed)).rejects.toThrow();
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  it('every other template event', async () => {
+    updateErrors = { whatsapp_message_templates: { code: 'XX000' } };
+    await expect(processTemplateStatusRow(row({ ...keys, event: 'APPROVED' }))).rejects.toThrow();
+    await expect(
+      processTemplateCategoryMisuseRow(row({ ...keys, category: 'UTILITY', correct_category: 'MARKETING' })),
+    ).rejects.toThrow();
+    await expect(processTemplateQualityRow(row({ ...keys, new_quality_score: 'GREEN' }))).rejects.toThrow();
+  });
+
+  it('a retried row applies the same change again without a second alert from the failed try', async () => {
+    updateErrors = { message_templates: { code: 'XX000' } };
+    await expect(processTemplateCategoryRow(completed)).rejects.toThrow();
+    updateErrors = {};
+    await processTemplateCategoryRow(completed);
+    expect(sendSlackAlert).toHaveBeenCalledTimes(1);
   });
 });
 

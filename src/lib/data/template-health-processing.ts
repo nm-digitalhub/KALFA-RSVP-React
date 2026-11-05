@@ -21,9 +21,12 @@ type WebhookInboxRow = Tables<'webhook_inbox'>;
 // admin screen reads the mirror, also to the legacy message_templates row. The
 // legacy half is matched by
 // (name, language) — Meta's payload never carries our internal message_key.
-// A row with no match (a template not tracked in our admin config, or a
-// name/language mismatch) is a silent no-op: nothing to update, and alerting
-// on an untracked template would be noise, not signal.
+// The mirror row is updated for every template Meta reports, whether or not a step
+// sends it: a template can be assigned to a step at any time. A template that is
+// neither sent by a step nor a legacy row gets no alert, which would be noise.
+//
+// A failed read or write throws, so handleWebhook (worker/main.ts) records the
+// failure instead of marking the row processed. Every write here repeats safely.
 //
 // isCategoryDowngraded lives in src/lib/whatsapp/template-health.ts (shared
 // with the reconciliation poll) so both paths agree on what "downgraded"
@@ -35,12 +38,13 @@ async function findTemplateRowId(
   name: string,
   language: string,
 ): Promise<{ id: string; requested_category: string; message_key: string } | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from('message_templates')
     .select('id, requested_category, message_key')
     .eq('name', name)
     .eq('language', language)
     .maybeSingle();
+  if (error) throw new Error('טעינת התבנית נכשלה', { cause: error });
   return data ?? null;
 }
 
@@ -54,11 +58,12 @@ async function findMirrorTemplate(
   admin: ReturnType<typeof createAdminClient>,
   templateId: string,
 ): Promise<MirrorTarget | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from('whatsapp_message_templates')
     .select('id, whatsapp_template_settings(requested_category), message_template_routes(message_key)')
     .eq('id', templateId)
     .maybeSingle();
+  if (error) throw new Error('טעינת התבנית מ-Meta נכשלה', { cause: error });
   if (!data) return null;
   const settings = data.whatsapp_template_settings as
     | { requested_category: string | null }
@@ -79,10 +84,20 @@ async function updateMirror(
   patch: TablesUpdate<'whatsapp_message_templates'>,
 ): Promise<void> {
   if (!target) return;
-  await admin
+  const { error } = await admin
     .from('whatsapp_message_templates')
     .update({ ...patch, synced_at: new Date().toISOString() })
     .eq('id', target.id);
+  if (error) throw new Error('עדכון התבנית מ-Meta נכשל', { cause: error });
+}
+
+async function updateLegacyTemplate(
+  admin: ReturnType<typeof createAdminClient>,
+  templateId: string,
+  patch: TablesUpdate<'message_templates'>,
+): Promise<void> {
+  const { error } = await admin.from('message_templates').update(patch).eq('id', templateId);
+  if (error) throw new Error('עדכון התבנית נכשל', { cause: error });
 }
 
 // What an alert names: the step(s) sending the template, else the legacy row's.
@@ -98,22 +113,19 @@ export async function processTemplateStatusRow(row: WebhookInboxRow): Promise<vo
   const admin = createAdminClient();
   const target = await findMirrorTemplate(admin, v.message_template_id);
   const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
-  const label = alertLabel(target, template);
-  if (!label) return; // neither sent by any step nor a legacy base row — nothing to watch
   await updateMirror(admin, target, {
     status: v.event,
     rejected_reason: v.rejection_info?.reason ?? v.reason ?? null,
   });
+  const label = alertLabel(target, template);
+  if (!label) return; // neither sent by any step nor a legacy base row — nothing to alert on
 
-  if (template) await admin
-    .from('message_templates')
-    .update({
-      meta_template_id: v.message_template_id,
-      meta_status: v.event,
-      rejected_reason: v.rejection_info?.reason ?? v.reason ?? null,
-      last_synced_at: new Date().toISOString(),
-    })
-    .eq('id', template.id);
+  if (template) await updateLegacyTemplate(admin, template.id, {
+    meta_template_id: v.message_template_id,
+    meta_status: v.event,
+    rejected_reason: v.rejection_info?.reason ?? v.reason ?? null,
+    last_synced_at: new Date().toISOString(),
+  });
 
   if (v.event === 'REJECTED' || v.event === 'DISABLED') {
     await sendSlackAlert({
@@ -141,9 +153,6 @@ export async function processTemplateCategoryRow(row: WebhookInboxRow): Promise<
   const admin = createAdminClient();
   const target = await findMirrorTemplate(admin, v.message_template_id);
   const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
-  const label = alertLabel(target, template);
-  if (!label) return; // neither sent by any step nor a legacy base row — nothing to watch
-  const requested = target?.requestedCategory ?? template?.requested_category ?? null;
   await updateMirror(
     admin,
     target,
@@ -154,20 +163,20 @@ export async function processTemplateCategoryRow(row: WebhookInboxRow): Promise<
           ...(v.previous_category ? { previous_category: v.previous_category } : {}),
         },
   );
+  const label = alertLabel(target, template);
+  if (!label) return; // neither sent by any step nor a legacy base row — nothing to alert on
+  const requested = target?.requestedCategory ?? template?.requested_category ?? null;
 
   const isImpending = v.category_update_timestamp != null;
 
   if (isImpending) {
     // Meta's ~24h advance warning — nothing has changed YET.
-    if (template) await admin
-      .from('message_templates')
-      .update({
-        meta_template_id: v.message_template_id,
-        pending_category_change_at: new Date(v.category_update_timestamp! * 1000).toISOString(),
-        pending_correct_category: v.correct_category ?? null,
-        last_synced_at: new Date().toISOString(),
-      })
-      .eq('id', template.id);
+    if (template) await updateLegacyTemplate(admin, template.id, {
+      meta_template_id: v.message_template_id,
+      pending_category_change_at: new Date(v.category_update_timestamp! * 1000).toISOString(),
+      pending_correct_category: v.correct_category ?? null,
+      last_synced_at: new Date().toISOString(),
+    });
 
     await sendSlackAlert({
       level: 'warn',
@@ -187,16 +196,13 @@ export async function processTemplateCategoryRow(row: WebhookInboxRow): Promise<
 
   // Completed change — the new category is live now.
   const newCategory = v.new_category ?? v.correct_category ?? null;
-  if (template) await admin
-    .from('message_templates')
-    .update({
-      meta_template_id: v.message_template_id,
-      category: newCategory,
-      pending_category_change_at: null,
-      pending_correct_category: null,
-      last_synced_at: new Date().toISOString(),
-    })
-    .eq('id', template.id);
+  if (template) await updateLegacyTemplate(admin, template.id, {
+    meta_template_id: v.message_template_id,
+    category: newCategory,
+    pending_category_change_at: null,
+    pending_correct_category: null,
+    last_synced_at: new Date().toISOString(),
+  });
 
   if (newCategory && requested && isCategoryDowngraded(requested, newCategory)) {
     await sendSlackAlert({
@@ -222,21 +228,18 @@ export async function processTemplateCategoryMisuseRow(row: WebhookInboxRow): Pr
   const admin = createAdminClient();
   const target = await findMirrorTemplate(admin, v.message_template_id);
   const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
-  const label = alertLabel(target, template);
-  if (!label) return; // neither sent by any step nor a legacy base row — nothing to watch
   await updateMirror(admin, target, { correct_category: v.correct_category });
+  const label = alertLabel(target, template);
+  if (!label) return; // neither sent by any step nor a legacy base row — nothing to alert on
 
-  if (template) await admin
-    .from('message_templates')
-    .update({
-      meta_template_id: v.message_template_id,
-      // A misuse detection is Meta's live signal of the category it WILL
-      // correct to; surfaced as "pending" (same fields template_category_update
-      // uses for its impending warning) so the admin UI has one place to show it.
-      pending_correct_category: v.correct_category,
-      last_synced_at: new Date().toISOString(),
-    })
-    .eq('id', template.id);
+  if (template) await updateLegacyTemplate(admin, template.id, {
+    meta_template_id: v.message_template_id,
+    // A misuse detection is Meta's live signal of the category it WILL
+    // correct to; surfaced as "pending" (same fields template_category_update
+    // uses for its impending warning) so the admin UI has one place to show it.
+    pending_correct_category: v.correct_category,
+    last_synced_at: new Date().toISOString(),
+  });
 
   await sendSlackAlert({
     level: 'warn',
@@ -260,20 +263,17 @@ export async function processTemplateQualityRow(row: WebhookInboxRow): Promise<v
   const admin = createAdminClient();
   const target = await findMirrorTemplate(admin, v.message_template_id);
   const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
-  const label = alertLabel(target, template);
-  if (!label) return; // neither sent by any step nor a legacy base row — nothing to watch
   await updateMirror(admin, target, {
     quality_score: { score: v.new_quality_score, date: Math.floor(Date.now() / 1000) },
   });
+  const label = alertLabel(target, template);
+  if (!label) return; // neither sent by any step nor a legacy base row — nothing to alert on
 
-  if (template) await admin
-    .from('message_templates')
-    .update({
-      meta_template_id: v.message_template_id,
-      quality_score: v.new_quality_score,
-      last_synced_at: new Date().toISOString(),
-    })
-    .eq('id', template.id);
+  if (template) await updateLegacyTemplate(admin, template.id, {
+    meta_template_id: v.message_template_id,
+    quality_score: v.new_quality_score,
+    last_synced_at: new Date().toISOString(),
+  });
 
   // RED = Meta will start pausing sends on this template (error 132015).
   // Recovering FROM red is worth a (lower-severity) note too.
