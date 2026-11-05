@@ -190,7 +190,9 @@
     "ux-ui-design@nklisch-skills": true,
     "elevenlabs@elevenlabs": true,
     "e2e-skills@voidmatcha": true,
-    "typescript-lsp@claude-plugins-official": true
+    "typescript-lsp@claude-plugins-official": true,
+    "claude-video-vision@claude-community": true,
+    "codex@openai-codex": true
   },
   "extraKnownMarketplaces": {
     "postgres-skills": {
