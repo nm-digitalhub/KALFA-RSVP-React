@@ -7,6 +7,12 @@
       "skillPath": "37signals-way/SKILL.md",
       "computedHash": "8799446430d0277d2ccf710c2e6ca0608a975cb859c68f5420f51b18eb8b3057"
     },
+    "Language Translator": {
+      "source": "53able/agency-agents",
+      "sourceType": "github",
+      "skillPath": "skills/language-translator/SKILL.md",
+      "computedHash": "591a8d9523f0bf3e8de116ffa43c594461b3fc9eda6dce86651731dad8aeeb0a"
+    },
     "ab-message-testing": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",
@@ -133,6 +139,12 @@
       "skillPath": "clean-code/SKILL.md",
       "computedHash": "917f01d5f5800f1f575c6701a4a34939647e74c423bd3108e894191abb0593f6"
     },
+    "cli-anything-pm2": {
+      "source": "HKUDS/CLI-Anything",
+      "sourceType": "github",
+      "skillPath": "skills/cli-anything-pm2/SKILL.md",
+      "computedHash": "34dfbf6d264db2eba3e979fa5d6b97109c1144d24e5acee765fd0003694eceb4"
+    },
     "closing": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",
@@ -180,6 +192,12 @@
       "sourceType": "github",
       "skillPath": "skills/compliance-handling/SKILL.md",
       "computedHash": "9cb199658b65e63bf63e25f2cde7387803fb95ec70f046f0b28d8617a839727c"
+    },
+    "consensus-brainstormer": {
+      "source": "kabirdos/claude-toolkit",
+      "sourceType": "github",
+      "skillPath": "skills/consensus-brainstormer/SKILL.md",
+      "computedHash": "7cc67e831b3265015c2926d60246996fced88876145e2fcebb85d2ead706aa10"
     },
     "contagious": {
       "source": "wondelai/skills",
@@ -661,10 +679,22 @@
       "skillPath": "skills/handoff-detection/SKILL.md",
       "computedHash": "ea8424a4a50206e5a80ad6ca6bddfe207f8836697047828eb76d43ee5b69a05c"
     },
+    "hebrew-ai-text-humanizer": {
+      "source": "skills-il/localization",
+      "sourceType": "github",
+      "skillPath": "hebrew-ai-text-humanizer/SKILL.md",
+      "computedHash": "bddb7259098ba521efe9dcda6af772e133b327f9b7fa7991491491a10d75368d"
+    },
     "hebrew-content-writer": {
       "source": "skills-il/localization",
       "sourceType": "github",
       "computedHash": "da7677bda48ea25e2a930dd89601ff5cf083211ca724b4c0d8aea94ecd5a2880"
+    },
+    "hebrew-i18n": {
+      "source": "skills-il/localization",
+      "sourceType": "github",
+      "skillPath": "hebrew-i18n/SKILL.md",
+      "computedHash": "d9bc3ff8fd2a8a3e7cf02db3ef36e2e32472556d863e40035be4ac5e072ab239"
     },
     "hebrew-seo-geo-toolkit": {
       "source": "skills-il/marketing-growth",
@@ -759,6 +789,12 @@
       "sourceType": "github",
       "skillPath": "skills/hyperframes-registry/SKILL.md",
       "computedHash": "fb78caeda848892d0ec976eba0bb75aa21f2082ff752e896b5dfd431752f7791"
+    },
+    "i18next-localization": {
+      "source": "i18next/i18next-cli",
+      "sourceType": "github",
+      "skillPath": "skills/i18next-localization/SKILL.md",
+      "computedHash": "e5d723a52212f362c9c4720ebabe739baaab2c748cc4c8b0037ca553bcad2ec2"
     },
     "ideal-customer-profile-matching": {
       "source": "louisblythe/salesskills",
@@ -1710,6 +1746,12 @@
       "skillPath": "skills/timing-optimization/SKILL.md",
       "computedHash": "ce50bdb0c6b72464fad8cdbe41fd08764e2444c881dc7b4be14c601598641581"
     },
+    "tl-pg-boss": {
+      "source": "toddlevy/tl-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/tl-pg-boss/SKILL.md",
+      "computedHash": "2eb23dcec4ed3aa621a4fde860dac9d92a6732fc85a1a1a68c5663c6fa9fe8a8"
+    },
     "tone-matching": {
       "source": "louisblythe/salesskills",
       "sourceType": "github",
@@ -1727,6 +1769,12 @@
       "sourceType": "github",
       "skillPath": "traction-eos/SKILL.md",
       "computedHash": "71ef96428f433991e19a32cef1c61c0909944748486e94811217ba05d393380a"
+    },
+    "translation-reframing-audience-shift": {
+      "source": "lyndonkl/claude",
+      "sourceType": "github",
+      "skillPath": "skills/translation-reframing-audience-shift/SKILL.md",
+      "computedHash": "4e14e4ce0690cdeb276d7499981995c5d2162ae8b4ab87da9cf3ce5026ba65de"
     },
     "trigger-event-detection": {
       "source": "louisblythe/salesskills",
@@ -1787,6 +1835,12 @@
       "sourceType": "github",
       "skillPath": "skills/warm-transfer-execution/SKILL.md",
       "computedHash": "c32f21f823ad6393497e72415d2624866367bf608fdf3d112696ccf82d664710"
+    },
+    "watch-video": {
+      "source": "The-AIOS/aios",
+      "sourceType": "github",
+      "skillPath": "skills/aios/watch-video/SKILL.md",
+      "computedHash": "73525a78ff6cc1d363d5f67dabefc1d978c6e2e1546eaafa656edadff188fdf9"
     },
     "web-typography": {
       "source": "wondelai/skills",
