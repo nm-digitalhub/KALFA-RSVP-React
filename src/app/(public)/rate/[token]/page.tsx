@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
 import { getRatingByToken } from '@/lib/data/inquiry-rating';
+import { getT } from '@/lib/i18n';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import { RATING_VIEW_RATE } from '@/lib/constants';
@@ -34,6 +35,7 @@ export default async function RatingPage({
   params: Promise<{ token: string }>;
   searchParams: Promise<{ score?: string }>;
 }) {
+  const t = getT('public');
   const { token } = await params;
   const { score } = await searchParams;
   // Pre-select the score the customer already clicked in the email — the
@@ -52,7 +54,7 @@ export default async function RatingPage({
     return (
       <GuestShell>
         <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.
+          {t('rate.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.')}
         </p>
       </GuestShell>
     );
@@ -65,7 +67,7 @@ export default async function RatingPage({
     return (
       <GuestShell>
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-          הקישור אינו תקף או שאינו זמין עוד.
+          {t('rate.invalidLink', 'הקישור אינו תקף או שאינו זמין עוד.')}
         </p>
       </GuestShell>
     );

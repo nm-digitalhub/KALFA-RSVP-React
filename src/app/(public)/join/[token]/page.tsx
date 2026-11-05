@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { SubmitButton } from '@/components/forms';
 import { getUser } from '@/lib/auth/dal';
 import { getInvitationPreview } from '@/lib/data/orgs';
+import { getT } from '@/lib/i18n';
 
 import { acceptInvitationAction } from './actions';
 
@@ -25,6 +26,7 @@ export default async function JoinPage({
   params: Promise<{ token: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
+  const t = getT('public');
   const { token } = await params;
   const { error } = await searchParams;
 
@@ -37,7 +39,7 @@ export default async function JoinPage({
 
   return (
     <main className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 px-4 py-12">
-      <h1 className="text-2xl font-bold">הצטרפות לצוות</h1>
+      <h1 className="text-2xl font-bold">{t('join.title', 'הצטרפות לצוות')}</h1>
 
       {!preview ? (
         <div className="space-y-4">
@@ -45,13 +47,13 @@ export default async function JoinPage({
             role="alert"
             className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
           >
-            ההזמנה אינה תקפה, פגה או כבר נוצלה.
+            {t('join.invalid.notice', 'ההזמנה אינה תקפה, פגה או כבר נוצלה.')}
           </p>
           <Link
             href="/app"
             className="inline-flex min-h-11 items-center rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
-            חזרה לאזור האישי
+            {t('join.invalid.backLink', 'חזרה לאזור האישי')}
           </Link>
         </div>
       ) : (
@@ -61,7 +63,7 @@ export default async function JoinPage({
               role="alert"
               className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
             >
-              ההצטרפות נכשלה. ייתכן שההזמנה כבר אינה תקפה.
+              {t('join.failed', 'ההצטרפות נכשלה. ייתכן שההזמנה כבר אינה תקפה.')}
             </p>
           ) : null}
           <p className="text-muted-foreground">
@@ -72,7 +74,7 @@ export default async function JoinPage({
             <input type="hidden" name="token" value={token} />
             {/* Shared pending-aware submit (a bare <button> has no pending
                 state, i.e. a double-submit risk on a slow network). */}
-            <SubmitButton size="lg">הצטרפות</SubmitButton>
+            <SubmitButton size="lg">{t('join.submit', 'הצטרפות')}</SubmitButton>
           </form>
         </div>
       )}

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { useVersionSkewReload } from '@/components/use-version-skew-reload';
+import { getT } from '@/lib/i18n';
 import { isVersionSkewError } from '@/lib/version-skew';
 
 // Error boundary for the marketing site (every page under (public)/(site)) —
@@ -18,20 +19,21 @@ export default function SiteError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  const t = getT('public');
   useVersionSkewReload(error);
   if (isVersionSkewError(error)) {
     return (
       <div className="mx-auto max-w-md space-y-4 py-16 text-center">
-        <h1 className="text-xl font-bold">המערכת התעדכנה</h1>
-        <p className="text-muted-foreground">הדף נטען מחדש…</p>
+        <h1 className="text-xl font-bold">{t('site.error.updated.title', 'המערכת התעדכנה')}</h1>
+        <p className="text-muted-foreground">{t('site.error.updated.reloading', 'הדף נטען מחדש…')}</p>
       </div>
     );
   }
   return (
     <div className="mx-auto max-w-md space-y-4 py-16 text-center">
-      <h1 className="text-xl font-bold">משהו השתבש</h1>
+      <h1 className="text-xl font-bold">{t('site.error.generic.title', 'משהו השתבש')}</h1>
       <p className="text-muted-foreground">
-        אירעה תקלה בטעינת הדף. אפשר לנסות שוב, ואם הבעיה נמשכת נסו שוב מאוחר יותר.
+        {t('site.error.generic.body', 'אירעה תקלה בטעינת הדף. אפשר לנסות שוב, ואם הבעיה נמשכת נסו שוב מאוחר יותר.')}
       </p>
       <div className="flex items-center justify-center gap-3">
         <button
@@ -39,13 +41,13 @@ export default function SiteError({
           onClick={() => retry()}
           className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
         >
-          נסו שוב
+          {t('site.error.generic.retry', 'נסו שוב')}
         </button>
         <Link
           href="/"
           className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
         >
-          לדף הבית
+          {t('site.error.generic.home', 'לדף הבית')}
         </Link>
       </div>
     </div>

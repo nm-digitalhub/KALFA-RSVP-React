@@ -1,0 +1,296 @@
+{
+  "cb": {
+    "form": {
+      "contact": {
+        "label": "",
+        "placeholder": ""
+      },
+      "lockedNotice": "",
+      "note": {
+        "placeholder": ""
+      },
+      "submit": ""
+    },
+    "header": {
+      "subtitle": "",
+      "title": ""
+    }
+  },
+  "error": {
+    "generic": {
+      "body": "",
+      "retry": "",
+      "title": ""
+    },
+    "updated": {
+      "reloading": "",
+      "title": ""
+    }
+  },
+  "g": {
+    "invalidLink": "",
+    "invite": {
+      "imageAlt": "",
+      "openFull": ""
+    },
+    "landing": {
+      "cta": "",
+      "toggle": {
+        "back": "",
+        "front": ""
+      },
+      "wazeLink": ""
+    },
+    "rateLimited": ""
+  },
+  "join": {
+    "failed": "",
+    "invalid": {
+      "backLink": "",
+      "notice": ""
+    },
+    "submit": "",
+    "title": ""
+  },
+  "r": {
+    "attendees": {
+      "title": ""
+    },
+    "closed": {
+      "notice": ""
+    },
+    "form": {
+      "adults": "",
+      "attendance": {
+        "legend": ""
+      },
+      "kids": "",
+      "mealPref": {
+        "label": ""
+      },
+      "note": {
+        "label": ""
+      },
+      "question": {
+        "selectPlaceholder": ""
+      },
+      "showInGuestList": {
+        "label": ""
+      },
+      "submit": "",
+      "success": {
+        "updateHint": ""
+      }
+    },
+    "gift": {
+      "cta": "",
+      "prompt": ""
+    },
+    "header": {
+      "greeting": "",
+      "wazeLink": ""
+    },
+    "invalidLink": "",
+    "invite": {
+      "imageAlt": "",
+      "openFull": ""
+    },
+    "rateLimited": ""
+  },
+  "rate": {
+    "form": {
+      "comment": {
+        "label": "",
+        "placeholder": ""
+      },
+      "heading": "",
+      "legend": "",
+      "submit": "",
+      "submitting": ""
+    },
+    "invalidLink": "",
+    "rateLimited": "",
+    "thanks": {
+      "body": "",
+      "title": ""
+    }
+  },
+  "site": {
+    "about": {
+      "cta": {
+        "createEvent": "",
+        "newEvent": ""
+      },
+      "does": {
+        "limits": "",
+        "title": ""
+      },
+      "hero": {
+        "eyebrow": "",
+        "intro": "",
+        "title": ""
+      },
+      "operator": {
+        "title": ""
+      },
+      "principles": {
+        "title": ""
+      }
+    },
+    "contact": {
+      "callbackSection": {
+        "title": ""
+      },
+      "contactSection": {
+        "title": ""
+      },
+      "form": {
+        "email": "",
+        "fullName": "",
+        "message": "",
+        "noteOptional": "",
+        "phone": "",
+        "reachHint": "",
+        "submitCallback": "",
+        "submitContact": ""
+      },
+      "subtitle": "",
+      "title": ""
+    },
+    "error": {
+      "generic": {
+        "body": "",
+        "home": "",
+        "retry": "",
+        "title": ""
+      },
+      "updated": {
+        "reloading": "",
+        "title": ""
+      }
+    },
+    "faq": {
+      "categoriesAriaLabel": "",
+      "subtitle": "",
+      "title": ""
+    },
+    "guestListTemplate": {
+      "closing": {
+        "subtitle": "",
+        "title": ""
+      },
+      "cta": {
+        "createEvent": "",
+        "download": "",
+        "newEvent": ""
+      },
+      "faq": {
+        "eyebrow": "",
+        "title": ""
+      },
+      "file": {
+        "sampleNote": "",
+        "tableCaption": "",
+        "title": ""
+      },
+      "hero": {
+        "eyebrow": "",
+        "subtitle": "",
+        "title": ""
+      },
+      "mistakes": {
+        "eyebrow": "",
+        "title": ""
+      },
+      "steps": {
+        "title": ""
+      }
+    },
+    "home": {
+      "audiences": {
+        "eyebrow": "",
+        "subtitle": "",
+        "title": ""
+      },
+      "closing": {
+        "subtitle": ""
+      },
+      "cta": {
+        "createEvent": "",
+        "dashboard": "",
+        "howItWorks": "",
+        "login": "",
+        "newEvent": "",
+        "startNow": ""
+      },
+      "features": {
+        "closing": "",
+        "eyebrow": "",
+        "subtitle": "",
+        "title": ""
+      },
+      "hero": {
+        "eyebrow": "",
+        "private": "",
+        "readyInMinutes": "",
+        "subtitle": ""
+      },
+      "how": {
+        "eyebrow": "",
+        "subtitle": "",
+        "title": ""
+      },
+      "preview": {
+        "ariaLabel": "",
+        "eventName": "",
+        "snapshot": ""
+      },
+      "problem": {
+        "eyebrow": "",
+        "subtitle": "",
+        "title": ""
+      },
+      "solution": {
+        "eyebrow": "",
+        "subtitle": "",
+        "title": ""
+      },
+      "trust": {
+        "eyebrow": "",
+        "subtitle": "",
+        "title": ""
+      }
+    },
+    "whatsapp": {
+      "cta": {
+        "createEvent": "",
+        "newEvent": "",
+        "template": ""
+      },
+      "faq": {
+        "eyebrow": "",
+        "title": ""
+      },
+      "hero": {
+        "eyebrow": "",
+        "subtitle": "",
+        "title": ""
+      },
+      "limits": {
+        "eyebrow": "",
+        "title": ""
+      },
+      "points": {
+        "title": ""
+      }
+    }
+  },
+  "ty": {
+    "invalidLink": "",
+    "invite": {
+      "imageAlt": "",
+      "openFull": ""
+    },
+    "rateLimited": ""
+  }
+}

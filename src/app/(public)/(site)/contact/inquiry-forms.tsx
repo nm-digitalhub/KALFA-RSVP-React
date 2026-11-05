@@ -21,6 +21,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { actionFormError } from '@/lib/action-result';
+import { getT } from '@/lib/i18n';
 import { submitCallbackAction, submitContactAction } from './actions';
 
 type InquiryResult = Awaited<ReturnType<typeof submitContactAction | typeof submitCallbackAction>>;
@@ -75,6 +76,7 @@ export function ContactForm({
   defaultEmail?: string;
   defaultName?: string;
 }) {
+  const t = getT('public');
   const [state, formAction] = useActionState(submitContactAction, {});
   useLeadEvent(state);
   const fe = state.validationErrors?.fieldErrors;
@@ -83,7 +85,7 @@ export function ContactForm({
     <form action={formAction} className="relative space-y-4">
       <Honeypot />
       <div className="grid gap-1.5">
-        <Label htmlFor="contact-name">שם מלא</Label>
+        <Label htmlFor="contact-name">{t('site.contact.form.fullName', 'שם מלא')}</Label>
         <Input
           id="contact-name"
           name="name"
@@ -98,11 +100,11 @@ export function ContactForm({
       {/* Neither field is required on its own — the server requires at least
           one — so the rule is stated up front and linked from both inputs. */}
       <p id="contact-reach-hint" className="text-xs text-muted-foreground">
-        יש למלא אימייל או טלפון (לפחות אחד)
+        {t('site.contact.form.reachHint', 'יש למלא אימייל או טלפון (לפחות אחד)')}
       </p>
       <div className="grid gap-4 @md/form:grid-cols-2">
         <div className="grid gap-1.5">
-          <Label htmlFor="contact-email">אימייל</Label>
+          <Label htmlFor="contact-email">{t('site.contact.form.email', 'אימייל')}</Label>
           <Input
             id="contact-email"
             name="email"
@@ -116,7 +118,7 @@ export function ContactForm({
           <FieldError id="contact-email-err" errors={fe?.email} />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="contact-phone">טלפון</Label>
+          <Label htmlFor="contact-phone">{t('site.contact.form.phone', 'טלפון')}</Label>
           <PhoneInput
             id="contact-phone"
             name="phone"
@@ -128,7 +130,7 @@ export function ContactForm({
       </div>
       <TopicSelect id="contact-topic" defaultTopic={defaultTopic} />
       <div className="grid gap-1.5">
-        <Label htmlFor="contact-message">תוכן הפנייה</Label>
+        <Label htmlFor="contact-message">{t('site.contact.form.message', 'תוכן הפנייה')}</Label>
         <Textarea
           id="contact-message"
           name="message"
@@ -142,7 +144,7 @@ export function ContactForm({
       </div>
       <FormError message={actionFormError(state)} />
       <FormNotice message={state.data?.notice} />
-      <SubmitButton size="lg" className="min-h-11">שליחת פנייה</SubmitButton>
+      <SubmitButton size="lg" className="min-h-11">{t('site.contact.form.submitContact', 'שליחת פנייה')}</SubmitButton>
       <PrivacyNote />
     </form>
   );
@@ -160,6 +162,7 @@ export function ContactForm({
  * that picks a time ever reads the note.
  */
 export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
+  const t = getT('public');
   const [state, formAction] = useActionState(submitCallbackAction, {});
   useLeadEvent(state);
   const fe = state.validationErrors?.fieldErrors;
@@ -168,7 +171,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
     <form action={formAction} className="relative space-y-4">
       <Honeypot />
       <div className="grid gap-1.5">
-        <Label htmlFor="cb-name">שם מלא</Label>
+        <Label htmlFor="cb-name">{t('site.contact.form.fullName', 'שם מלא')}</Label>
         <Input
           id="cb-name"
           name="full_name"
@@ -180,7 +183,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
         <FieldError id="cb-name-err" errors={fe?.full_name} />
       </div>
       <div className="grid gap-1.5">
-        <Label htmlFor="cb-phone">טלפון</Label>
+        <Label htmlFor="cb-phone">{t('site.contact.form.phone', 'טלפון')}</Label>
         <PhoneInput
           id="cb-phone"
           name="phone"
@@ -196,7 +199,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
       </p>
       <CallbackTimePreference />
       <div className="grid gap-1.5">
-        <Label htmlFor="cb-note">הערה (לא חובה)</Label>
+        <Label htmlFor="cb-note">{t('site.contact.form.noteOptional', 'הערה (לא חובה)')}</Label>
         <Textarea
           id="cb-note"
           name="note"
@@ -209,7 +212,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
       </div>
       <FormError message={actionFormError(state)} />
       <FormNotice message={state.data?.notice} />
-      <SubmitButton size="lg" className="min-h-11">חזרו אליי</SubmitButton>
+      <SubmitButton size="lg" className="min-h-11">{t('site.contact.form.submitCallback', 'חזרו אליי')}</SubmitButton>
       <CallbackDisclosureNote />
       <PrivacyNote />
     </form>

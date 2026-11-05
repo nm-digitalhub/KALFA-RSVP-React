@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 
 import { getCallbackIntakeByToken } from '@/lib/data/callback-intake';
+import { getT } from '@/lib/i18n';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
@@ -27,6 +28,7 @@ export default async function CallbackIntakePage({
 }: {
   params: Promise<{ token: string }>;
 }) {
+  const t = getT('public');
   const { token } = await params;
 
   if (!TOKEN_RE.test(token)) {
@@ -74,11 +76,11 @@ export default async function CallbackIntakePage({
           </div>
 
           <h1 className="mt-5 text-balance text-[28px] font-extrabold leading-[1.22] tracking-[-0.04em] text-[#111827] sm:text-[31px]">
-            התקשרת אלינו ולא הצלחנו לענות
+            {t('cb.header.title', 'התקשרת אלינו ולא הצלחנו לענות')}
           </h1>
 
           <p className="mt-3 text-[16px] font-medium leading-7 text-[#7c8189]">
-            נחזור אליך. כדי שנגיע מוכנים, שתי שאלות קצרות.
+            {t('cb.header.subtitle', 'נחזור אליך. כדי שנגיע מוכנים, שתי שאלות קצרות.')}
           </p>
 
           <p className="mt-2 text-[16px] font-medium leading-7 text-[#7c8189]">

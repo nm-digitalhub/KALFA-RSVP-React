@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { actionFormError } from '@/lib/action-result';
+import { getT } from '@/lib/i18n';
 
 import { submitIntakeAction } from './actions';
 
@@ -35,6 +36,7 @@ export function IntakeForm({
   token: string;
   locked: boolean;
 }) {
+  const t = getT('public');
   const action = submitIntakeAction.bind(null, token);
 
   const [state, formAction] = useActionState(action, {});
@@ -75,7 +77,7 @@ export function IntakeForm({
           htmlFor="cbi-name"
           className="text-[17px] font-bold leading-6 tracking-[-0.02em] text-[#171717]"
         >
-          איך לפנות אליך?
+          {t('cb.form.contact.label', 'איך לפנות אליך?')}
         </Label>
 
         <div className="group relative">
@@ -85,7 +87,7 @@ export function IntakeForm({
             required
             autoComplete="name"
             autoFocus
-            placeholder="לדוגמה: שם, טלפון או אימייל"
+            placeholder={t('cb.form.contact.placeholder', 'לדוגמה: שם, טלפון או אימייל')}
             className={[
               FIELD_CLS,
               'h-[58px]',
@@ -158,7 +160,7 @@ export function IntakeForm({
           </div>
 
           <span>
-            כבר נקבע לך מועד לשיחה, והוא לא ישתנה.
+            {t('cb.form.lockedNotice', 'כבר נקבע לך מועד לשיחה, והוא לא ישתנה.')}
           </span>
         </div>
       ) : (
@@ -195,7 +197,7 @@ export function IntakeForm({
             name="note"
             rows={4}
             maxLength={500}
-            placeholder="כתוב כאן את הפרטים..."
+            placeholder={t('cb.form.note.placeholder', 'כתוב כאן את הפרטים...')}
             className="
               min-h-[118px]
               resize-none
@@ -257,7 +259,7 @@ export function IntakeForm({
           className="size-[20px]"
         />
 
-        שליחה
+        {t('cb.form.submit', 'שליחה')}
       </SubmitButton>
 
       <div className="pt-1 text-center text-[13px] leading-6 text-[#777b82]">

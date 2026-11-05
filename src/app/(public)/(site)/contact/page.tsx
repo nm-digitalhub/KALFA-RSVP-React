@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { MailOpen, PhoneCall } from 'lucide-react';
 
 import { getUser } from '@/lib/auth/dal';
+import { getT } from '@/lib/i18n';
 import { CallbackForm, ContactForm } from './inquiry-forms';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
@@ -34,8 +35,9 @@ export default async function ContactPage({
 }: {
   searchParams: Promise<{ t?: string | string[] }>;
 }) {
-  const { t } = await searchParams;
-  const defaultTopic = t === 'support' ? 'תמיכה' : undefined;
+  const t = getT('public');
+  const { t: topicParam } = await searchParams;
+  const defaultTopic = topicParam === 'support' ? 'תמיכה' : undefined;
   const user = await getUser();
 
   return (
@@ -43,9 +45,9 @@ export default async function ContactPage({
       {/* Header: the shared SiteHeader from the (site) layout. */}
       <main className="mx-auto max-w-3xl space-y-10 px-4 py-10 sm:px-6 sm:py-12">
         <div>
-          <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">יצירת קשר ותמיכה</h1>
+          <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">{t('site.contact.title', 'יצירת קשר ותמיכה')}</h1>
           <p className="mt-2 text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
-            יש לכם שאלה, בקשה או תקלה? כתבו לנו או השאירו מספר — ונחזור אליכם.
+            {t('site.contact.subtitle', 'יש לכם שאלה, בקשה או תקלה? כתבו לנו או השאירו מספר — ונחזור אליכם.')}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
             לפני שפונים, כדאי לבדוק את{' '}
@@ -63,7 +65,7 @@ export default async function ContactPage({
         >
           <h2 id="contact-heading" className="mb-4 flex items-center gap-2 text-xl font-bold">
             <MailOpen className="size-5 text-primary" />
-            שליחת פנייה
+            {t('site.contact.contactSection.title', 'שליחת פנייה')}
           </h2>
           <ContactForm
             defaultTopic={defaultTopic}
@@ -79,7 +81,7 @@ export default async function ContactPage({
         >
           <h2 id="callback-heading" className="mb-4 flex items-center gap-2 text-xl font-bold">
             <PhoneCall className="size-5 text-primary" />
-            בקשת חזרה טלפונית
+            {t('site.contact.callbackSection.title', 'בקשת חזרה טלפונית')}
           </h2>
           <CallbackForm defaultTopic={defaultTopic} />
         </section>

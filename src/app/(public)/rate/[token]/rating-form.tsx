@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { FormError } from '@/components/forms';
 import { actionErrorMessage } from '@/lib/action-result';
+import { getT } from '@/lib/i18n';
 
 import { submitRatingAction } from './actions';
 
@@ -44,6 +45,7 @@ export function RatingForm({
   token: string;
   initialScore?: 1 | 2 | 3 | null;
 }) {
+  const t = getT('public');
   const [state, formAction, pending] = useActionState(
     submitRatingAction.bind(null, token),
     {},
@@ -60,8 +62,8 @@ export function RatingForm({
           <div className="flex size-11 items-center justify-center rounded-full bg-success/15 text-success motion-safe:animate-k-pop k-delay-150">
             ✓
           </div>
-          <h1 className="text-base font-semibold">תודה על הדירוג!</h1>
-          <p className="text-sm text-muted-foreground">זה עוזר לנו להשתפר לפעם הבאה</p>
+          <h1 className="text-base font-semibold">{t('rate.thanks.title', 'תודה על הדירוג!')}</h1>
+          <p className="text-sm text-muted-foreground">{t('rate.thanks.body', 'זה עוזר לנו להשתפר לפעם הבאה')}</p>
         </CardContent>
       </Card>
     );
@@ -71,12 +73,12 @@ export function RatingForm({
     <Card className="mx-auto w-full max-w-sm">
       <CardContent className="space-y-5">
         <div className="flex flex-col items-center gap-3 text-center">
-          <h1 className="text-base font-semibold">איך היה השירות שקיבלת?</h1>
+          <h1 className="text-base font-semibold">{t('rate.form.heading', 'איך היה השירות שקיבלת?')}</h1>
           {/* Native radios (one tab stop, arrow keys, form-level `required`),
               visually replaced by the icon chip; the chip draws the focus
               outline via `has-focus-visible:`. */}
           <fieldset form={formId}>
-            <legend className="sr-only">דירוג שירות</legend>
+            <legend className="sr-only">{t('rate.form.legend', 'דירוג שירות')}</legend>
             <div className="flex gap-2">
               {OPTIONS.map(({ score, Icon, label, tone }) => (
                 <label
@@ -110,12 +112,12 @@ export function RatingForm({
 
         <form id={formId} action={formAction} className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="comment">רוצה להוסיף הערה? (לא חובה)</Label>
-            <Textarea id="comment" name="comment" rows={3} maxLength={500} placeholder="ספר/י לנו קצת יותר…" />
+            <Label htmlFor="comment">{t('rate.form.comment.label', 'רוצה להוסיף הערה? (לא חובה)')}</Label>
+            <Textarea id="comment" name="comment" rows={3} maxLength={500} placeholder={t('rate.form.comment.placeholder', 'ספר/י לנו קצת יותר…')} />
           </div>
           <FormError message={actionErrorMessage(state)} />
           <Button type="submit" disabled={!selected || pending} className="w-full">
-            {pending ? 'שולח…' : 'שליחת הדירוג'}
+            {pending ? t('rate.form.submitting', 'שולח…') : t('rate.form.submit', 'שליחת הדירוג')}
           </Button>
         </form>
       </CardContent>

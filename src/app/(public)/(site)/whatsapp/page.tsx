@@ -5,6 +5,7 @@ import { ArrowLeft, ListChecks, MessageCircle, ShieldCheck } from 'lucide-react'
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
+import { getT } from '@/lib/i18n';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
 // Public page for the WhatsApp channel — the one channel term with measurable
@@ -73,9 +74,10 @@ const FAQ = [
 ];
 
 export default async function WhatsappRsvpPage() {
+  const t = getT('public');
   const user = await getUser();
   const startHref = user ? '/app/events/new' : '/auth/signup';
-  const startLabel = user ? 'אירוע חדש' : 'צרו אירוע חדש';
+  const startLabel = user ? t('site.whatsapp.cta.newEvent', 'אירוע חדש') : t('site.whatsapp.cta.createEvent', 'צרו אירוע חדש');
 
   const jsonLd = buildFaqJsonLd(FAQ.map((f) => ({ question: f.q, answer: f.a })));
 
@@ -93,14 +95,13 @@ export default async function WhatsappRsvpPage() {
           <div>
             <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">
               <MessageCircle className="size-4" aria-hidden />
-              ערוץ השליחה
+              {t('site.whatsapp.hero.eyebrow', 'ערוץ השליחה')}
             </span>
             <h1 className="mt-4 max-w-3xl text-balance text-title font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
-              אישורי הגעה בוואטסאפ
+              {t('site.whatsapp.hero.title', 'אישורי הגעה בוואטסאפ')}
             </h1>
             <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-200">
-              הזמנה אישית לכל מוזמן דרך הפלטפורמה העסקית הרשמית של וואטסאפ — לא קבוצה, לא רשימת תפוצה,
-              ולא שליחה ידנית מהטלפון שלכם.
+              {t('site.whatsapp.hero.subtitle', 'הזמנה אישית לכל מוזמן דרך הפלטפורמה העסקית הרשמית של וואטסאפ — לא קבוצה, לא רשימת תפוצה, ולא שליחה ידנית מהטלפון שלכם.')}
             </p>
             <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
               <Link
@@ -114,7 +115,7 @@ export default async function WhatsappRsvpPage() {
                 href="/guest-list-template"
                 className={siteCta({ variant: 'outline' })}
               >
-                תבנית רשימת מוזמנים
+                {t('site.whatsapp.cta.template', 'תבנית רשימת מוזמנים')}
               </Link>
             </div>
           </div>
@@ -123,7 +124,7 @@ export default async function WhatsappRsvpPage() {
         <section className="border-y border-border bg-[#f9fafb]">
           <div className="mx-auto max-w-6xl px-6 py-16">
             <h2 className="max-w-2xl text-balance text-display font-bold tracking-tight">
-              למה דווקא בערוץ הזה
+              {t('site.whatsapp.points.title', 'למה דווקא בערוץ הזה')}
             </h2>
             <div className="k-reveal-group mt-10 grid gap-4 sm:grid-cols-2">
               {POINTS.map(({ t, d }) => (
@@ -142,10 +143,10 @@ export default async function WhatsappRsvpPage() {
           <div className="k-reveal rounded-2xl bg-[#0b0f1a] p-8 text-white inset-ring-1 inset-ring-white/10 sm:p-10">
             <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-indigo-300">
               <ShieldCheck className="size-4" aria-hidden />
-              מה שחשוב לדעת מראש
+              {t('site.whatsapp.limits.eyebrow', 'מה שחשוב לדעת מראש')}
             </span>
             <h2 className="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">
-              וואטסאפ היא פלטפורמה עם כללים, ואנחנו עובדים לפיהם
+              {t('site.whatsapp.limits.title', 'וואטסאפ היא פלטפורמה עם כללים, ואנחנו עובדים לפיהם')}
             </h2>
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
               {[
@@ -169,10 +170,10 @@ export default async function WhatsappRsvpPage() {
           <div className="mx-auto max-w-3xl px-6 py-16">
             <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
               <ListChecks className="size-4" aria-hidden />
-              שאלות נפוצות
+              {t('site.whatsapp.faq.eyebrow', 'שאלות נפוצות')}
             </span>
             <h2 className="mt-3 text-balance text-display font-bold tracking-tight">
-              שליחה בוואטסאפ — שאלות שחוזרות
+              {t('site.whatsapp.faq.title', 'שליחה בוואטסאפ — שאלות שחוזרות')}
             </h2>
             <div className="k-reveal-group mt-8 space-y-8">
               {FAQ.map((f) => (

@@ -6,6 +6,7 @@ import { TiltCard } from '@/components/motion/tilt-card';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { getCompanyLegal, toE164Israel } from '@/lib/data/company';
+import { getT } from '@/lib/i18n';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 import { getAppOrigin } from '@/lib/url';
 import {
@@ -152,13 +153,14 @@ function Eyebrow({
 }
 
 export default async function HomePage() {
+  const t = getT('public');
   // Recognise a signed-in visitor (verified server-side; null when anonymous)
   // so the landing points returning users to their dashboard, not to sign-up.
   // (getUser is React-cache()d — the (site) layout's SiteHeader already made
   // this call for the same request.)
   const user = await getUser();
   const startHref = user ? '/app' : '/auth/signup';
-  const startLabel = user ? 'לאזור האישי' : 'צרו אירוע חדש';
+  const startLabel = user ? t('site.home.cta.dashboard', 'לאזור האישי') : t('site.home.cta.createEvent', 'צרו אירוע חדש');
 
   // Structured data (Organization / WebSite / SoftwareApplication) for search
   // and AI answer engines. Company details come from the admin-managed
@@ -285,14 +287,14 @@ export default async function HomePage() {
         <section className="relative isolate mx-auto max-w-6xl px-6 py-10 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_end] before:from-primary/10 before:via-transparent before:to-transparent motion-safe:pointer-fine-hover:before:animate-k-glow-drift sm:py-20">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <ParallaxLayer depth={-16}>
-              <Eyebrow icon={Sparkles} className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">ניהול חכם לאירוע מושלם</Eyebrow>
+              <Eyebrow icon={Sparkles} className="transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">{t('site.home.hero.eyebrow', 'ניהול חכם לאירוע מושלם')}</Eyebrow>
               <h1 className="mt-4 text-balance text-hero font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
                 אישורי הגעה,
                 <br />
                 <span className="text-primary">במקום אחד.</span>
               </h1>
               <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-200">
-                שלחו הזמנות, עקבו אחר התגובות בזמן אמת ונהלו את רשימת המוזמנים והמלווים — בלי גיליונות, בלי הודעות מפוזרות, בלי בלגן.
+                {t('site.home.hero.subtitle', 'שלחו הזמנות, עקבו אחר התגובות בזמן אמת ונהלו את רשימת המוזמנים והמלווים — בלי גיליונות, בלי הודעות מפוזרות, בלי בלגן.')}
               </p>
               <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
                 <Link href={startHref} className={siteCta()}>
@@ -300,12 +302,12 @@ export default async function HomePage() {
                   <ArrowLeft className="size-5" aria-hidden />
                 </Link>
                 <a href="#how" className={siteCta({ variant: 'outline' })}>
-                  איך זה עובד
+                  {t('site.home.cta.howItWorks', 'איך זה עובד')}
                 </a>
               </div>
               <div className="mt-6 flex flex-wrap items-center gap-5 text-sm text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-400">
-                <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" aria-hidden /> פרטי ומאובטח</span>
-                <span className="inline-flex items-center gap-2"><Clock className="size-4" aria-hidden /> מוכן תוך דקות</span>
+                <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4" aria-hidden /> {t('site.home.hero.private', 'פרטי ומאובטח')}</span>
+                <span className="inline-flex items-center gap-2"><Clock className="size-4" aria-hidden /> {t('site.home.hero.readyInMinutes', 'מוכן תוך דקות')}</span>
               </div>
             </ParallaxLayer>
 
@@ -349,12 +351,12 @@ export default async function HomePage() {
               >
             <div
               role="img"
-              aria-label="תצוגה לדוגמה של לוח ניהול אירוע"
+              aria-label={t('site.home.preview.ariaLabel', 'תצוגה לדוגמה של לוח ניהול אירוע')}
               className="@container/preview overflow-hidden rounded-2xl border border-border bg-background shadow-xl"
             >
               <div className="flex flex-col gap-2 border-b border-border px-4 py-3 @[20rem]/preview:flex-row @[20rem]/preview:items-center @[20rem]/preview:justify-between">
                 <div>
-                  <div className="font-bold">חתונה · דנה ויואב</div>
+                  <div className="font-bold">{t('site.home.preview.eventName', 'חתונה · דנה ויואב')}</div>
                   <div className="text-xs text-muted-foreground">14.06.2026 · אולמי השרון</div>
                 </div>
                 <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">248 אישרו</span>
@@ -374,7 +376,7 @@ export default async function HomePage() {
                 </div>
                 <div>
                   <div className="mb-2 flex justify-between text-xs font-medium text-muted-foreground">
-                    <span>תמונת מצב</span>
+                    <span>{t('site.home.preview.snapshot', 'תמונת מצב')}</span>
                     <span>340 מוזמנים</span>
                   </div>
                   <div className="flex h-3 overflow-hidden rounded-full bg-border">
@@ -416,12 +418,12 @@ export default async function HomePage() {
         <section className="mx-auto max-w-6xl px-6 py-16">
           <div className="grid items-center gap-10 lg:grid-cols-2">
             <div>
-              <Eyebrow icon={TriangleAlert}>המצב היום</Eyebrow>
+              <Eyebrow icon={TriangleAlert}>{t('site.home.problem.eyebrow', 'המצב היום')}</Eyebrow>
               <h2 className="mt-4 text-balance text-display font-bold tracking-tight">
-                ניהול אירוע לא צריך להרגיש כמו עבודה במשרה מלאה
+                {t('site.home.problem.title', 'ניהול אירוע לא צריך להרגיש כמו עבודה במשרה מלאה')}
               </h2>
               <p className="mt-3 text-pretty text-lg text-muted-foreground">
-                בעלי אירועים נתקלים שוב ושוב באותן בעיות — והן מתנקזות ללחץ מיותר.
+                {t('site.home.problem.subtitle', 'בעלי אירועים נתקלים שוב ושוב באותן בעיות — והן מתנקזות ללחץ מיותר.')}
               </p>
               <div className="k-reveal-group mt-6 grid gap-4">
                 {PROBLEMS.map(({ icon: Icon, t, d }) => (
@@ -439,11 +441,11 @@ export default async function HomePage() {
             </div>
             <div className="k-reveal rounded-2xl bg-[#0b0f1a] p-7 text-white inset-ring-1 inset-ring-white/10">
               <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-indigo-300">
-                <CheckCheck className="size-4" aria-hidden /> הפתרון
+                <CheckCheck className="size-4" aria-hidden /> {t('site.home.solution.eyebrow', 'הפתרון')}
               </span>
-              <h3 className="mt-3 text-balance text-2xl font-extrabold tracking-tight">KALFA מרכזת את הכול במקום אחד</h3>
+              <h3 className="mt-3 text-balance text-2xl font-extrabold tracking-tight">{t('site.home.solution.title', 'KALFA מרכזת את הכול במקום אחד')}</h3>
               <p className="mt-2 text-pretty leading-relaxed text-white/70">
-                אורחים, הזמנות, אישורי הגעה, תזכורות, סטטוסים ועדכונים — מערכת אחת מסודרת שנותנת לכם שליטה מלאה.
+                {t('site.home.solution.subtitle', 'אורחים, הזמנות, אישורי הגעה, תזכורות, סטטוסים ועדכונים — מערכת אחת מסודרת שנותנת לכם שליטה מלאה.')}
               </p>
               <div className="mt-6 grid gap-2.5">
                 {SOLUTIONS.map((s) => (
@@ -464,9 +466,9 @@ export default async function HomePage() {
         <section id="features" className="scroll-mt-16 border-y border-border bg-[#f9fafb]">
           <div className="mx-auto max-w-6xl px-6 py-16">
             <div className="k-reveal mx-auto mb-11 max-w-2xl text-center">
-              <Eyebrow icon={Layers}>יכולות מרכזיות</Eyebrow>
-              <h2 className="mt-3 text-balance text-display font-bold tracking-tight">כל מה שצריך כדי לנהל אישורי הגעה</h2>
-              <p className="mt-2.5 text-pretty text-lg text-muted-foreground">שבע יכולות שעובדות יחד — מרשימת האורחים ועד הדוח הסופי.</p>
+              <Eyebrow icon={Layers}>{t('site.home.features.eyebrow', 'יכולות מרכזיות')}</Eyebrow>
+              <h2 className="mt-3 text-balance text-display font-bold tracking-tight">{t('site.home.features.title', 'כל מה שצריך כדי לנהל אישורי הגעה')}</h2>
+              <p className="mt-2.5 text-pretty text-lg text-muted-foreground">{t('site.home.features.subtitle', 'שבע יכולות שעובדות יחד — מרשימת האורחים ועד הדוח הסופי.')}</p>
             </div>
             {/* `k-reveal-3d` (= k-reveal-group + a 6° stand-up on touch devices)
                 and `k-press` (touch press-in on the card) — motion spec §10. */}
@@ -490,12 +492,12 @@ export default async function HomePage() {
                 </TiltCard>
               ))}
               <div className="flex flex-col justify-center gap-4 rounded-xl border border-indigo-100 bg-indigo-50 p-6">
-                <h3 className="text-balance text-lg font-bold text-indigo-700">הכול מחובר. שום דבר לא הולך לאיבוד.</h3>
+                <h3 className="text-balance text-lg font-bold text-indigo-700">{t('site.home.features.closing', 'הכול מחובר. שום דבר לא הולך לאיבוד.')}</h3>
                 <Link
                   href={user ? '/app/events/new' : '/auth/signup'}
                   className={siteCta({ size: 'md', className: 'w-fit' })}
                 >
-                  {user ? 'אירוע חדש' : 'התחילו עכשיו'}
+                  {user ? t('site.home.cta.newEvent', 'אירוע חדש') : t('site.home.cta.startNow', 'התחילו עכשיו')}
                   <ArrowLeft className="size-4" aria-hidden />
                 </Link>
               </div>
@@ -506,9 +508,9 @@ export default async function HomePage() {
         {/* How it works */}
         <section id="how" className="mx-auto max-w-6xl scroll-mt-16 px-6 py-16">
           <div className="k-reveal mx-auto mb-12 max-w-2xl text-center">
-            <Eyebrow icon={Route}>איך זה עובד</Eyebrow>
-            <h2 className="mt-3 text-balance text-display font-bold tracking-tight">שישה צעדים פשוטים, מהרעיון ועד האירוע</h2>
-            <p className="mt-2.5 text-pretty text-lg text-muted-foreground">בלי הדרכות מסובכות. בונים אירוע ומתחילים לעבוד.</p>
+            <Eyebrow icon={Route}>{t('site.home.how.eyebrow', 'איך זה עובד')}</Eyebrow>
+            <h2 className="mt-3 text-balance text-display font-bold tracking-tight">{t('site.home.how.title', 'שישה צעדים פשוטים, מהרעיון ועד האירוע')}</h2>
+            <p className="mt-2.5 text-pretty text-lg text-muted-foreground">{t('site.home.how.subtitle', 'בלי הדרכות מסובכות. בונים אירוע ומתחילים לעבוד.')}</p>
           </div>
           <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {STEPS.map(({ n, icon: Icon, t, d }) => (
@@ -529,11 +531,11 @@ export default async function HomePage() {
           <div className="mx-auto max-w-6xl px-6 py-16">
             <div className="k-reveal mx-auto mb-11 max-w-2xl text-center">
               <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-indigo-300">
-                <Lock className="size-4" aria-hidden /> אמון
+                <Lock className="size-4" aria-hidden /> {t('site.home.trust.eyebrow', 'אמון')}
               </span>
-              <h2 className="mt-3 text-balance text-display font-bold tracking-tight text-white">נבנתה כדי להפחית לחץ — לא להוסיף אותו</h2>
+              <h2 className="mt-3 text-balance text-display font-bold tracking-tight text-white">{t('site.home.trust.title', 'נבנתה כדי להפחית לחץ — לא להוסיף אותו')}</h2>
               <p className="mt-2.5 text-pretty text-lg text-white/70">
-                המטרה פשוטה: למנוע בלבול, לחסוך זמן ולתת למארגן האירוע שליטה מלאה ושקטה בתהליך.
+                {t('site.home.trust.subtitle', 'המטרה פשוטה: למנוע בלבול, לחסוך זמן ולתת למארגן האירוע שליטה מלאה ושקטה בתהליך.')}
               </p>
             </div>
             <div className="k-reveal-3d grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -552,10 +554,10 @@ export default async function HomePage() {
         <section className="mx-auto max-w-6xl px-6 py-16">
           <div className="grid items-center gap-10 lg:grid-cols-[0.8fr_1.2fr]">
             <div>
-              <Eyebrow icon={UsersRound}>למי זה מתאים</Eyebrow>
-              <h2 className="mt-4 text-balance text-display font-bold tracking-tight">אירוע אחד או מאות — אותה שליטה</h2>
+              <Eyebrow icon={UsersRound}>{t('site.home.audiences.eyebrow', 'למי זה מתאים')}</Eyebrow>
+              <h2 className="mt-4 text-balance text-display font-bold tracking-tight">{t('site.home.audiences.title', 'אירוע אחד או מאות — אותה שליטה')}</h2>
               <p className="mt-3 text-pretty text-lg text-muted-foreground">
-                מאירוע משפחתי אינטימי ועד כנס חברה גדול — KALFA מתאימה את עצמה לגודל ולסגנון שלכם.
+                {t('site.home.audiences.subtitle', 'מאירוע משפחתי אינטימי ועד כנס חברה גדול — KALFA מתאימה את עצמה לגודל ולסגנון שלכם.')}
               </p>
             </div>
             {/* Tiles that are links get the shared focus outline and
@@ -602,7 +604,7 @@ export default async function HomePage() {
               אירוע מסודר יותר.
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-pretty text-primary-foreground/90">
-              התחילו לנהל את אישורי ההגעה לאירוע שלכם עוד היום — מסודר, ברור ובמקום אחד.
+              {t('site.home.closing.subtitle', 'התחילו לנהל את אישורי ההגעה לאירוע שלכם עוד היום — מסודר, ברור ובמקום אחד.')}
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               <Link href={startHref} className={siteCta({ variant: 'dark', size: 'xl' })}>
@@ -613,7 +615,7 @@ export default async function HomePage() {
                 href={user ? '/app/events/new' : '/auth/login'}
                 className={siteCta({ variant: 'onPrimary', size: 'xl' })}
               >
-                {user ? 'אירוע חדש' : 'כניסה לחשבון'}
+                {user ? t('site.home.cta.newEvent', 'אירוע חדש') : t('site.home.cta.login', 'כניסה לחשבון')}
               </Link>
             </div>
           </div>

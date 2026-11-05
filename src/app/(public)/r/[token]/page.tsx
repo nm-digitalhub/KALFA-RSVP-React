@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 
 import { RSVP_READ_RATE } from '@/lib/constants';
 import { getEventAttendeesPublic, getRsvpByToken, looksLikeRsvpToken } from '@/lib/data/rsvp';
+import { getT } from '@/lib/i18n';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
@@ -27,6 +28,7 @@ export default async function RsvpPage({
 }: {
   params: Promise<{ token: string }>;
 }) {
+  const t = getT('public');
   const { token } = await params;
 
   const requestHeaders = await headers();
@@ -42,7 +44,7 @@ export default async function RsvpPage({
           role="alert"
           className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
         >
-          נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.
+          {t('r.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.')}
         </p>
       </GuestShell>
     );
@@ -58,7 +60,7 @@ export default async function RsvpPage({
           role="alert"
           className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
         >
-          קישור אישור ההגעה אינו תקף, פג תוקפו או בוטל.
+          {t('r.invalidLink', 'קישור אישור ההגעה אינו תקף, פג תוקפו או בוטל.')}
         </p>
       </GuestShell>
     );

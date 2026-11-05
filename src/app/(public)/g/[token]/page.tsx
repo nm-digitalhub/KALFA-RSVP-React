@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
 import { getGiftByToken } from '@/lib/data/gift';
+import { getT } from '@/lib/i18n';
 import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
@@ -30,6 +31,7 @@ export default async function GiftPage({
 }: {
   params: Promise<{ token: string }>;
 }) {
+  const t = getT('public');
   const { token } = await params;
 
   const requestHeaders = await headers();
@@ -46,7 +48,7 @@ export default async function GiftPage({
           role="alert"
           className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
         >
-          נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.
+          {t('g.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.')}
         </p>
       </GuestShell>
     );
@@ -62,7 +64,7 @@ export default async function GiftPage({
           role="alert"
           className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
         >
-          הקישור אינו תקף או שאינו זמין עוד.
+          {t('g.invalidLink', 'הקישור אינו תקף או שאינו זמין עוד.')}
         </p>
       </GuestShell>
     );

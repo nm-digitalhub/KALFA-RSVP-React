@@ -12,6 +12,7 @@ import {
 import { EVENT_THEME } from '@/lib/data/event-theme';
 import { formatEventDateLine, GIFT_BRAND } from '@/lib/data/event-display';
 import type { GiftView } from '@/lib/data/gift';
+import { getT } from '@/lib/i18n';
 
 // Public gift landing page — an event-type-adaptive, celebratory page shown when
 // a guest taps the WhatsApp gift/event-day button, before the payment redirect.
@@ -38,6 +39,7 @@ export function GiftLanding({
   token: string;
   inviteImageUrl: string | null;
 }) {
+  const t = getT('public');
   const eventType = view.event_type;
   const heading = eventHeadingFor(eventType, view.celebrants, view.name);
   const AccentIcon = EVENT_TYPE_ICON[eventType];
@@ -64,7 +66,7 @@ export function GiftLanding({
           href={inviteImageUrl}
           target="_blank"
           rel="noreferrer"
-          aria-label="פתיחת ההזמנה בגודל מלא"
+          aria-label={t('g.invite.openFull', 'פתיחת ההזמנה בגודל מלא')}
           // The image box is reserved by width/height; while the signed
           // storage image loads (and in any letterbox around it) the box shows
           // the event-type wash instead of a blank white block. No blur source
@@ -73,7 +75,7 @@ export function GiftLanding({
         >
           <Image
             src={inviteImageUrl}
-            alt="הזמנת האירוע"
+            alt={t('g.invite.imageAlt', 'הזמנת האירוע')}
             width={512}
             height={640}
             priority
@@ -144,7 +146,7 @@ export function GiftLanding({
             rel="noopener noreferrer"
             className="inline-flex min-h-11 items-center gap-1 rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
-            <Navigation aria-hidden className="size-4" /> ניווט עם Waze
+            <Navigation aria-hidden className="size-4" /> {t('g.landing.wazeLink', 'ניווט עם Waze')}
           </a>
         </p>
       ) : null}
@@ -183,8 +185,8 @@ export function GiftLanding({
         autoFlipAwaitsFrontImage={inviteImageUrl !== null}
         front={front}
         back={back}
-        frontToggleLabel="ניווט ויומן"
-        backToggleLabel="חזרה להזמנה"
+        frontToggleLabel={t('g.landing.toggle.front', 'ניווט ויומן')}
+        backToggleLabel={t('g.landing.toggle.back', 'חזרה להזמנה')}
       />
 
       {/* Gift CTA — OUTSIDE the card on purpose: always visible, never inert,
@@ -207,7 +209,7 @@ export function GiftLanding({
           ) : (
             <Gift aria-hidden className="size-5" />
           )}
-          {brand?.label ?? 'שליחת מתנה'}
+          {brand?.label ?? t('g.landing.cta', 'שליחת מתנה')}
         </a>
       </div>
     </>

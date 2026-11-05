@@ -5,6 +5,7 @@ import { ArrowLeft, Download, ListChecks, TriangleAlert } from 'lucide-react';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
+import { getT } from '@/lib/i18n';
 import { buildBreadcrumbJsonLd, jsonLdScript } from '@/lib/seo/breadcrumb-json-ld';
 import { getAppOrigin } from '@/lib/url';
 import {
@@ -112,9 +113,10 @@ const FAQ = [
 ];
 
 export default async function GuestListTemplatePage() {
+  const t = getT('public');
   const user = await getUser();
   const startHref = user ? '/app/events/new' : '/auth/signup';
-  const startLabel = user ? 'אירוע חדש' : 'צרו אירוע חדש';
+  const startLabel = user ? t('site.guestListTemplate.cta.newEvent', 'אירוע חדש') : t('site.guestListTemplate.cta.createEvent', 'צרו אירוע חדש');
 
   const jsonLd = buildFaqJsonLd(FAQ.map((f) => ({ question: f.q, answer: f.a })));
   const breadcrumb = buildBreadcrumbJsonLd(await getAppOrigin(), 'תבנית רשימת מוזמנים');
@@ -137,14 +139,13 @@ export default async function GuestListTemplatePage() {
           <div>
             <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">
               <Download className="size-4" aria-hidden />
-              הורדה חינם
+              {t('site.guestListTemplate.hero.eyebrow', 'הורדה חינם')}
             </span>
             <h1 className="mt-4 max-w-3xl text-balance text-title font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
-              תבנית רשימת מוזמנים
+              {t('site.guestListTemplate.hero.title', 'תבנית רשימת מוזמנים')}
             </h1>
             <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-200">
-              קובץ מוכן עם העמודות הנכונות, שנפתח באקסל ובגוגל שיטס. אפשר להתחיל למלא אותו מיד — ואם
-              בהמשך תרצו לנהל את האירוע ב‑KALFA, זו אותה תבנית שהמערכת מייבאת.
+              {t('site.guestListTemplate.hero.subtitle', 'קובץ מוכן עם העמודות הנכונות, שנפתח באקסל ובגוגל שיטס. אפשר להתחיל למלא אותו מיד — ואם בהמשך תרצו לנהל את האירוע ב‑KALFA, זו אותה תבנית שהמערכת מייבאת.')}
             </p>
             <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
               {/* A plain link, not a Client Component: the file is a real GET
@@ -155,7 +156,7 @@ export default async function GuestListTemplatePage() {
                 className={siteCta()}
               >
                 <Download className="size-5" aria-hidden />
-                הורדת התבנית
+                {t('site.guestListTemplate.cta.download', 'הורדת התבנית')}
               </a>
               <Link
                 href={startHref}
@@ -171,7 +172,7 @@ export default async function GuestListTemplatePage() {
         {/* The format, rendered from the template module itself */}
         <section className="border-y border-border bg-[#f9fafb]">
           <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="text-balance text-display font-bold tracking-tight">מה יש בקובץ</h2>
+            <h2 className="text-balance text-display font-bold tracking-tight">{t('site.guestListTemplate.file.title', 'מה יש בקובץ')}</h2>
             <p className="mt-3 max-w-prose text-lg text-muted-foreground">
               ארבע עמודות, ושורה אחת לכל <strong className="font-semibold text-foreground">הזמנה</strong> —
               לא לכל אדם.
@@ -180,7 +181,7 @@ export default async function GuestListTemplatePage() {
                 never scrolls horizontally on a phone. */}
             <div className="mt-8 overflow-x-auto rounded-xl border border-border bg-background">
               <table className="w-full min-w-[32rem] border-collapse text-sm">
-                <caption className="sr-only">מבנה תבנית רשימת המוזמנים</caption>
+                <caption className="sr-only">{t('site.guestListTemplate.file.tableCaption', 'מבנה תבנית רשימת המוזמנים')}</caption>
                 <thead>
                   <tr className="border-b border-border bg-[#f9fafb]">
                     {TEMPLATE_HEADER.map((h) => (
@@ -211,8 +212,7 @@ export default async function GuestListTemplatePage() {
               </table>
             </div>
             <p className="mt-4 max-w-prose text-sm text-muted-foreground">
-              שורת &quot;סבתא רחל&quot; בלי טלפון היא דוגמה מכוונת: אפשר לנהל גם מוזמן שאין לו מספר,
-              הוא פשוט לא יקבל הודעה אוטומטית.
+              {t('site.guestListTemplate.file.sampleNote', 'שורת "סבתא רחל" בלי טלפון היא דוגמה מכוונת: אפשר לנהל גם מוזמן שאין לו מספר, הוא פשוט לא יקבל הודעה אוטומטית.')}
             </p>
           </div>
         </section>
@@ -221,10 +221,10 @@ export default async function GuestListTemplatePage() {
         <section className="mx-auto max-w-6xl px-6 py-16">
           <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
             <TriangleAlert className="size-4" aria-hidden />
-            שווה לדעת
+            {t('site.guestListTemplate.mistakes.eyebrow', 'שווה לדעת')}
           </span>
           <h2 className="mt-3 text-balance text-display font-bold tracking-tight">
-            ארבע טעויות שחוזרות כמעט בכל רשימה בגיליון
+            {t('site.guestListTemplate.mistakes.title', 'ארבע טעויות שחוזרות כמעט בכל רשימה בגיליון')}
           </h2>
           <div className="k-reveal-group mt-10 grid gap-4 sm:grid-cols-2">
             {MISTAKES.map(({ t, d }) => (
@@ -240,7 +240,7 @@ export default async function GuestListTemplatePage() {
         <section className="border-t border-border">
           <div className="mx-auto max-w-3xl px-6 py-16">
             <h2 className="text-balance text-display font-bold tracking-tight">
-              איך בונים רשימת מוזמנים לחתונה — חמישה צעדים
+              {t('site.guestListTemplate.steps.title', 'איך בונים רשימת מוזמנים לחתונה — חמישה צעדים')}
             </h2>
             <ol className="mt-8 grid gap-4">
               {STEPS.map(({ t, d }, i) => (
@@ -265,9 +265,9 @@ export default async function GuestListTemplatePage() {
           <div className="mx-auto max-w-3xl px-6 py-16">
             <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
               <ListChecks className="size-4" aria-hidden />
-              שאלות נפוצות
+              {t('site.guestListTemplate.faq.eyebrow', 'שאלות נפוצות')}
             </span>
-            <h2 className="mt-3 text-balance text-display font-bold tracking-tight">על התבנית</h2>
+            <h2 className="mt-3 text-balance text-display font-bold tracking-tight">{t('site.guestListTemplate.faq.title', 'על התבנית')}</h2>
             <div className="k-reveal-group mt-8 space-y-8">
               {FAQ.map((f) => (
                 <div key={f.q} className="border-b border-border pb-6 last:border-b-0 last:pb-0">
@@ -284,10 +284,10 @@ export default async function GuestListTemplatePage() {
         <section className="mx-auto max-w-6xl px-6 py-16">
           <div className="k-reveal k-sheen relative isolate overflow-hidden rounded-3xl bg-primary px-8 py-14 text-center before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_start] before:from-white/15 before:to-transparent">
             <h2 className="text-balance text-display font-extrabold tracking-tight text-primary-foreground">
-              הרשימה מוכנה. מה עם התשובות?
+              {t('site.guestListTemplate.closing.title', 'הרשימה מוכנה. מה עם התשובות?')}
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-pretty text-primary-foreground/90">
-              ייבוא הקובץ הזה, הזמנה אישית לכל שורה, ותזכורת אוטומטית רק למי שטרם השיב.
+              {t('site.guestListTemplate.closing.subtitle', 'ייבוא הקובץ הזה, הזמנה אישית לכל שורה, ותזכורת אוטומטית רק למי שטרם השיב.')}
             </p>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               <Link

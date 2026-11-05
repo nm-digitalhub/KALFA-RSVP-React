@@ -225,3 +225,5 @@ node_modules/
 /playwright/.auth/
 # Snapshots and console logs of the playwright-test MCP browser (the Playwright agents)
 /.playwright-mcp/
+
+/.env.locize

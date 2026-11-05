@@ -18,6 +18,7 @@ import {
 import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 import type { RsvpAttendee, RsvpView } from '@/lib/data/rsvp';
 import { actionFormError, type ActionFormResult } from '@/lib/action-result';
+import { getT } from '@/lib/i18n';
 
 import { submitRsvpAction } from './actions';
 
@@ -123,6 +124,7 @@ export function RsvpForm({
   // bundle.
   calendar?: React.ReactNode;
 }) {
+  const t = getT('public');
   const { guest, event, questions, can_respond: canRespond } = view;
   const eventType = asEventType(event.event_type);
   const heading = eventHeadingFor(eventType, event.celebrants, event.name);
@@ -164,12 +166,12 @@ export function RsvpForm({
           href={inviteImageUrl}
           target="_blank"
           rel="noreferrer"
-          aria-label="פתיחת ההזמנה בגודל מלא"
+          aria-label={t('r.invite.openFull', 'פתיחת ההזמנה בגודל מלא')}
           className="block overflow-hidden rounded-2xl border border-border shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3"
         >
           <Image
             src={inviteImageUrl}
-            alt="הזמנת האירוע"
+            alt={t('r.invite.imageAlt', 'הזמנת האירוע')}
             width={448}
             height={560}
             priority
@@ -179,7 +181,7 @@ export function RsvpForm({
       ) : null}
 
       <header className="space-y-1 text-center transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:opacity-0 motion-safe:starting:translate-y-3 k-delay-100">
-        <p className="text-sm text-muted-foreground">שלום {guest.full_name},</p>
+        <p className="text-sm text-muted-foreground">{t('r.header.greeting', 'שלום {{name}},', { name: guest.full_name })}</p>
         <h1 className="flex items-center justify-center gap-2 text-balance text-2xl font-bold">
           <AccentIcon aria-hidden className="size-6 shrink-0 text-primary" />
           {heading.title}
@@ -203,7 +205,7 @@ export function RsvpForm({
               className="inline-flex min-h-11 items-center gap-1 rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               <Navigation aria-hidden className="size-4" />
-              ניווט עם Waze
+              {t('r.header.wazeLink', 'ניווט עם Waze')}
             </a>
           </p>
         ) : null}
@@ -214,7 +216,7 @@ export function RsvpForm({
           role="status"
           className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
         >
-          המועד לאישור הגעה חלף. לפרטים נא לפנות למארגן/ת האירוע.
+          {t('r.closed.notice', 'המועד לאישור הגעה חלף. לפרטים נא לפנות למארגן/ת האירוע.')}
         </p>
       ) : (
         // `@container`: the form lives in the md GuestShell (max 28rem), but on
@@ -223,7 +225,7 @@ export function RsvpForm({
         // never wraps mid-word inside a 90px button.
         <form action={formAction} className="@container space-y-5">
           <fieldset>
-            <legend className="mb-2 text-sm font-medium">האם תגיעו?</legend>
+            <legend className="mb-2 text-sm font-medium">{t('r.form.attendance.legend', 'האם תגיעו?')}</legend>
             {/* Native radios (one tab stop, arrow keys, `required`), visually
                 replaced by the chip; the chip draws the focus outline via
                 `has-focus-visible:` — same pattern as CallbackTimePreference. */}
@@ -258,7 +260,7 @@ export function RsvpForm({
             <div className="space-y-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2 duration-300 ease-k-out">
               <div className="grid grid-cols-2 gap-4">
                 <Stepper
-                  label="מבוגרים"
+                  label={t('r.form.adults', 'מבוגרים')}
                   name="adults"
                   value={adults}
                   max={hardCap - kids}
@@ -266,7 +268,7 @@ export function RsvpForm({
                   describedBy={adultsErrors?.length ? 'adults-err' : undefined}
                 />
                 <Stepper
-                  label="ילדים"
+                  label={t('r.form.kids', 'ילדים')}
                   name="kids"
                   value={kids}
                   max={hardCap - adults}
@@ -282,7 +284,7 @@ export function RsvpForm({
               {event.show_meal_pref !== false ? (
                 <div>
                   <label htmlFor="meal_pref" className="mb-1 block text-sm font-medium">
-                    העדפת תפריט (לא חובה)
+                    {t('r.form.mealPref.label', 'העדפת תפריט (לא חובה)')}
                   </label>
                   <input
                     id="meal_pref"
@@ -305,7 +307,7 @@ export function RsvpForm({
                   defaultChecked={guest.show_in_guest_list}
                   className="mt-px size-5 shrink-0 rounded border-input accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 />
-                להופיע ברשימת &quot;מי מגיע&quot; — שם פרטי בלבד
+                {t('r.form.showInGuestList.label', 'להופיע ברשימת "מי מגיע" — שם פרטי בלבד')}
               </label>
             </div>
           ) : null}
@@ -332,7 +334,7 @@ export function RsvpForm({
                         required={question.required}
                         className={FIELD_CLASS}
                       >
-                        <option value="">בחר/י…</option>
+                        <option value="">{t('r.form.question.selectPlaceholder', 'בחר/י…')}</option>
                         {options.map((opt) => (
                           <option key={opt} value={opt}>
                             {opt}
@@ -358,7 +360,7 @@ export function RsvpForm({
 
           <div>
             <label htmlFor="note" className="mb-1 block text-sm font-medium">
-              הערה (לא חובה)
+              {t('r.form.note.label', 'הערה (לא חובה)')}
             </label>
             <textarea
               id="note"
@@ -394,19 +396,19 @@ export function RsvpForm({
                   </p>
                 ) : null}
                 <p className="mt-1 text-xs text-muted-foreground">
-                  אפשר לעדכן את התשובה בכל רגע מאותו קישור.
+                  {t('r.form.success.updateHint', 'אפשר לעדכן את התשובה בכל רגע מאותו קישור.')}
                 </p>
                 {attending && calendar ? <div className="mt-4">{calendar}</div> : null}
               </div>
             ) : null}
           </div>
-          <SubmitButton size="lg">שליחת אישור</SubmitButton>
+          <SubmitButton size="lg">{t('r.form.submit', 'שליחת אישור')}</SubmitButton>
         </form>
       )}
 
       {attendees && attendees.length > 0 ? (
         <div className="rounded-lg border border-border bg-card px-4 py-4">
-          <p className="mb-2 text-sm font-medium">מי עוד מגיע</p>
+          <p className="mb-2 text-sm font-medium">{t('r.attendees.title', 'מי עוד מגיע')}</p>
           <p className="flex flex-wrap gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
             {attendees.map((a, i) => (
               <span key={`${a.first_name}-${i}`}>
@@ -421,7 +423,7 @@ export function RsvpForm({
       {event.gift_link_token ? (
         <div className="rounded-lg border border-border bg-card px-4 py-4 text-center">
           <p className="mb-2 text-sm text-muted-foreground">
-            רוצים לשמח את בעלי השמחה?
+            {t('r.gift.prompt', 'רוצים לשמח את בעלי השמחה?')}
           </p>
           <a
             href={`/g/${event.gift_link_token}`}
@@ -441,7 +443,7 @@ export function RsvpForm({
             ) : (
               <Gift aria-hidden className="size-5" />
             )}
-            {GIFT_BRAND[event.gift_provider ?? '']?.label ?? 'שליחת מתנה'}
+            {GIFT_BRAND[event.gift_provider ?? '']?.label ?? t('r.gift.cta', 'שליחת מתנה')}
           </a>
         </div>
       ) : null}

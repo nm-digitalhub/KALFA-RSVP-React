@@ -201,3 +201,9 @@ Do not suppress failures using `@ts-ignore`, `@ts-nocheck`, broad ESLint disable
 <!-- AICODE:START -->
 @.claude/aicode-instructions.md
 <!-- AICODE:END -->
+
+## Internationalization
+
+This project uses i18next. Locale files live in `src/locales/{{language}}/{{namespace}}.json`; the source language is `he`. Run `npx i18next-cli extract` after adding or changing `t()` calls and `npx i18next-cli status` to see what is still untranslated.
+
+Translations are managed in Locize (project `f50fa8fe-abd4-4f62-97b9-8ae406dbb223`): `npx i18next-cli locize-sync` pushes new keys (add `--auto-translate true` for AI pre-translation) and `npx i18next-cli locize-download` pulls the translations back. Do not edit target-language files by hand; they are overwritten on download. The Locize API key belongs in the `LOCIZE_API_KEY` environment variable, never in client-side code.

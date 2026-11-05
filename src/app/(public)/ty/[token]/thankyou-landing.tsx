@@ -6,6 +6,7 @@ import { EVENT_TYPE_ICON, eventHeadingFor } from '@/lib/data/celebrant-display';
 import { EVENT_THEME, EVENT_THANKYOU_GREETING } from '@/lib/data/event-theme';
 import { formatEventDateLine } from '@/lib/data/event-display';
 import type { ThankyouView } from '@/lib/data/thankyou';
+import { getT } from '@/lib/i18n';
 
 // Public post-event thank-you page — an event-type-adaptive page shown after a
 // guest taps the WhatsApp thank-you message's link. Server Component: no client
@@ -19,6 +20,7 @@ export function ThankyouLanding({
   view: ThankyouView;
   inviteImageUrl: string | null;
 }) {
+  const t = getT('public');
   const eventType = view.event_type;
   const heading = eventHeadingFor(eventType, view.celebrants, view.name);
   const AccentIcon = EVENT_TYPE_ICON[eventType];
@@ -39,12 +41,12 @@ export function ThankyouLanding({
                 href={inviteImageUrl}
                 target="_blank"
                 rel="noreferrer"
-                aria-label="פתיחת ההזמנה בגודל מלא"
+                aria-label={t('ty.invite.openFull', 'פתיחת ההזמנה בגודל מלא')}
                 className="block border-b border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 <Image
                   src={inviteImageUrl}
-                  alt="הזמנת האירוע"
+                  alt={t('ty.invite.imageAlt', 'הזמנת האירוע')}
                   width={512}
                   height={640}
                   priority

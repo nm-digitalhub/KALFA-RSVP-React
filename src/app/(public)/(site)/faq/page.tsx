@@ -5,6 +5,7 @@ import { Info, Route, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react'
 import { getPublishedFaqItems } from '@/lib/data/faq';
 import { getPublicBusinessFacts } from '@/lib/data/public-business-facts';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
+import { getT } from '@/lib/i18n';
 import {
   buildFaqPageModel,
   flattenFaqEntries,
@@ -51,6 +52,7 @@ const SECTION_EYEBROW: Record<FaqCategory, { icon: LucideIcon; label: string }> 
 // and hiding an answer behind a click interaction is exactly what the SEO/GEO
 // plan warns against for FAQ content (answer-first, extractable by AI search).
 export default async function FaqPage() {
+  const t = getT('public');
   // No getAppOrigin() call here — unlike the home page's Organization/WebSite
   // JSON-LD (which embeds absolute @id URLs), a FAQPage schema needs no site
   // origin at all (see src/lib/faq/json-ld.ts).
@@ -72,9 +74,9 @@ export default async function FaqPage() {
       {/* Header: the shared SiteHeader from the (site) layout. */}
       <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
         <div>
-          <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">שאלות נפוצות</h1>
+          <h1 className="text-balance text-display font-extrabold tracking-tight transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3">{t('site.faq.title', 'שאלות נפוצות')}</h1>
           <p className="mt-2 max-w-prose text-pretty text-lg text-muted-foreground transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-100">
-            כל מה שצריך לדעת על KALFA — מה זה, איך זה עובד, כמה זה עולה ומה קורה אם רוצים לבטל.
+            {t('site.faq.subtitle', 'כל מה שצריך לדעת על KALFA — מה זה, איך זה עובד, כמה זה עולה ומה קורה אם רוצים לבטל.')}
           </p>
         </div>
 
@@ -93,7 +95,7 @@ export default async function FaqPage() {
                 shared keyboard focus outline; the sections they jump to carry
                 `scroll-mt-20` so the title lands below the 64px sticky
                 header instead of under it. */}
-            <nav aria-label="קטגוריות שאלות" className="mt-8 flex flex-wrap gap-2">
+            <nav aria-label={t('site.faq.categoriesAriaLabel', 'קטגוריות שאלות')} className="mt-8 flex flex-wrap gap-2">
               {model.sections.map((section) => (
                 <a
                   key={section.category}

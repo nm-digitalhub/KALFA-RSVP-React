@@ -5,6 +5,7 @@ import { ArrowLeft, Sparkles } from 'lucide-react';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { getCompanyLegal } from '@/lib/data/company';
+import { getT } from '@/lib/i18n';
 import { buildBreadcrumbJsonLd, jsonLdScript } from '@/lib/seo/breadcrumb-json-ld';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 import { getAppOrigin } from '@/lib/url';
@@ -78,9 +79,10 @@ const PRINCIPLES: readonly { t: string; d: string }[] = [
 ];
 
 export default async function AboutPage() {
+  const t = getT('public');
   const [user, origin] = await Promise.all([getUser(), getAppOrigin()]);
   const startHref = user ? '/app/events/new' : '/auth/signup';
-  const startLabel = user ? 'אירוע חדש' : 'צרו אירוע חדש';
+  const startLabel = user ? t('site.about.cta.newEvent', 'אירוע חדש') : t('site.about.cta.createEvent', 'צרו אירוע חדש');
 
   // Identity is optional content: a settings read failure must not break the
   // page, it just drops the operator paragraph (same fail-soft rule as the
@@ -123,21 +125,19 @@ export default async function AboutPage() {
         <section className="relative isolate mx-auto max-w-6xl px-6 py-10 before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:bg-radial-[at_top_end] before:from-primary/10 before:via-transparent before:to-transparent sm:py-16">
           <span className="inline-flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-primary">
             <Sparkles className="size-4" aria-hidden />
-            אודות
+            {t('site.about.hero.eyebrow', 'אודות')}
           </span>
           <h1 className="mt-4 max-w-3xl text-balance text-title font-extrabold tracking-tight">
-            אודות KALFA
+            {t('site.about.hero.title', 'אודות KALFA')}
           </h1>
           <p className="mt-5 max-w-prose text-pretty text-lg text-muted-foreground">
-            KALFA היא מערכת ישראלית לניהול אישורי הגעה לאירועים פרטיים — חתונות, בר ובת מצווה,
-            בריתות, אירועים משפחתיים ואירועי חברה. היא עושה דבר אחד: עוזרת לבעל האירוע לדעת מי
-            מגיע, בלי גיליונות ובלי עשרות שיחות טלפון.
+            {t('site.about.hero.intro', 'KALFA היא מערכת ישראלית לניהול אישורי הגעה לאירועים פרטיים — חתונות, בר ובת מצווה, בריתות, אירועים משפחתיים ואירועי חברה. היא עושה דבר אחד: עוזרת לבעל האירוע לדעת מי מגיע, בלי גיליונות ובלי עשרות שיחות טלפון.')}
           </p>
         </section>
 
         <section className="border-y border-border bg-[#f9fafb]">
           <div className="mx-auto max-w-6xl px-6 py-16">
-            <h2 className="text-balance text-display font-bold tracking-tight">מה המערכת עושה</h2>
+            <h2 className="text-balance text-display font-bold tracking-tight">{t('site.about.does.title', 'מה המערכת עושה')}</h2>
             <div className="mt-10 grid gap-4 sm:grid-cols-2">
               {DOES.map(({ t, d }) => (
                 <div key={t} className="rounded-xl border border-border bg-background p-6">
@@ -147,14 +147,13 @@ export default async function AboutPage() {
               ))}
             </div>
             <p className="mt-8 max-w-prose text-muted-foreground">
-              מה היא לא עושה: היא לא מנהלת את האולם, את הספקים או את התקציב, ולא שולחת פרסום
-              המוני. ההודעות יוצאות רק אל המוזמנים של האירוע, ורק בנוגע אליו.
+              {t('site.about.does.limits', 'מה היא לא עושה: היא לא מנהלת את האולם, את הספקים או את התקציב, ולא שולחת פרסום המוני. ההודעות יוצאות רק אל המוזמנים של האירוע, ורק בנוגע אליו.')}
             </p>
           </div>
         </section>
 
         <section className="mx-auto max-w-3xl px-6 py-16">
-          <h2 className="text-balance text-display font-bold tracking-tight">איך אנחנו עובדים</h2>
+          <h2 className="text-balance text-display font-bold tracking-tight">{t('site.about.principles.title', 'איך אנחנו עובדים')}</h2>
           <div className="mt-8 space-y-8">
             {PRINCIPLES.map(({ t, d }) => (
               <div key={t}>
@@ -181,7 +180,7 @@ export default async function AboutPage() {
 
         <section className="border-t border-border bg-[#f9fafb]">
           <div className="mx-auto max-w-3xl px-6 py-16">
-            <h2 className="text-balance text-display font-bold tracking-tight">מי מפעיל את השירות</h2>
+            <h2 className="text-balance text-display font-bold tracking-tight">{t('site.about.operator.title', 'מי מפעיל את השירות')}</h2>
             {operatorName ? (
               <p className="mt-4 max-w-prose text-base leading-relaxed text-muted-foreground">
                 השירות מופעל על ידי {operatorName}
