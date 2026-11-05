@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "mindrally-zod-schema-validation": {
+      "version": "1.0.0",
+      "installedAt": "2026-11-05T16:08:17.009Z",
+      "platform": "gemini"
+    }
+  }
+}

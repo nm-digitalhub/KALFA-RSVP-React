@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "i18n-date-patterns",
+  "owner": "yonatangross",
+  "repo": "skillforge-claude-plugin",
+  "path": "plugins/ork/skills/i18n-date-patterns",
+  "branch": "main",
+  "sha": "90358742de0ec40bcc770f761f23c9007e314502",
+  "source": "manual"
+}

@@ -310,6 +310,8 @@
       "Skill(hebrew-content-writer *)",
       "Skill(hebrew-i18n)",
       "Skill(hebrew-i18n *)",
+      "Skill(hebrew-rtl-best-practices)",
+      "Skill(hebrew-rtl-best-practices *)",
       "Skill(hebrew-seo-geo-toolkit)",
       "Skill(hebrew-seo-geo-toolkit *)",
       "Skill(hebrew-tailwind-preset)",

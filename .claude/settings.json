@@ -192,7 +192,8 @@
     "e2e-skills@voidmatcha": true,
     "typescript-lsp@claude-plugins-official": true,
     "claude-video-vision@claude-community": true,
-    "codex@openai-codex": true
+    "codex@openai-codex": true,
+    "i18n-expert@daymade-skills": true
   },
   "extraKnownMarketplaces": {
     "postgres-skills": {

@@ -696,6 +696,12 @@
       "skillPath": "hebrew-i18n/SKILL.md",
       "computedHash": "d9bc3ff8fd2a8a3e7cf02db3ef36e2e32472556d863e40035be4ac5e072ab239"
     },
+    "hebrew-rtl-best-practices": {
+      "source": "skills-il/localization",
+      "sourceType": "github",
+      "skillPath": "hebrew-rtl-best-practices/SKILL.md",
+      "computedHash": "b809720a30af5cca3a23c81790e700e1aa7a400e142264f7256b5dff6d59cecf"
+    },
     "hebrew-seo-geo-toolkit": {
       "source": "skills-il/marketing-growth",
       "sourceType": "github",
