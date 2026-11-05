@@ -144,6 +144,11 @@
       "contactSection": {
         "title": "Envoyer un message"
       },
+      "errors": {
+        "checkFields": "",
+        "rateLimited": "",
+        "sendFailed": ""
+      },
       "form": {
         "email": "E-mail",
         "fullName": "Prénom et nom",
@@ -155,6 +160,10 @@
         "submitContact": "Envoyer un message"
       },
       "subtitle": "Une question, une demande ou un problème ? Écrivez-nous ou laissez votre numéro, et nous vous recontacterons.",
+      "success": {
+        "callback": "",
+        "contact": ""
+      },
       "title": "Contact et assistance"
     },
     "error": {

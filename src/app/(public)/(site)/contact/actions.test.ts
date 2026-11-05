@@ -5,6 +5,9 @@ import { z } from 'zod';
 // and their exact Hebrew:
 // the form-level line next to the field errors, the generic refusals, and the honeypot's fake success.
 vi.mock('server-only', () => ({}));
+vi.mock('@/i18n.server', () => ({
+  getT: async () => ({ t: (_key: string, defaultValue: string) => defaultValue }),
+}));
 vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers({ 'x-forwarded-for': '203.0.113.7' })) }));
 
 const { rateLimit, getUser, createContactMessage, createCallbackRequest } = vi.hoisted(() => ({

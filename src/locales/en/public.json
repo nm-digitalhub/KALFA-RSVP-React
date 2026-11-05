@@ -144,6 +144,11 @@
       "contactSection": {
         "title": "Send us a message"
       },
+      "errors": {
+        "checkFields": "",
+        "rateLimited": "",
+        "sendFailed": ""
+      },
       "form": {
         "email": "Email",
         "fullName": "Full name",
@@ -155,6 +160,10 @@
         "submitContact": "Send message"
       },
       "subtitle": "Have a question, a request or a problem? Write to us or leave your number, and we'll get back to you.",
+      "success": {
+        "callback": "",
+        "contact": ""
+      },
       "title": "Contact and support"
     },
     "error": {

@@ -5,6 +5,7 @@ import { zfd } from 'zod-form-data';
 import { headers } from 'next/headers';
 import { returnValidationErrors } from 'next-safe-action';
 
+import { getT } from '@/i18n.server';
 import { INQUIRY_SUBMIT_RATE } from '@/lib/constants';
 import { getUser } from '@/lib/auth/dal';
 import {
@@ -30,11 +31,17 @@ import { LEAD_SOURCES } from '@/lib/analytics/ga-event-contracts';
 // fire a generate_lead conversion. The UI reads data.notice; analytics reads
 // data.leadSource.
 
-const RATE_ERROR = 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.';
-const GENERIC_ERROR = 'שליחת הפנייה נכשלה. נסו שוב בעוד רגע.';
-const CONTACT_SUCCESS = 'הפנייה נשלחה. נחזור אליכם בהקדם!';
-const CALLBACK_SUCCESS = 'הבקשה נשלחה. נתקשר אליכם בהקדם!';
-const CHECK_FIELDS = 'נא לבדוק את הפרטים שמולאו.';
+// Read per request: the language comes from the header src/proxy.ts sets for the /en and /fr URLs.
+async function inquiryMessages() {
+  const { t } = await getT('public');
+  return {
+    rateLimited: t('site.contact.errors.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.'),
+    sendFailed: t('site.contact.errors.sendFailed', 'שליחת הפנייה נכשלה. נסו שוב בעוד רגע.'),
+    contactSent: t('site.contact.success.contact', 'הפנייה נשלחה. נחזור אליכם בהקדם!'),
+    callbackSent: t('site.contact.success.callback', 'הבקשה נשלחה. נתקשר אליכם בהקדם!'),
+    checkFields: t('site.contact.errors.checkFields', 'נא לבדוק את הפרטים שמולאו.'),
+  };
+}
 
 // The order above is the abuse protection. The IP rate limit is a
 // pre-validation middleware (use() runs before the input is parsed); the
@@ -71,15 +78,16 @@ export const submitContactAction = actionClient
     const requestHeaders = await headers();
     const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
     if (!(await rateLimit(`inquiry:contact:${ip}`, INQUIRY_SUBMIT_RATE)).allowed) {
-      returnUserError(RATE_ERROR);
+      returnUserError((await inquiryMessages()).rateLimited);
     }
     return next();
   })
   .inputSchema(contactForm)
   .stateAction(async ({ parsedInput: input }) => {
+    const messages = await inquiryMessages();
     // Honeypot: real users never see/fill "company". Pretend success, write nothing.
     if (trimmedOrUndefined(input.company)) {
-      return { notice: CONTACT_SUCCESS };
+      return { notice: messages.contactSent };
     }
 
     const parsed = contactMessageSchema.safeParse({
@@ -90,16 +98,16 @@ export const submitContactAction = actionClient
       message: input.message,
     });
     if (!parsed.success) {
-      returnValidationErrors(contactMessageSchema, { ...z.formatError(parsed.error), _errors: [CHECK_FIELDS] });
+      returnValidationErrors(contactMessageSchema, { ...z.formatError(parsed.error), _errors: [messages.checkFields] });
     }
 
     // Identity comes from the verified server session only (null = anonymous).
     const user = await getUser();
     const result = await createContactMessage(parsed.data, user?.id ?? null);
     if (!result.ok) {
-      returnUserError(GENERIC_ERROR);
+      returnUserError(messages.sendFailed);
     }
-    return { notice: CONTACT_SUCCESS, leadSource: LEAD_SOURCES.contact };
+    return { notice: messages.contactSent, leadSource: LEAD_SOURCES.contact };
   });
 
 export const submitCallbackAction = actionClient
@@ -107,14 +115,15 @@ export const submitCallbackAction = actionClient
     const requestHeaders = await headers();
     const ip = getClientIp(requestHeaders.get.bind(requestHeaders));
     if (!(await rateLimit(`inquiry:callback:${ip}`, INQUIRY_SUBMIT_RATE)).allowed) {
-      returnUserError(RATE_ERROR);
+      returnUserError((await inquiryMessages()).rateLimited);
     }
     return next();
   })
   .inputSchema(callbackForm)
   .stateAction(async ({ parsedInput: input }) => {
+    const messages = await inquiryMessages();
     if (trimmedOrUndefined(input.company)) {
-      return { notice: CALLBACK_SUCCESS };
+      return { notice: messages.callbackSent };
     }
 
     const parsed = callbackRequestSchema.safeParse({
@@ -127,13 +136,13 @@ export const submitCallbackAction = actionClient
       preference: trimmedOrUndefined(input.preference),
     });
     if (!parsed.success) {
-      returnValidationErrors(callbackRequestSchema, { ...z.formatError(parsed.error), _errors: [CHECK_FIELDS] });
+      returnValidationErrors(callbackRequestSchema, { ...z.formatError(parsed.error), _errors: [messages.checkFields] });
     }
 
     const user = await getUser();
     const result = await createCallbackRequest(parsed.data, user?.id ?? null);
     if (!result.ok) {
-      returnUserError(GENERIC_ERROR);
+      returnUserError(messages.sendFailed);
     }
-    return { notice: CALLBACK_SUCCESS, leadSource: LEAD_SOURCES.callback };
+    return { notice: messages.callbackSent, leadSource: LEAD_SOURCES.callback };
   });
