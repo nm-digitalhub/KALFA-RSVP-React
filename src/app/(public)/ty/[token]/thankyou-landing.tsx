@@ -3,7 +3,7 @@ import Image from 'next/image';
 import { TiltCard } from '@/components/motion/tilt-card';
 
 import { EVENT_TYPE_ICON, eventHeadingFor } from '@/lib/data/celebrant-display';
-import { EVENT_THEME, EVENT_THANKYOU_GREETING } from '@/lib/data/event-theme';
+import { EVENT_THEME, eventThankyouGreetings } from '@/lib/data/event-theme';
 import { formatEventDateLine } from '@/lib/data/event-display';
 import type { ThankyouView } from '@/lib/data/thankyou';
 import { getT } from '@/i18n.server';
@@ -22,7 +22,7 @@ export async function ThankyouLanding({
 }) {
   const { t } = await getT('public');
   const eventType = view.event_type;
-  const heading = eventHeadingFor(eventType, view.celebrants, view.name);
+  const heading = eventHeadingFor(eventType, view.celebrants, view.name, t);
   const AccentIcon = EVENT_TYPE_ICON[eventType];
   const theme = EVENT_THEME[eventType];
   const dateLine = formatEventDateLine(view.event_date);
@@ -70,7 +70,7 @@ export async function ThankyouLanding({
                 </p>
               ) : null}
               <p className="mt-2 text-sm font-medium text-foreground/80">
-                {EVENT_THANKYOU_GREETING[eventType]}
+                {eventThankyouGreetings(t)[eventType]}
               </p>
             </div>
 

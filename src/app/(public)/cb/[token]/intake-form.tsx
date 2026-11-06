@@ -87,7 +87,7 @@ export function IntakeForm({
             required
             autoComplete="name"
             autoFocus
-            placeholder={t('cb.form.contact.placeholder', 'לדוגמה: שם, טלפון או אימייל')}
+            placeholder={t('cb.form.contact.placeholder', 'השם שלך')}
             className={[
               FIELD_CLS,
               'h-[58px]',
@@ -237,6 +237,7 @@ export function IntakeForm({
 
       <SubmitButton
         size="lg"
+        pendingLabel={t('guest.form.pending', 'רגע…')}
         className="
           min-h-[60px]
           w-full

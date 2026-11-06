@@ -1,3 +1,4 @@
+import { createInstance } from 'i18next';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -138,5 +139,53 @@ describe('celebrantNamesFor / eventHeadingSegmentsFor (line breaks between peopl
       const title = eventHeadingFor(t, celebrants, 'שם האירוע').title;
       expect(eventHeadingSegmentsFor(t, celebrants, 'שם האירוע').map((s) => s.text).join('')).toBe(title);
     }
+  });
+});
+
+describe('the t the caller passes', () => {
+  // A real second language: a text that ignored `t` would still read Hebrew.
+  const i18n = createInstance();
+  void i18n.init({
+    lng: 'en',
+    initAsync: false,
+    resources: {
+      en: {
+        public: {
+          guest: {
+            celebrants: { secondOfCouple: 'and {{name}}', parentsHonoring: '{{parents}}, in honor of {{child}}' },
+            heading: {
+              wedding: 'The wedding of {{names}}',
+              brit: 'Brit',
+              parents: 'Parents: {{names}}',
+              celebrants: 'Hosts: {{names}}',
+            },
+          },
+        },
+      },
+    },
+  });
+  const en = i18n.getFixedT('en', 'public');
+
+  it('composes the names and the heading in that language', () => {
+    expect(celebrantsTextFor('wedding', { groom: 'Eyal Malka', bride: 'Shlomit' }, en)).toBe('Eyal Malka and Shlomit');
+    expect(celebrantsTextFor('brit', { parents: 'Natalie', child: 'Beni' }, en)).toBe('Natalie, in honor of Beni');
+    expect(eventHeadingFor('wedding', { groom: 'Eyal', bride: 'Shlomit' }, 'x', en)).toEqual({
+      title: 'The wedding of Eyal and Shlomit',
+      subtitle: null,
+    });
+    expect(eventHeadingFor('brit', { parents: 'Natalie' }, 'x', en)).toEqual({ title: 'Brit', subtitle: 'Parents: Natalie' });
+    expect(eventHeadingFor('other', { names: 'The Levis' }, 'x', en)).toEqual({ title: 'x', subtitle: 'Hosts: The Levis' });
+  });
+
+  it('a name token stays a substring of the title, so the segments join back to it', () => {
+    const celebrants = { groom: 'Eyal Malka', bride: 'Shlomit Kakon' };
+    const segments = eventHeadingSegmentsFor('wedding', celebrants, 'x', en);
+    expect(segments).toEqual([
+      { text: 'The wedding of ', noWrap: false },
+      { text: 'Eyal Malka', noWrap: true },
+      { text: ' ', noWrap: false },
+      { text: 'and Shlomit Kakon', noWrap: true },
+    ]);
+    expect(segments.map((s) => s.text).join('')).toBe(eventHeadingFor('wedding', celebrants, 'x', en).title);
   });
 });

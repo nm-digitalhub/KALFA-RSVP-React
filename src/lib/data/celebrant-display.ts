@@ -7,9 +7,11 @@ import {
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
+import type { TFunction } from 'i18next';
 
+import { getT } from '@/lib/i18n';
 import { CELEBRANT_KIND_BY_EVENT_TYPE } from '@/lib/validation/schemas';
-import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
+import { eventTypeLabels } from '@/lib/data/event-labels';
 import type { Enums, Json } from '@/lib/supabase/types';
 type EventType = Enums<'event_type'>;
 
@@ -18,6 +20,10 @@ type EventType = Enums<'event_type'>;
 // server). Kind rules come from CELEBRANT_KIND_BY_EVENT_TYPE (never duplicated
 // here); the WhatsApp wording in template-spec.ts stays separate on purpose —
 // that text is frozen by Meta template approval.
+//
+// Every composed text takes the caller's `t`, last. The public guest pages pass the `t` of the request. Without one it
+// is the fixed Hebrew of @/lib/i18n: voice, Exchange items, calendar files, the customer app and admin have no visitor
+// language. The voice route must never pass one: it cuts the text at the "—" of parentsHonoring (celebrantsSpeechForm).
 //
 // celebrants is schemaless jsonb, so every read is defensive: partial data
 // renders partially, wrong shapes render nothing — display never throws.
@@ -42,19 +48,24 @@ function field(celebrants: Json | null, key: string): string | null {
 export function celebrantsTextFor(
   eventType: EventType,
   celebrants: Json | null,
+  t: TFunction<'public'> = getT('public'),
 ): string | null {
   switch (CELEBRANT_KIND_BY_EVENT_TYPE[eventType]) {
     case 'couple': {
       const groom = field(celebrants, 'groom');
       const bride = field(celebrants, 'bride');
-      return groom && bride ? `${groom} ו${bride}` : (groom ?? bride);
+      return groom && bride
+        ? `${groom} ${t('guest.celebrants.secondOfCouple', 'ו{{name}}', { name: bride })}`
+        : (groom ?? bride);
     }
     case 'single':
       return field(celebrants, 'name');
     case 'parents': {
       const parents = field(celebrants, 'parents');
       const child = field(celebrants, 'child');
-      return parents && child ? `${parents} — לכבוד ${child}` : parents;
+      return parents && child
+        ? t('guest.celebrants.parentsHonoring', '{{parents}} — לכבוד {{child}}', { parents, child })
+        : parents;
     }
     case 'free':
       return field(celebrants, 'names');
@@ -72,12 +83,13 @@ export function celebrantsTextFor(
 export function celebrantNamesFor(
   eventType: EventType,
   celebrants: Json | null,
+  t: TFunction<'public'> = getT('public'),
 ): string[] {
   switch (CELEBRANT_KIND_BY_EVENT_TYPE[eventType]) {
     case 'couple': {
       const groom = field(celebrants, 'groom');
       const bride = field(celebrants, 'bride');
-      if (groom && bride) return [groom, `ו${bride}`];
+      if (groom && bride) return [groom, t('guest.celebrants.secondOfCouple', 'ו{{name}}', { name: bride })];
       return [groom ?? bride].filter((n): n is string => n !== null);
     }
     case 'single':
@@ -92,18 +104,19 @@ export function celebrantNamesFor(
   }
 }
 
-// Per-type heading: "possessive event label" + names, e.g. "החתונה של דנה
-// ויוסי", "בר המצווה של אורי", "יום ההולדת של נועה". Types whose heading
-// works better as label-only (brit/britah — the parents go on the secondary
-// line, 'other' — free text) are omitted here.
-const HEADING_OF: Partial<Record<EventType, string>> = {
-  wedding: 'החתונה של',
-  henna: 'החינה של',
-  engagement: 'האירוסין של',
-  bar_mitzvah: 'בר המצווה של',
-  bat_mitzvah: 'בת המצווה של',
-  birthday: 'יום ההולדת של',
-};
+// Per-type heading: a whole template around the names, e.g. "החתונה של דנה
+// ויוסי", "בר המצווה של אורי", "יום ההולדת של נועה", because the word order is
+// not the same in every language. Types whose heading works better as
+// label-only (brit/britah — the parents go on the secondary line, 'other' —
+// free text) are omitted here.
+const possessiveHeadings = (t: TFunction<'public'>, names: string): Partial<Record<EventType, string>> => ({
+  wedding: t('guest.heading.wedding', 'החתונה של {{names}}', { names }),
+  henna: t('guest.heading.henna', 'החינה של {{names}}', { names }),
+  engagement: t('guest.heading.engagement', 'האירוסין של {{names}}', { names }),
+  bar_mitzvah: t('guest.heading.barMitzvah', 'בר המצווה של {{names}}', { names }),
+  bat_mitzvah: t('guest.heading.batMitzvah', 'בת המצווה של {{names}}', { names }),
+  birthday: t('guest.heading.birthday', 'יום ההולדת של {{names}}', { names }),
+});
 
 // Celebratory accent icon per type (lucide — the project's icon set), shown
 // next to the heading on the public RSVP page. Presentation only.
@@ -137,25 +150,31 @@ export function eventHeadingFor(
   eventType: EventType,
   celebrants: Json | null,
   eventName: string,
+  t: TFunction<'public'> = getT('public'),
 ): EventDisplayHeading {
-  const names = celebrantsTextFor(eventType, celebrants);
+  const names = celebrantsTextFor(eventType, celebrants, t);
   const kind = CELEBRANT_KIND_BY_EVENT_TYPE[eventType];
 
   if (kind === 'parents') {
+    // Its own keys, not the label: English writes {{eventType}} in lower case, and this stands alone as a title.
+    const titles: Partial<Record<EventType, string>> = {
+      brit: t('guest.heading.brit', 'ברית'),
+      britah: t('guest.heading.britah', 'בריתה'),
+    };
     return {
-      title: EVENT_TYPE_LABELS[eventType],
-      subtitle: names ? `ההורים: ${names}` : null,
+      title: titles[eventType] ?? eventTypeLabels(t)[eventType],
+      subtitle: names ? t('guest.heading.parents', 'ההורים: {{names}}', { names }) : null,
     };
   }
 
-  const possessive = HEADING_OF[eventType];
-  if (possessive && names) {
-    return { title: `${possessive} ${names}`, subtitle: null };
+  const possessive = names ? possessiveHeadings(t, names)[eventType] : undefined;
+  if (possessive) {
+    return { title: possessive, subtitle: null };
   }
 
   return {
     title: eventName,
-    subtitle: names ? `בעלי השמחה: ${names}` : null,
+    subtitle: names ? t('guest.heading.celebrants', 'בעלי השמחה: {{names}}', { names }) : null,
   };
 }
 
@@ -180,11 +199,13 @@ export function eventHeadingSegmentsFor(
   eventType: EventType,
   celebrants: Json | null,
   eventName: string,
+  t: TFunction<'public'> = getT('public'),
 ): HeadingSegment[] {
-  const { title } = eventHeadingFor(eventType, celebrants, eventName);
+  // One `t` for the title and the names: a token is only found in a title composed in the same language.
+  const { title } = eventHeadingFor(eventType, celebrants, eventName, t);
   const segments: HeadingSegment[] = [];
   let rest = title;
-  for (const name of celebrantNamesFor(eventType, celebrants)) {
+  for (const name of celebrantNamesFor(eventType, celebrants, t)) {
     if (name.length > NO_WRAP_MAX_CHARS || !name.includes(' ')) continue;
     const at = rest.indexOf(name);
     if (at < 0) continue;

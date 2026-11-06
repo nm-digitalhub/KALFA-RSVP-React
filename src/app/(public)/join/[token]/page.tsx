@@ -84,7 +84,7 @@ export default async function JoinPage({
             <input type="hidden" name="token" value={token} />
             {/* Shared pending-aware submit (a bare <button> has no pending
                 state, i.e. a double-submit risk on a slow network). */}
-            <SubmitButton size="lg">{t('join.submit', 'הצטרפות')}</SubmitButton>
+            <SubmitButton size="lg" pendingLabel={t('guest.form.pending', 'רגע…')}>{t('join.submit', 'הצטרפות')}</SubmitButton>
           </form>
         </div>
       )}

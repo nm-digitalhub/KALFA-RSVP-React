@@ -58,13 +58,14 @@ export const submitIntakeAction = actionClient
   .inputSchema(intakeForm)
   .bindArgsSchemas([z.string().min(1)])
   .stateAction(async ({ parsedInput: input, bindArgsParsedInputs: [token] }) => {
+    const { t } = await getT('public');
+
     // Honeypot: a bot that fills the hidden field gets the same success it would
     // have got anyway, and nothing is written.
     if (String(input.company ?? '').trim()) {
-      return { notice: 'הפרטים נשמרו. נחזור אליך בהקדם.' };
+      return { notice: t('cb.success.honeypot', 'הפרטים נשמרו. נחזור אליך בהקדם.') };
     }
 
-    const { t } = await getT('public');
     // One generic refusal for every "no". Which token exists, which has expired and
     // which was already used are all the same sentence here — the difference is
     // exactly what a prober would be probing for.

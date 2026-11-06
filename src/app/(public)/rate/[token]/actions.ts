@@ -41,9 +41,10 @@ export const submitRatingAction = actionClient
   .bindArgsSchemas([z.string().min(1)])
   .stateAction(async ({ parsedInput: { score, comment }, bindArgsParsedInputs: [token] }) => {
     const { t } = await getT('public');
-    const parsed = submitRatingSchema.safeParse({ score, comment: comment ?? '' });
+    const schema = submitRatingSchema(t);
+    const parsed = schema.safeParse({ score, comment: comment ?? '' });
     if (!parsed.success) {
-      returnValidationErrors(submitRatingSchema, {
+      returnValidationErrors(schema, {
         ...z.formatError(parsed.error),
         _errors: [t('rate.errors.invalidScore', 'נא לבחור דירוג תקין.')],
       });
@@ -60,5 +61,5 @@ export const submitRatingAction = actionClient
       returnUserError(t('rate.invalidLink', 'הקישור אינו תקף או שאינו זמין עוד.'));
     }
 
-    return { notice: 'תודה על הדירוג!' };
+    return { notice: t('rate.thanks.title', 'תודה על הדירוג!') };
   });

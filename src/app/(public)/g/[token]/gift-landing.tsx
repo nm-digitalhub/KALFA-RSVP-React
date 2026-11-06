@@ -9,7 +9,7 @@ import {
   eventHeadingFor,
   eventHeadingSegmentsFor,
 } from '@/lib/data/celebrant-display';
-import { EVENT_THEME } from '@/lib/data/event-theme';
+import { EVENT_THEME, eventGreetings } from '@/lib/data/event-theme';
 import { formatEventDateLine, GIFT_BRAND } from '@/lib/data/event-display';
 import type { GiftView } from '@/lib/data/gift';
 import { getT } from '@/i18n.server';
@@ -41,7 +41,7 @@ export async function GiftLanding({
 }) {
   const { t } = await getT('public');
   const eventType = view.event_type;
-  const heading = eventHeadingFor(eventType, view.celebrants, view.name);
+  const heading = eventHeadingFor(eventType, view.celebrants, view.name, t);
   const AccentIcon = EVENT_TYPE_ICON[eventType];
   const theme = EVENT_THEME[eventType];
   const dateLine = formatEventDateLine(view.event_date);
@@ -49,7 +49,7 @@ export async function GiftLanding({
   // The visible title = heading.title split so a line break falls between
   // people, never inside a name ("החתונה של אייל / מלכה ושלומית קאקון" on the
   // owner's iPhone, 2026-09-08). The sr-only h1 keeps the plain string.
-  const title = eventHeadingSegmentsFor(eventType, view.celebrants, view.name).map((segment, i) =>
+  const title = eventHeadingSegmentsFor(eventType, view.celebrants, view.name, t).map((segment, i) =>
     segment.noWrap ? (
       <span key={i} className="whitespace-nowrap">
         {segment.text}
@@ -111,7 +111,7 @@ export async function GiftLanding({
           </p>
         ) : null}
         <p className="mt-2 text-sm font-medium text-foreground/80">
-          {theme.greeting}
+          {eventGreetings(t)[eventType]}
         </p>
         {dateLine ? (
           <p className="mt-3 text-sm text-foreground/70">{dateLine}</p>
@@ -209,7 +209,9 @@ export async function GiftLanding({
           ) : (
             <Gift aria-hidden className="size-5" />
           )}
-          {brand?.label ?? t('g.landing.cta', 'שליחת מתנה')}
+          {brand
+            ? t('guest.gift.ctaWithBrand', 'שליחת מתנה ב־{{brand}}', { brand: brand.name })
+            : t('g.landing.cta', 'שליחת מתנה')}
         </a>
       </div>
     </>

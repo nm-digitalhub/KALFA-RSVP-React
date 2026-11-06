@@ -3,6 +3,8 @@
 import { useState, useSyncExternalStore } from 'react';
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { CalendarPlus, Download, ExternalLink, Smartphone, XIcon } from 'lucide-react';
+import type { TFunction } from 'i18next';
+import { useT } from 'next-i18next/client';
 
 import { Dialog, DialogDescription, DialogOverlay, DialogPortal, DialogTitle } from '@/components/ui/dialog';
 import type { CalendarWebLinks } from '@/lib/calendar/event-calendar';
@@ -87,15 +89,21 @@ interface Row {
   icon: typeof Download;
 }
 
-function rows(platform: CalendarPlatform, links: CalendarWebLinks, ics: { href: string; filename: string }): Row[] {
+function rows(
+  t: TFunction<'public'>,
+  platform: CalendarPlatform,
+  links: CalendarWebLinks,
+  ics: { href: string; filename: string },
+): Row[] {
   const web = (key: string, label: string, href: string): Row => ({
     key,
     label,
-    hint: 'נפתח בדפדפן',
+    hint: t('guest.calendar.hint.browser', 'נפתח בדפדפן'),
     href,
     newTab: true,
     icon: ExternalLink,
   });
+  const googleLabel = t('guest.calendar.google', 'יומן Google');
   const outlook = web('outlookcom', 'Outlook.com', links.outlookcom);
   const ms365 = web('ms365', 'Microsoft 365', links.ms365);
 
@@ -103,13 +111,13 @@ function rows(platform: CalendarPlatform, links: CalendarWebLinks, ics: { href: 
     return [
       {
         key: 'apple',
-        label: 'יומן Apple',
-        hint: 'נפתח ביומן של האייפון',
+        label: t('guest.calendar.apple', 'יומן Apple'),
+        hint: t('guest.calendar.hint.iphone', 'נפתח ביומן של האייפון'),
         href: ics.href,
         newTab: false,
         icon: CalendarPlus,
       },
-      web('google', 'יומן Google', links.google),
+      web('google', googleLabel, links.google),
       outlook,
       ms365,
     ];
@@ -118,19 +126,19 @@ function rows(platform: CalendarPlatform, links: CalendarWebLinks, ics: { href: 
   if (platform.os === 'android') {
     return [
       platform.webview
-        ? web('google', 'יומן Google', links.google)
+        ? web('google', googleLabel, links.google)
         : {
             key: 'google',
-            label: 'יומן Google',
-            hint: 'נפתח באפליקציה (או בדפדפן אם אינה מותקנת)',
+            label: googleLabel,
+            hint: t('guest.calendar.hint.androidApp', 'נפתח באפליקציה (או בדפדפן אם אינה מותקנת)'),
             href: googleCalendarAndroidIntent(links.google),
             newTab: false,
             icon: Smartphone,
           },
       {
         key: 'ical',
-        label: 'יומן אחר (Samsung ועוד)',
-        hint: 'הורדת קובץ יומן ופתיחה באפליקציה',
+        label: t('guest.calendar.otherAndroid', 'יומן אחר (Samsung ועוד)'),
+        hint: t('guest.calendar.hint.androidDownload', 'הורדת קובץ יומן ופתיחה באפליקציה'),
         href: ics.href,
         newTab: false,
         download: ics.filename,
@@ -142,13 +150,13 @@ function rows(platform: CalendarPlatform, links: CalendarWebLinks, ics: { href: 
   }
 
   return [
-    web('google', 'יומן Google', links.google),
+    web('google', googleLabel, links.google),
     outlook,
     ms365,
     {
       key: 'ical',
-      label: 'קובץ יומן (Apple, Outlook ועוד)',
-      hint: 'הורדת קובץ .ics',
+      label: t('guest.calendar.icsFile', 'קובץ יומן (Apple, Outlook ועוד)'),
+      hint: t('guest.calendar.hint.icsDownload', 'הורדת קובץ .ics'),
       href: ics.href,
       newTab: false,
       download: ics.filename,
@@ -168,16 +176,17 @@ export function AddToCalendarIsland({
   variant?: 'primary' | 'outline';
   className?: string;
 }) {
+  const { t } = useT('public');
   const [open, setOpen] = useState(false);
   const platform = usePlatform();
-  const items = rows(platform, links, ics);
+  const items = rows(t, platform, links, ics);
 
   return (
     <div className={cn('flex justify-center', className)}>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogPrimitive.Trigger className={cn(BUTTON_BASE, BUTTON_VARIANT[variant])}>
           <CalendarPlus aria-hidden className="size-5" />
-          הוספה ליומן
+          {t('guest.calendar.add', 'הוספה ליומן')}
         </DialogPrimitive.Trigger>
         <DialogPortal>
           <DialogOverlay />
@@ -193,15 +202,15 @@ export function AddToCalendarIsland({
             )}
           >
             <div className="flex items-center justify-between gap-4 py-2">
-              <DialogTitle className="text-lg font-bold text-foreground">הוספה ליומן</DialogTitle>
+              <DialogTitle className="text-lg font-bold text-foreground">{t('guest.calendar.add', 'הוספה ליומן')}</DialogTitle>
               <DialogPrimitive.Close
-                aria-label="סגירה"
+                aria-label={t('guest.calendar.close', 'סגירה')}
                 className="grid size-11 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 <XIcon aria-hidden className="size-5" />
               </DialogPrimitive.Close>
             </div>
-            <DialogDescription className="sr-only">בחרו את היומן שבו לשמור את האירוע</DialogDescription>
+            <DialogDescription className="sr-only">{t('guest.calendar.description', 'בחרו את היומן שבו לשמור את האירוע')}</DialogDescription>
             <ul className="divide-y divide-border border-t border-border">
               {items.map((row) => {
                 const Icon = row.icon;
@@ -226,8 +235,7 @@ export function AddToCalendarIsland({
             </ul>
             {platform.os === 'ios' && platform.webview ? (
               <p className="pt-3 text-xs text-muted-foreground">
-                בדפדפן פנימי של אפליקציה (כמו WhatsApp) יומן Apple לא תמיד נפתח — אם זה קורה, פתחו את הקישור
-                בספארי.
+                {t('guest.calendar.iosWebviewNotice', 'בדפדפן פנימי של אפליקציה (כמו WhatsApp) יומן Apple לא תמיד נפתח — אם זה קורה, פתחו את הקישור בספארי.')}
               </p>
             ) : null}
           </DialogPrimitive.Popup>
@@ -241,7 +249,7 @@ export function AddToCalendarIsland({
           rel="noopener noreferrer"
           className="inline-flex min-h-11 items-center gap-1 text-primary underline-offset-4 hover:underline"
         >
-          הוספה ליומן Google
+          {t('guest.calendar.addToGoogle', 'הוספה ליומן Google')}
         </a>
       </noscript>
     </div>

@@ -2,6 +2,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// useT needs next/navigation, which only resolves inside Next. The island renders here, so `t` gives the Hebrew back.
+vi.mock('next-i18next/client', () => ({
+  useT: () => ({ t: (_key: string, defaultValue: string) => defaultValue }),
+}));
+
 import { AddToCalendar, type AddToCalendarEvent } from './add-to-calendar';
 import { AddToCalendarIsland } from './add-to-calendar-island';
 

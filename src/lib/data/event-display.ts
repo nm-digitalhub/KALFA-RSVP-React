@@ -18,9 +18,9 @@ type EventType = Enums<'event_type'>;
 // Official payment-brand marks for the gift CTA (public/brands — bit's is the
 // favicon from bitpay.co.il, PayBox's is its official App Store icon). An
 // unrecognized provider falls back to a neutral gift icon at the call site.
-export const GIFT_BRAND: Record<string, { icon: string; label: string }> = {
-  bit: { icon: '/brands/bit.png', label: 'שליחת מתנה ב־bit' },
-  paybox: { icon: '/brands/paybox.png', label: 'שליחת מתנה ב־PayBox' },
+export const GIFT_BRAND: Record<string, { icon: string; name: string }> = {
+  bit: { icon: '/brands/bit.png', name: 'bit' },
+  paybox: { icon: '/brands/paybox.png', name: 'PayBox' },
 };
 
 // The RPC/DB may type event_type as string|null; narrow to the enum (defensive —

@@ -9,7 +9,7 @@ import {
   EVENT_TYPE_ICON,
   eventHeadingFor,
 } from '@/lib/data/celebrant-display';
-import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
+import { eventTypeLabels } from '@/lib/data/event-labels';
 import {
   GIFT_BRAND,
   asEventType,
@@ -128,8 +128,9 @@ export function RsvpForm({
   };
   const { guest, event, questions, can_respond: canRespond } = view;
   const eventType = asEventType(event.event_type);
-  const heading = eventHeadingFor(eventType, event.celebrants, event.name);
+  const heading = eventHeadingFor(eventType, event.celebrants, event.name, t);
   const AccentIcon = EVENT_TYPE_ICON[eventType];
+  const giftBrand = GIFT_BRAND[event.gift_provider ?? ''];
 
   const [state, formAction] = useActionState(
     submitRsvpAction.bind(null, token),
@@ -394,9 +395,9 @@ export function RsvpForm({
                   <p className="mt-1 text-sm text-muted-foreground">
                     {t('r.form.success.summary', {
                       count: adults + kids,
-                      eventType: EVENT_TYPE_LABELS[eventType],
+                      eventType: eventTypeLabels(t)[eventType],
                       defaultValue: 'נתראה ב{{eventType}} — נרשמו {{count}} משתתפים.',
-                      defaultValue_one: 'נתראה ב{{eventType}} — נרשמו {{count}} משתתף/ת.',
+                      defaultValue_one: 'נתראה ב{{eventType}} — נרשם אדם אחד.',
                       defaultValue_other: 'נתראה ב{{eventType}} — נרשמו {{count}} משתתפים.',
                     })}
                   </p>
@@ -408,7 +409,7 @@ export function RsvpForm({
               </div>
             ) : null}
           </div>
-          <SubmitButton size="lg">{t('r.form.submit', 'שליחת אישור')}</SubmitButton>
+          <SubmitButton size="lg" pendingLabel={t('guest.form.pending', 'רגע…')}>{t('r.form.submit', 'שליחת אישור')}</SubmitButton>
         </form>
       )}
 
@@ -437,9 +438,9 @@ export function RsvpForm({
             rel="noopener noreferrer"
             className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition duration-300 ease-k-out hover:opacity-90 hover:shadow-md hover:shadow-primary/25 motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0 motion-safe:active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
-            {GIFT_BRAND[event.gift_provider ?? ''] ? (
+            {giftBrand ? (
               <Image
-                src={GIFT_BRAND[event.gift_provider ?? ''].icon}
+                src={giftBrand.icon}
                 alt=""
                 aria-hidden
                 width={20}
@@ -449,7 +450,9 @@ export function RsvpForm({
             ) : (
               <Gift aria-hidden className="size-5" />
             )}
-            {GIFT_BRAND[event.gift_provider ?? '']?.label ?? t('r.gift.cta', 'שליחת מתנה')}
+            {giftBrand
+              ? t('guest.gift.ctaWithBrand', 'שליחת מתנה ב־{{brand}}', { brand: giftBrand.name })
+              : t('r.gift.cta', 'שליחת מתנה')}
           </a>
         </div>
       ) : null}

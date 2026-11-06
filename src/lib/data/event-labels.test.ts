@@ -5,9 +5,20 @@ import {
   CAMPAIGN_STATUS_LABELS,
   CUSTOMER_STAGE_LABELS,
   EVENT_STATUS_LABELS,
+  EVENT_TYPE_LABELS,
   campaignStage,
   eventStatusLabel,
+  eventTypeLabels,
 } from '@/lib/data/event-labels';
+import { getT } from '@/lib/i18n';
+
+// Two copies on purpose: the constant keeps i18next out of the worker and the customer forms, and the keys are what a
+// guest page translates. A change to one of them fails here until the other follows.
+describe('eventTypeLabels', () => {
+  it('its Hebrew defaults are exactly EVENT_TYPE_LABELS', () => {
+    expect(eventTypeLabels(getT('public'))).toEqual(EVENT_TYPE_LABELS);
+  });
+});
 
 // Audit §3 (docs/KALFA-RSVP.md): the EVENT state and the CAMPAIGN state are two
 // separate things the owner must never confuse — "פעיל" belongs to the campaign

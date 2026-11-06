@@ -21,6 +21,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   createAdminClient: () => ({ from: () => ({ update: () => ({ eq: mirrorEq }) }) }),
 }));
 
+import { getT } from '@/lib/i18n';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import { rsvpSubmitSchema } from '@/lib/validation/rsvp';
 import { submitRsvpAction } from './actions';
@@ -106,7 +107,7 @@ describe('submitRsvpAction', () => {
 
     const result = await submitRsvpAction(TOKEN, {}, form);
 
-    const old = rsvpSubmitSchema.safeParse({
+    const old = rsvpSubmitSchema(getT('public')).safeParse({
       status: 'maybe', adults: 0, kids: 0, answers: { q1: 'א'.repeat(501) }, show_in_guest_list: false,
     });
     expect(result).toEqual({

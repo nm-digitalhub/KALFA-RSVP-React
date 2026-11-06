@@ -63,7 +63,8 @@ export const submitRsvpAction = actionClient
       }
     }
 
-    const parsed = rsvpSubmitSchema.safeParse({
+    const schema = rsvpSubmitSchema(t);
+    const parsed = schema.safeParse({
       status: formData.get('status'),
       adults: Number(formData.get('adults') ?? 0),
       kids: Number(formData.get('kids') ?? 0),
@@ -76,7 +77,7 @@ export const submitRsvpAction = actionClient
       // Grouped by top-level field exactly as before (z.flattenError), so a
       // nested answers.<q_key> message still lands under `answers`.
       const { fieldErrors } = z.flattenError(parsed.error);
-      returnValidationErrors(rsvpSubmitSchema, {
+      returnValidationErrors(schema, {
         _errors: [t('r.errors.checkFields', 'נא לבדוק את הפרטים שמולאו.')],
         ...Object.fromEntries(Object.entries(fieldErrors).map(([field, errors]) => [field, { _errors: errors }])),
       });

@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 import type { Enums } from '@/lib/supabase/types';
 import type { CampaignStatus } from '@/lib/data/campaign-status';
 import type { CelebrantFieldLabels, HostComposition } from '@/lib/validation/schemas';
@@ -34,6 +36,22 @@ export const EVENT_TYPE_LABELS: Record<EventType, string> = {
   birthday: 'יום הולדת',
   other: 'אחר',
 };
+
+// Two roles, two sources. EVENT_TYPE_LABELS above serves the forms, the Meta template slots and voice, always in Hebrew,
+// and stays free of i18next because the worker and the customer forms import it. eventTypeLabels serves the guest's
+// sentence, {{eventType}}, in the language of the page. Their Hebrew must stay equal: event-labels.test.ts pins it.
+// A label that stands alone as a heading has its own key (celebrant-display.ts): English writes these in lower case.
+export const eventTypeLabels = (t: TFunction<'public'>): Record<EventType, string> => ({
+  wedding: t('guest.eventType.wedding', 'חתונה'),
+  bar_mitzvah: t('guest.eventType.barMitzvah', 'בר מצווה'),
+  bat_mitzvah: t('guest.eventType.batMitzvah', 'בת מצווה'),
+  brit: t('guest.eventType.brit', 'ברית'),
+  britah: t('guest.eventType.britah', 'בריתה'),
+  henna: t('guest.eventType.henna', 'חינה'),
+  engagement: t('guest.eventType.engagement', 'אירוסין'),
+  birthday: t('guest.eventType.birthday', 'יום הולדת'),
+  other: t('guest.eventType.other', 'אחר'),
+});
 
 export const EVENT_STATUS_LABELS: Record<EventStatus, string> = {
   draft: 'טיוטה',
