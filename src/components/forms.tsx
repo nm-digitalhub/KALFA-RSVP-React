@@ -16,6 +16,7 @@ export function SubmitButton({
   size,
   variant,
   disabled = false,
+  pendingLabel = 'רגע…',
 }: {
   children: React.ReactNode;
   className?: string;
@@ -25,11 +26,14 @@ export function SubmitButton({
   // A form that must not be submitted yet (e.g. acknowledgments still unticked).
   // Convenience only — whatever it guards is enforced by the server action.
   disabled?: boolean;
+  // What the button reads while the action runs. Public forms pass it from their own `t`, because this component also
+  // renders in the customer app, admin and /auth, where no I18nProvider exists; those keep the default.
+  pendingLabel?: string;
 }) {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" disabled={pending || disabled} size={size} variant={variant} className={cn('w-full', className)}>
-      {pending ? 'רגע…' : children}
+      {pending ? pendingLabel : children}
     </Button>
   );
 }

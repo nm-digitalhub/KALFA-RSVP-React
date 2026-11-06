@@ -1,13 +1,12 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { DirectionProvider } from '@base-ui/react/direction-provider';
 import { Loader2, Phone, X } from 'lucide-react';
 import { useT } from 'next-i18next/client';
 
+import { SitePhoneInput } from '@/components/site/site-phone-input';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { PhoneInput } from '@/components/ui/phone-input';
 
 // Floating call-center widget — capability A, THIRD design: OTP-verified,
 // PSTN-out, no browser Voximplant identity at all. Replaced the earlier
@@ -44,7 +43,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
 }
 
 export function CallMeNowWidget() {
-  const { t } = useT('public');
+  const { t, i18n } = useT('public');
   const [open, setOpen] = useState(false);
   const [disclosureAccepted, setDisclosureAccepted] = useState(false);
   const [phone, setPhone] = useState('');
@@ -71,6 +70,15 @@ export function CallMeNowWidget() {
     // A call-me-now request is exempt from the national Do-Not-Call registry (the visitor asked to be called), so the
     // only registry outcome this flow can meet is a decision record that could not be written.
     registry_pending: t('site.callMe.refusal.registryPending', 'לא ניתן לבצע שיחה כעת. נסו שוב בעוד מספר דקות.'),
+    // The refusals of the code request (request-code/route.ts). rate_limited is the route's per-IP guard, too_many_codes
+    // is requestOtp's own per-phone limit.
+    rate_limited: t('site.callMe.refusal.rateLimited', 'יותר מדי בקשות. נסו שוב בעוד כמה דקות.'),
+    too_many_codes: t('site.callMe.refusal.tooManyCodes', 'נשלחו יותר מדי קודים. נסו שוב מאוחר יותר.'),
+    body_too_large: t('site.callMe.refusal.bodyTooLarge', 'בקשה גדולה מדי'),
+    bad_body: t('site.callMe.refusal.badBody', 'גוף הבקשה אינו תקין'),
+    invalid_phone: t('site.callMe.refusal.invalidPhone', 'מספר טלפון לא תקין'),
+    otp_create_failed: t('site.callMe.refusal.otpCreateFailed', 'יצירת קוד האימות נכשלה'),
+    send_failed: t('site.callMe.refusal.sendFailed', 'שליחת קוד האימות נכשלה'),
   };
 
   // Same wording NO_AGENT_LINE_HE uses in ConsoleInbound.voxengine.js — reused
@@ -95,12 +103,14 @@ export function CallMeNowWidget() {
   async function onRequestCode() {
     setError(null);
     setStep('calling'); // reused as a generic busy state for this sub-step
-    const res = await postJson<{ ok: boolean; error?: string }>(
+    const res = await postJson<{ ok: boolean; reason?: string }>(
       '/api/call-me-now/request-code',
-      { phone },
+      { phone, language: i18n.language },
     );
     if (!res.ok) {
-      setError(res.error ?? t('site.callMe.errors.sendCodeFailed', 'שליחת קוד האימות נכשלה.'));
+      setError(
+        (res.reason && refusalMessage[res.reason]) ?? t('site.callMe.errors.sendCodeFailed', 'שליחת קוד האימות נכשלה.'),
+      );
       setStep('phone');
       return;
     }
@@ -134,140 +144,140 @@ export function CallMeNowWidget() {
   const busy = step === 'calling';
 
   return (
-    <DirectionProvider direction="rtl">
-      <div dir="rtl" className="fixed bottom-4 end-4 z-40">
-        {!open ? (
-          <Button
-            type="button"
-            size="lg"
-            className="shadow-lg"
-            onClick={() => setOpen(true)}
-          >
-            <Phone aria-hidden />
-            {t('site.callMe.title', 'התקשרו אליי עכשיו')}
-          </Button>
-        ) : (
-          // Non-modal dialog: the page behind stays usable, so no aria-modal.
-          <div
-            role="dialog"
-            aria-labelledby={titleId}
-            className="w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg"
-          >
-            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-              <Phone className="size-4 text-muted-foreground" aria-hidden />
-              <p id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">{t('site.callMe.title', 'התקשרו אליי עכשיו')}</p>
-              <button
-                type="button"
-                aria-label={t('site.callMe.close', 'סגירה')}
-                onClick={onClose}
-                className="-my-2.5 -me-2.5 grid size-11 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted"
-              >
-                <X className="size-4" aria-hidden />
-              </button>
-            </div>
-
-            <div className="space-y-3 px-4 py-3 text-sm">
-              {step === 'phone' && !disclosureAccepted ? (
-                <>
-                  <p className="text-muted-foreground">
-                    נחייג אליכם תוך דקות ספורות ונחבר אתכם לנציג מוקד קלפה.
-                    השיחה מוקלטת לצורך תיעוד ושיפור השירות.
-                  </p>
-                  <Button type="button" className="w-full" onClick={() => setDisclosureAccepted(true)}>
-                    {t('site.callMe.disclosureAccept', 'הבנתי, המשך')}
-                  </Button>
-                </>
-              ) : null}
-
-              {step === 'phone' && disclosureAccepted ? (
-                <>
-                  {/* id/htmlFor, not a wrapping <label>: PhoneInput's first
-                      labelable descendant is its country-picker BUTTON, so a
-                      wrapping label named the button, not the number field. */}
-                  <div className="space-y-1">
-                    <label htmlFor={phoneId} className="block text-muted-foreground">
-                      {t('site.callMe.phoneLabel', 'מספר טלפון')}
-                    </label>
-                    <PhoneInput
-                      id={phoneId}
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="050-1234567"
-                    />
-                  </div>
-                  {error ? <p role="alert" className="text-destructive">{error}</p> : null}
-                  <Button
-                    type="button"
-                    className="w-full"
-                    disabled={!phone.trim()}
-                    onClick={() => void onRequestCode()}
-                  >
-                    {t('site.callMe.sendCode', 'שליחת קוד אימות')}
-                  </Button>
-                </>
-              ) : null}
-
-              {step === 'code' ? (
-                <>
-                  <p className="text-muted-foreground">{t('site.callMe.codePrompt', 'שלחנו קוד אימות בהודעת SMS. הזינו אותו כאן:')}</p>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    aria-label={t('site.callMe.codeAria', 'קוד אימות')}
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    className="tracking-widest"
-                    placeholder="000000"
-                    maxLength={6}
-                  />
-                  {error ? <p role="alert" className="text-destructive">{error}</p> : null}
-                  <Button
-                    type="button"
-                    className="w-full"
-                    disabled={code.trim().length !== 6}
-                    onClick={() => void onVerifyAndCall()}
-                  >
-                    <Phone aria-hidden />
-                    {t('site.callMe.verifyAndCall', 'אימות והתקשרות')}
-                  </Button>
-                </>
-              ) : null}
-
-              {busy ? (
-                <div className="flex items-center justify-center gap-2 py-2 text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                  {t('site.callMe.busy', 'רק רגע…')}
-                </div>
-              ) : null}
-
-              {step === 'done' ? (
-                <p className="text-center font-medium text-emerald-600 dark:text-emerald-400">
-                  {t('site.callMe.ringingSoon', 'הטלפון שלכם אמור לצלצל בקרוב.')}
-                </p>
-              ) : null}
-
-              {step === 'callback_offered' ? (
-                <>
-                  <p className="text-center font-medium">{noAgentMessage}</p>
-                  <Button type="button" variant="outline" className="w-full" onClick={reset}>
-                    {t('site.callMe.close', 'סגירה')}
-                  </Button>
-                </>
-              ) : null}
-
-              {step === 'error' ? (
-                <>
-                  <p role="alert" className="text-destructive">{error}</p>
-                  <Button type="button" variant="outline" className="w-full" onClick={reset}>
-                    {t('site.callMe.retry', 'ניסיון נוסף')}
-                  </Button>
-                </>
-              ) : null}
-            </div>
+    <div className="fixed bottom-4 end-4 z-40">
+      {!open ? (
+        <Button
+          type="button"
+          size="lg"
+          className="shadow-lg"
+          onClick={() => setOpen(true)}
+        >
+          <Phone aria-hidden />
+          {t('site.callMe.title', 'התקשרו אליי עכשיו')}
+        </Button>
+      ) : (
+        // Non-modal dialog: the page behind stays usable, so no aria-modal.
+        <div
+          role="dialog"
+          aria-labelledby={titleId}
+          className="w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg"
+        >
+          <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+            <Phone className="size-4 text-muted-foreground" aria-hidden />
+            <p id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium">{t('site.callMe.title', 'התקשרו אליי עכשיו')}</p>
+            <button
+              type="button"
+              aria-label={t('site.callMe.close', 'סגירה')}
+              onClick={onClose}
+              className="-my-2.5 -me-2.5 grid size-11 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted"
+            >
+              <X className="size-4" aria-hidden />
+            </button>
           </div>
-        )}
-      </div>
-    </DirectionProvider>
+
+          <div className="space-y-3 px-4 py-3 text-sm">
+            {step === 'phone' && !disclosureAccepted ? (
+              <>
+                <p className="text-muted-foreground">
+                  {t(
+                    'site.callMe.disclosure',
+                    'נחייג אליכם תוך דקות ספורות ונחבר אתכם לנציג מוקד קלפה. השיחה מוקלטת לצורך תיעוד ושיפור השירות.',
+                  )}
+                </p>
+                <Button type="button" className="w-full" onClick={() => setDisclosureAccepted(true)}>
+                  {t('site.callMe.disclosureAccept', 'הבנתי, המשך')}
+                </Button>
+              </>
+            ) : null}
+
+            {step === 'phone' && disclosureAccepted ? (
+              <>
+                {/* id/htmlFor, not a wrapping <label>: PhoneInput's first
+                    labelable descendant is its country-picker BUTTON, so a
+                    wrapping label named the button, not the number field. */}
+                <div className="space-y-1">
+                  <label htmlFor={phoneId} className="block text-muted-foreground">
+                    {t('site.callMe.phoneLabel', 'מספר טלפון')}
+                  </label>
+                  <SitePhoneInput
+                    id={phoneId}
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="050-1234567"
+                  />
+                </div>
+                {error ? <p role="alert" className="text-destructive">{error}</p> : null}
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={!phone.trim()}
+                  onClick={() => void onRequestCode()}
+                >
+                  {t('site.callMe.sendCode', 'שליחת קוד אימות')}
+                </Button>
+              </>
+            ) : null}
+
+            {step === 'code' ? (
+              <>
+                <p className="text-muted-foreground">{t('site.callMe.codePrompt', 'שלחנו קוד אימות בהודעת SMS. הזינו אותו כאן:')}</p>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  aria-label={t('site.callMe.codeAria', 'קוד אימות')}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  className="tracking-widest"
+                  placeholder="000000"
+                  maxLength={6}
+                />
+                {error ? <p role="alert" className="text-destructive">{error}</p> : null}
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={code.trim().length !== 6}
+                  onClick={() => void onVerifyAndCall()}
+                >
+                  <Phone aria-hidden />
+                  {t('site.callMe.verifyAndCall', 'אימות והתקשרות')}
+                </Button>
+              </>
+            ) : null}
+
+            {busy ? (
+              <div className="flex items-center justify-center gap-2 py-2 text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+                {t('site.callMe.busy', 'רק רגע…')}
+              </div>
+            ) : null}
+
+            {step === 'done' ? (
+              <p className="text-center font-medium text-emerald-600 dark:text-emerald-400">
+                {t('site.callMe.ringingSoon', 'הטלפון שלכם אמור לצלצל בקרוב.')}
+              </p>
+            ) : null}
+
+            {step === 'callback_offered' ? (
+              <>
+                <p className="text-center font-medium">{noAgentMessage}</p>
+                <Button type="button" variant="outline" className="w-full" onClick={reset}>
+                  {t('site.callMe.close', 'סגירה')}
+                </Button>
+              </>
+            ) : null}
+
+            {step === 'error' ? (
+              <>
+                <p role="alert" className="text-destructive">{error}</p>
+                <Button type="button" variant="outline" className="w-full" onClick={reset}>
+                  {t('site.callMe.retry', 'ניסיון נוסף')}
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

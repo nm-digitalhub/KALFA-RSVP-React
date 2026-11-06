@@ -10,7 +10,7 @@ import {
   SubmitButton,
 } from '@/components/forms';
 import { Input } from '@/components/ui/input';
-import { PhoneInput } from '@/components/ui/phone-input';
+import { SitePhoneInput } from '@/components/site/site-phone-input';
 import {
   CallbackTimePreference,
   FIELD_CLS,
@@ -59,10 +59,13 @@ function fieldA11y(id: string, errors: string[] | undefined, ...hintIds: string[
 // ContactForm's email-style reply — disclosed here, not in the shared
 // PrivacyNote, so ContactForm submitters (no call involved) don't see it.
 function CallbackDisclosureNote() {
+  const { t } = useT('public');
   return (
     <p className="text-xs text-muted-foreground">
-      החזרה עשויה להתבצע על ידי נציג אנושי או באמצעות סוכן דיגיטלי/קולי אוטומטי מטעם קלפה. בעקבות
-      השיחה ייתכן שגם תישלח הודעת WhatsApp מטעם קלפה, בכפוף לאישורך במהלך השיחה עצמה.
+      {t(
+        'site.contact.form.callbackDisclosure',
+        'החזרה עשויה להתבצע על ידי נציג אנושי או באמצעות סוכן דיגיטלי/קולי אוטומטי מטעם קלפה. בעקבות השיחה ייתכן שגם תישלח הודעת WhatsApp מטעם קלפה, בכפוף לאישורך במהלך השיחה עצמה.',
+      )}
     </p>
   );
 }
@@ -119,7 +122,7 @@ export function ContactForm({
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor="contact-phone">{t('site.contact.form.phone', 'טלפון')}</Label>
-          <PhoneInput
+          <SitePhoneInput
             id="contact-phone"
             name="phone"
             className={FIELD_CLS}
@@ -144,7 +147,7 @@ export function ContactForm({
       </div>
       <FormError message={actionFormError(state)} />
       <FormNotice message={state.data?.notice} />
-      <SubmitButton size="lg" className="min-h-11">{t('site.contact.form.submitContact', 'שליחת פנייה')}</SubmitButton>
+      <SubmitButton size="lg" className="min-h-11" pendingLabel={t('site.contact.form.pending', 'רגע…')}>{t('site.contact.form.submitContact', 'שליחת פנייה')}</SubmitButton>
       <PrivacyNote />
     </form>
   );
@@ -184,7 +187,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
       </div>
       <div className="grid gap-1.5">
         <Label htmlFor="cb-phone">{t('site.contact.form.phone', 'טלפון')}</Label>
-        <PhoneInput
+        <SitePhoneInput
           id="cb-phone"
           name="phone"
           required
@@ -195,7 +198,10 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
       </div>
       <TopicSelect id="cb-topic" defaultTopic={defaultTopic} />
       <p className="text-xs text-muted-foreground">
-        בבחירת נושא &quot;מכירות&quot; אני מבקש/ת שיחזרו אליי בנוגע לרכישת שירותי קלפה, לרבות מידע ופרטים לפני רכישה.
+        {t(
+          'site.contact.form.salesConsent',
+          'בבחירת נושא "מכירות" אני מבקש/ת שיחזרו אליי בנוגע לרכישת שירותי קלפה, לרבות מידע ופרטים לפני רכישה.',
+        )}
       </p>
       <CallbackTimePreference />
       <div className="grid gap-1.5">
@@ -212,7 +218,7 @@ export function CallbackForm({ defaultTopic }: { defaultTopic?: string }) {
       </div>
       <FormError message={actionFormError(state)} />
       <FormNotice message={state.data?.notice} />
-      <SubmitButton size="lg" className="min-h-11">{t('site.contact.form.submitCallback', 'חזרו אליי')}</SubmitButton>
+      <SubmitButton size="lg" className="min-h-11" pendingLabel={t('site.contact.form.pending', 'רגע…')}>{t('site.contact.form.submitCallback', 'חזרו אליי')}</SubmitButton>
       <CallbackDisclosureNote />
       <PrivacyNote />
     </form>

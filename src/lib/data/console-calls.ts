@@ -2567,17 +2567,14 @@ export async function recordWidgetOriginIpHash(callId: string, ipHash: string): 
 // Three research findings that made this the accepted design instead of the
 // widget (DOCS/MEASURED, live-verified 12.8):
 //
-// 1. OTP is reusable AS-IS (otp.ts's requestOtp/verifyOtp — already live in
-//    production for agreement-signing) — purpose-keyed, takes a raw phone,
-//    no auth baked in. BUT every EXISTING call site is authenticated and can
-//    only request a code for its OWN profile phone; a public "call me"
-//    endpoint accepts an ATTACKER-NAMED phone. requestOtp's own limit
+// 1. OTP is reusable (otp.ts's requestOtp/verifyOtp) — purpose-keyed, takes a
+//    raw phone, no auth baked in. The public request-code route is its only
+//    caller, and it accepts an ATTACKER-NAMED phone. requestOtp's own limit
 //    (5 codes/phone/purpose/hour) caps hitting one victim repeatedly but
 //    does nothing against an attacker rotating destination numbers from one
 //    IP to burn SMS budget or harass strangers — the public request-code
 //    route layers its OWN getClientIp+rateLimit on top (same class of
-//    objection as the widget's credential endpoint; not laundered away just
-//    because the OTP module itself is pre-existing and safe elsewhere).
+//    objection as the widget's credential endpoint).
 // 2. The ct-token/ConsoleDial path CANNOT be reused, and this needs a NEW
 //    Voximplant rule+scenario — verified by reading ConsoleDial.voxengine.js
 //    end to end: its ONLY entry point is AppEvents.CallAlerting (an

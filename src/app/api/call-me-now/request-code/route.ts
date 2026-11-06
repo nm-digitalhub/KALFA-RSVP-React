@@ -1,28 +1,31 @@
 import { NextResponse } from 'next/server';
 
+import { getT } from '@/i18n.server';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { requestOtp } from '@/lib/data/otp';
 import { CALL_ME_NOW_OTP_PURPOSE, callMeNowRequestCodeBodySchema } from '@/lib/validation/call-me-now';
 
-// POST /api/call-me-now/request-code   body: { phone }   →   { ok, error? }
+// POST /api/call-me-now/request-code   body: { phone, language? }   →   { ok, reason? }
 //
 // PUBLIC — the visitor names an arbitrary phone number here, unauthenticated.
-// otp.ts's requestOtp is reused UNCHANGED (same function agreement-signing
-// already uses in production) — it is purpose-keyed and takes a raw phone,
-// so it works for a public caller with zero changes. But every EXISTING call
-// site is authenticated and can only ever request a code for its OWN profile
-// phone; this route accepts an ATTACKER-NAMED number. requestOtp's own limit
-// (5 codes/phone/purpose/hour, otp.ts's RATE_MAX/RATE_WINDOW_MS) caps hitting
-// ONE victim repeatedly, but does nothing against an attacker rotating
+// This route is the only caller of otp.ts's requestOtp, which is purpose-keyed
+// and takes a raw phone, so the number it sends to is ATTACKER-NAMED. requestOtp's
+// own limit (5 codes/phone/purpose/hour, otp.ts's RATE_MAX/RATE_WINDOW_MS) caps
+// hitting ONE victim repeatedly, but does nothing against an attacker rotating
 // destination numbers from a single IP to burn SMS budget or harass
 // strangers — hence the per-IP flood guard below, layered on top, same class
 // of admission discipline as every other public call-center entry point in
 // this project (widget/call-intent, route-inbound's coarse guard).
 //
-// OTP_PURPOSE is its own value ('call_me_now'), distinct from
-// agreements.ts's 'agreement_signing' — otp_challenges rate-limits and looks
-// up per (phone, purpose), so the two flows can never interfere with or
-// count against each other for the same phone.
+// `reason` is a fixed value, as in verify/route.ts: the widget words it in the
+// page's language. `language` is validated with the rest of the body; past that
+// it picks the wording of the SMS only, and reaches no limit and no log. A Route
+// Handler has no language of its own, so getT gets it explicitly (next-i18next
+// README, "Server Components").
+//
+// CALL_ME_NOW_OTP_PURPOSE is its own value ('call_me_now'): otp_challenges
+// rate-limits and looks up per (phone, purpose), so another purpose could never
+// interfere with or count against this one for the same phone.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,26 +45,29 @@ function json(body: unknown, status: number) {
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));
   if (!(await rateLimit(`call-me-now-request-code:${ip}`, FLOOD_RATE)).allowed) {
-    return json({ ok: false, error: 'יותר מדי בקשות. נסו שוב בעוד כמה דקות.' }, 429);
+    return json({ ok: false, reason: 'rate_limited' }, 429);
   }
 
   const declaredLen = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
-    return json({ ok: false, error: 'בקשה גדולה מדי' }, 413);
+    return json({ ok: false, reason: 'body_too_large' }, 413);
   }
   const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json({ ok: false, error: 'בקשה גדולה מדי' }, 413);
+  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json({ ok: false, reason: 'body_too_large' }, 413);
 
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(raw);
   } catch {
-    return json({ ok: false, error: 'גוף הבקשה אינו תקין' }, 400);
+    return json({ ok: false, reason: 'bad_body' }, 400);
   }
   const parsed = callMeNowRequestCodeBodySchema.safeParse(parsedJson);
-  if (!parsed.success) return json({ ok: false, error: 'מספר טלפון לא תקין' }, 400);
+  if (!parsed.success) return json({ ok: false, reason: 'invalid_phone' }, 400);
 
-  const res = await requestOtp(parsed.data.phone, CALL_ME_NOW_OTP_PURPOSE);
-  if (!res.ok) return json({ ok: false, error: res.error ?? 'שליחת קוד האימות נכשלה' }, 200);
+  const { t } = await getT('public', { lng: parsed.data.language });
+  const res = await requestOtp(parsed.data.phone, CALL_ME_NOW_OTP_PURPOSE, (code) =>
+    t('site.callMe.smsCode', 'קוד האימות שלך ל-KALFA: {{code}}', { code }),
+  );
+  if (!res.ok) return json({ ok: false, reason: res.reason ?? 'send_failed' }, 200);
   return json({ ok: true }, 200);
 }

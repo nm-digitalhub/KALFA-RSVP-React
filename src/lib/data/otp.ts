@@ -20,17 +20,21 @@ function hashCode(code: string, phone: string): string {
   return createHash('sha256').update(`${code}:${phone}`).digest('hex');
 }
 
-export type OtpResult = { ok: boolean; error?: string };
+export type OtpFailureReason = 'invalid_phone' | 'otp_create_failed' | 'too_many_codes' | 'send_failed';
 
-// Generate + SMS a one-time code. Returns { ok:false, error } for user-facing
-// failures (invalid phone, rate limit, SMS not configured) so the caller can
-// surface a message without leaking internals.
+export type OtpResult = { ok: boolean; reason?: OtpFailureReason };
+
+// Generate + SMS a one-time code. Returns { ok:false, reason } for user-facing
+// failures (invalid phone, rate limit, SMS not configured): a fixed value the
+// caller words in the visitor's language, without leaking internals. `smsText`
+// is the caller's wording around the code, so the language stays out of this file.
 export async function requestOtp(
   rawPhone: string,
   purpose: string,
+  smsText: (code: string) => string,
 ): Promise<OtpResult> {
   const phone = normalizePhone(rawPhone);
-  if (!phone) return { ok: false, error: 'מספר טלפון לא תקין' };
+  if (!phone) return { ok: false, reason: 'invalid_phone' };
 
   const admin = createAdminClient();
 
@@ -41,9 +45,9 @@ export async function requestOtp(
     .eq('phone', phone)
     .eq('purpose', purpose)
     .gte('created_at', since);
-  if (countErr) return { ok: false, error: 'יצירת קוד האימות נכשלה' };
+  if (countErr) return { ok: false, reason: 'otp_create_failed' };
   if ((count ?? 0) >= RATE_MAX) {
-    return { ok: false, error: 'נשלחו יותר מדי קודים. נסו שוב מאוחר יותר.' };
+    return { ok: false, reason: 'too_many_codes' };
   }
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
@@ -53,11 +57,11 @@ export async function requestOtp(
     code_hash: hashCode(code, phone),
     expires_at: new Date(Date.now() + CODE_TTL_MS).toISOString(),
   });
-  if (insErr) return { ok: false, error: 'יצירת קוד האימות נכשלה' };
+  if (insErr) return { ok: false, reason: 'otp_create_failed' };
 
   try {
     const sender = await getSmsSender();
-    await sender.send({ to: phone, text: `קוד האימות שלך ל-KALFA: ${code}` });
+    await sender.send({ to: phone, text: smsText(code) });
   } catch (err) {
     // Surface a generic message to the user, but LOG the provider reason so a
     // real failure (bad token, unapproved sender, no balance, gateway down) is
@@ -67,7 +71,7 @@ export async function requestOtp(
         err instanceof Error ? err.message : 'unknown error'
       }`,
     );
-    return { ok: false, error: 'שליחת קוד האימות נכשלה' };
+    return { ok: false, reason: 'send_failed' };
   }
   return { ok: true };
 }

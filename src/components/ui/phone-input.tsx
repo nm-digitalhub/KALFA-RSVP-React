@@ -23,6 +23,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { useDirection } from "@/components/ui/direction";
 import {
   Popover,
   PopoverContent,
@@ -64,32 +65,43 @@ import {
 // `${cdnUrl}${code}.svg` with no separator.
 const FLAG_BASE = "/country-flags/";
 
-// Hebrew country names, the same mechanism src/lib/analytics/ga4-mappers.ts
+// Country names from the platform, the same mechanism src/lib/analytics/ga4-mappers.ts
 // already uses. Avoids a country-name dependency that only ships English.
-const regionNames = new Intl.DisplayNames(["he"], { type: "region" });
 const englishNames = new Intl.DisplayNames(["en"], { type: "region" });
 
-const countryNameOf = (code: CountryCode) => regionNames.of(code) ?? code;
-
 // The list the picker offers: every country libphonenumber can parse, named in
-// Hebrew and sorted the way a Hebrew reader expects. Israel is pinned to the
-// top because it is the answer for almost every guest — scrolling past 240
+// the given language and sorted the way its reader expects. Israel is pinned to
+// the top because it is the answer for almost every guest — scrolling past 240
 // countries to reach the common case would be the wrong default.
-// Built once at module load: the set is static, and rebuilding it per render
-// would sort 245 strings on every keystroke.
-const COUNTRY_OPTIONS = getCountries()
-  .map((code) => ({
-    code,
-    name: countryNameOf(code),
-    // Searchable in English too — an owner may well type "france".
-    englishName: englishNames.of(code) ?? code,
-    callingCode: getCountryCallingCode(code),
-  }))
-  .sort((a, b) => {
-    if (a.code === "IL") return -1;
-    if (b.code === "IL") return 1;
-    return a.name.localeCompare(b.name, "he");
-  });
+function buildCountryOptions(language: string) {
+  const regionNames = new Intl.DisplayNames([language], { type: "region" });
+  return getCountries()
+    .map((code) => ({
+      code,
+      name: regionNames.of(code) ?? code,
+      // Searchable in English too — an owner may well type "france".
+      englishName: englishNames.of(code) ?? code,
+      callingCode: getCountryCallingCode(code),
+    }))
+    .sort((a, b) => {
+      if (a.code === "IL") return -1;
+      if (b.code === "IL") return 1;
+      return a.name.localeCompare(b.name, language);
+    });
+}
+
+// Built once per language: the set is static, and rebuilding it per render would
+// sort 245 strings on every keystroke. Hebrew at module load, since admin and the
+// customer app use nothing else; another language on its first use.
+const COUNTRY_OPTIONS = new Map([["he", buildCountryOptions("he")]]);
+
+export function countryOptionsIn(language: string) {
+  const known = COUNTRY_OPTIONS.get(language);
+  if (known) return known;
+  const built = buildCountryOptions(language);
+  COUNTRY_OPTIONS.set(language, built);
+  return built;
+}
 
 // Calling code → the countries that share it, MAIN COUNTRY FIRST. That order
 // is what makes "+1 is 🇺🇸" and "+44 is 🇬🇧" the right answer even though 25
@@ -109,6 +121,23 @@ function countryForCallingCode(international: string): CountryCode | null {
   return null;
 }
 
+// The field's own words. Hebrew unless a caller passes them: admin and the customer
+// app render outside the I18nProvider of (public)/layout.tsx, so the public site
+// passes them through SitePhoneInput, and this file stays free of i18next.
+export type PhoneInputLabels = {
+  search: string;
+  empty: string;
+  unknownCountry: string;
+  selectCountry: (countryName: string) => string;
+};
+
+const HEBREW_LABELS: PhoneInputLabels = {
+  search: "חיפוש מדינה…",
+  empty: "לא נמצאה מדינה",
+  unknownCountry: "מדינה לא מזוהה",
+  selectCountry: (countryName) => `בחירת מדינה — כעת ${countryName}`,
+};
+
 export type PhoneInputProps = Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
   "type"
@@ -120,6 +149,9 @@ export type PhoneInputProps = Omit<
   // ignores it: libphonenumber documents defaultCountry as consulted only
   // when the input carries no country information of its own.
   defaultCountry?: CountryCode;
+  // The language of the country names and of their order.
+  language?: string;
+  labels?: PhoneInputLabels;
 };
 
 export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
@@ -130,6 +162,8 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
       value,
       onChange,
       defaultCountry = "IL",
+      language = "he",
+      labels = HEBREW_LABELS,
       disabled,
       ...props
     },
@@ -140,6 +174,8 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
     const [typed, setTyped] = useState(String(defaultValue ?? ""));
     const [pickerOpen, setPickerOpen] = useState(false);
     const inputRef = useRef<HTMLInputElement | null>(null);
+    const direction = useDirection();
+    const countryOptions = countryOptionsIn(language);
     const text = value === undefined ? typed : String(value);
 
     // The flag answers "which country is this number in", and the two forms of
@@ -172,7 +208,9 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
       return parsed?.isValid() ? (parsed.country ?? null) : null;
     }, [text, defaultCountry]);
 
-    const countryName = country ? countryNameOf(country) : "מדינה לא מזוהה";
+    const countryName = country
+      ? (countryOptions.find((option) => option.code === country)?.name ?? country)
+      : labels.unknownCountry;
 
     // Push a new value out through BOTH paths, so the field behaves the same
     // whether the parent controls it or not. The event carries the real input
@@ -227,8 +265,8 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
     return (
       <div>
         {/* A phone number is read left-to-right in every locale, and so is the
-            flag that labels it — so this row stays LTR inside the RTL page.
-            The label and the hint below it remain RTL. */}
+            flag that labels it — so this row stays LTR on an RTL page too. The
+            label and the hint below it follow the page. */}
         <div
           dir="ltr"
           className={cn(
@@ -245,7 +283,7 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
               // where a 16px flag would be unhittable.
               type="button"
               disabled={disabled}
-              aria-label={`בחירת מדינה — כעת ${countryName}`}
+              aria-label={labels.selectCountry(countryName)}
               // The divider is what makes this read as a control rather than
               // decoration sitting inside the text field.
               className="flex h-11 shrink-0 items-center gap-1.5 rounded-s-md border-e border-border ps-3 pe-2 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none"
@@ -268,17 +306,17 @@ export const PhoneInput = forwardRef<HTMLInputElement, PhoneInputProps>(
               <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
             </PopoverTrigger>
             <PopoverContent align="start" className="w-72 p-0">
-              {/* The list is Hebrew, so it reads RTL even though the field
+              {/* The list reads in the page's direction even though the field
                   above it is LTR. */}
-              <Command dir="rtl">
-                <CommandInput placeholder="חיפוש מדינה…" />
+              <Command dir={direction}>
+                <CommandInput placeholder={labels.search} />
                 <CommandList>
-                  <CommandEmpty>לא נמצאה מדינה</CommandEmpty>
-                  {COUNTRY_OPTIONS.map((option) => (
+                  <CommandEmpty>{labels.empty}</CommandEmpty>
+                  {countryOptions.map((option) => (
                     <CommandItem
                       key={option.code}
                       value={option.code}
-                      // Findable by Hebrew name, English name, ISO code and
+                      // Findable by its name, English name, ISO code and
                       // dialling code — an owner may type any of them.
                       keywords={[
                         option.name,

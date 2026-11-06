@@ -1,6 +1,9 @@
 'use client';
 
-import Link from 'next/link';
+import type { TFunction } from 'i18next';
+import { Trans, useT } from 'next-i18next/client';
+
+import { SiteLink as Link } from '@/components/site/site-link';
 
 import { Label } from '@/components/ui/label';
 import { INQUIRY_TOPICS } from '@/lib/validation/inquiries';
@@ -38,12 +41,13 @@ export const SELECT_CLS =
 
 /** Visually hidden, ignored by real users, checked server-side. */
 export function Honeypot() {
+  const { t } = useT('public');
   return (
     <div aria-hidden="true" className="absolute -m-px size-px overflow-hidden p-0 [clip:rect(0,0,0,0)]">
       {/* The label text tells an automated DOM reader to skip the field;
           humans never hear it (aria-hidden) nor reach it (tabIndex -1). */}
       <label>
-        השאירו שדה זה ריק
+        {t('site.contact.form.honeypot', 'השאירו שדה זה ריק')}
         <input type="text" name="company" tabIndex={-1} autoComplete="off" />
       </label>
     </div>
@@ -51,13 +55,22 @@ export function Honeypot() {
 }
 
 export function TopicSelect({ id, defaultTopic }: { id: string; defaultTopic?: string }) {
+  const { t } = useT('public');
+  // Only the visible text follows the language. The option's value stays the Hebrew topic: it is what the server
+  // validates against INQUIRY_TOPICS, what gets stored, and what callback-scheduling.ts routes on.
+  const topicLabels: Record<(typeof INQUIRY_TOPICS)[number], string> = {
+    'מכירות': t('site.contact.form.topics.sales', 'מכירות'),
+    'תמיכה': t('site.contact.form.topics.support', 'תמיכה'),
+    'חיוב ותשלום': t('site.contact.form.topics.billing', 'חיוב ותשלום'),
+    'אחר': t('site.contact.form.topics.other', 'אחר'),
+  };
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={id}>נושא הפנייה</Label>
+      <Label htmlFor={id}>{t('site.contact.form.topicLabel', 'נושא הפנייה')}</Label>
       <select id={id} name="topic" defaultValue={defaultTopic ?? INQUIRY_TOPICS[0]} className={SELECT_CLS}>
-        {INQUIRY_TOPICS.map((t) => (
-          <option key={t} value={t}>
-            {t}
+        {INQUIRY_TOPICS.map((topic) => (
+          <option key={topic} value={topic}>
+            {topicLabels[topic]}
           </option>
         ))}
       </select>
@@ -65,12 +78,13 @@ export function TopicSelect({ id, defaultTopic }: { id: string; defaultTopic?: s
   );
 }
 
-const TIME_PREFERENCES = [
-  { value: 'asap', label: 'בהקדם האפשרי' },
-  { value: 'morning', label: 'בבוקר' },
-  { value: 'afternoon', label: 'אחר הצהריים' },
-  { value: 'evening', label: 'בערב' },
-] as const;
+const timePreferences = (t: TFunction<'public'>) =>
+  [
+    { value: 'asap', label: t('site.contact.form.timePreference.asap', 'בהקדם האפשרי') },
+    { value: 'morning', label: t('site.contact.form.timePreference.morning', 'בבוקר') },
+    { value: 'afternoon', label: t('site.contact.form.timePreference.afternoon', 'אחר הצהריים') },
+    { value: 'evening', label: t('site.contact.form.timePreference.evening', 'בערב') },
+  ] as const;
 
 /**
  * Plain radios, no client state: the form posts as FormData, an unchecked
@@ -78,11 +92,12 @@ const TIME_PREFERENCES = [
  * possible".
  */
 export function CallbackTimePreference() {
+  const { t } = useT('public');
   return (
     <fieldset>
-      <legend className="mb-1 block text-sm font-medium">מתי נוח שנחזור אליך?</legend>
+      <legend className="mb-1 block text-sm font-medium">{t('site.contact.form.timePreference.legend', 'מתי נוח שנחזור אליך?')}</legend>
       <div className="flex flex-wrap gap-2">
-        {TIME_PREFERENCES.map((option, index) => (
+        {timePreferences(t).map((option, index) => (
           <label
             key={option.value}
             className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-2 text-sm transition has-checked:border-primary has-checked:bg-primary/10 has-checked:font-medium has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-ring hover:bg-muted"
@@ -102,19 +117,22 @@ export function CallbackTimePreference() {
         ))}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">
-        נשתדל לחזור בטווח שבחרת, בשעות הפעילות.
+        {t('site.contact.form.timePreference.hint', 'נשתדל לחזור בטווח שבחרת, בשעות הפעילות.')}
       </p>
     </fieldset>
   );
 }
 
 export function PrivacyNote() {
+  const { t } = useT('public');
   return (
     <p className="text-xs text-muted-foreground">
-      הפרטים ישמשו למענה לפנייה בלבד.{' '}
-      <Link href="/privacy" className="underline hover:text-foreground">
-        מדיניות פרטיות
-      </Link>
+      <Trans
+        t={t}
+        i18nKey="site.contact.form.privacyNote"
+        defaults="הפרטים ישמשו למענה לפנייה בלבד. <privacy>מדיניות פרטיות</privacy>"
+        components={{ privacy: <Link href="/privacy" className="underline hover:text-foreground" /> }}
+      />
     </p>
   );
 }

@@ -20,7 +20,7 @@ import { getCallMeNowWidgetEnabled } from '@/lib/data/call-me-now-public-config'
 // blocked: an unauthenticated endpoint minting telephony credentials is a
 // real attack surface even on a shared identity). This design has NO
 // browser Voximplant identity at all: the visitor proves control of their
-// own phone via SMS OTP (otp.ts, reused unchanged from agreement-signing),
+// own phone via SMS OTP (otp.ts),
 // then the SERVER places a real outbound PSTN call via StartScenarios —
 // the same Management-API primitive already proven in production by the
 // outbound AI-call campaign — and bridges it to a console agent. See

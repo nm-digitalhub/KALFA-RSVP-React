@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { DEFAULT_LANGUAGE, SITE_LANGUAGES } from '@/lib/i18n/site-language';
+
 // Validation for the public "call me now" surface (capability A, THIRD
 // design, 12.8) — two anonymous, unauthenticated routes:
 //   1. POST /api/call-me-now/request-code   — send an SMS OTP to a
@@ -33,6 +35,8 @@ const otpCodeField = z.string().trim().regex(/^\d{6}$/, 'code has unexpected sha
 
 export const callMeNowRequestCodeBodySchema = z.strictObject({
   phone: phoneField,
+  // Picks the wording of the SMS and nothing else. Absent means Hebrew, and any other value is a bad body.
+  language: z.enum(SITE_LANGUAGES).default(DEFAULT_LANGUAGE),
 });
 export type CallMeNowRequestCodeBody = z.infer<typeof callMeNowRequestCodeBodySchema>;
 
