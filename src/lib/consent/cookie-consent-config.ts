@@ -1,5 +1,8 @@
 import type * as CookieConsent from 'vanilla-cookieconsent';
 
+import { hrefInLanguage } from '@/lib/i18n/site-language';
+import heText from '@/locales/he/cookieConsent.json';
+
 // Central cookie-consent configuration for KALFA.
 // See docs/consent/cookie-consent.md for the full rationale and how to extend it.
 //
@@ -50,9 +53,12 @@ import type * as CookieConsent from 'vanilla-cookieconsent';
 // DB write — this is a correctness requirement, not a convenience: verified
 // against the installed vanilla-cookieconsent 3.1.0 source that omitting a
 // category from the built config alone does not erase it from an
-// already-valid stored consent cookie (see plan §2.2). Legal/UI text stays
-// fully static here by design (plan §7) — the admin controls availability
-// and the revision number only, never the wording.
+// already-valid stored consent cookie (see plan §2.2). The wording stays fixed
+// in the repo by design (plan §7), in src/locales/he/cookieConsent.json, never
+// in app_settings — the admin controls availability and the revision number
+// only, never the wording. Changing it, or its en and fr translations, needs a new
+// CONSENT_REVISION: cookie-consent-config.test.ts pins each revision to the SHA-256
+// of the text of the three files, so formatting and key order do not count.
 export const CONSENT_REVISION = 5;
 
 // What an admin may control from /admin/cookie-consent. `revisionBump` is
@@ -74,9 +80,8 @@ export const BASELINE_ADMIN_CONFIG: CookieConsentAdminConfig = {
   revisionBump: 0,
 };
 
-// Category + section definitions, kept as constants so
-// buildCookieConsentConfig() can include/omit them by key based on admin
-// availability flags.
+// Category definitions, kept as constants so buildCookieConsentConfig() can
+// include/omit them by key based on admin availability flags.
 const ANALYTICS_CATEGORY: CookieConsent.Category = {
   // Google Analytics 4 — opt-in only. The tracker itself is rendered by
   // GoogleAnalyticsGated strictly after this category is granted, so the
@@ -102,40 +107,53 @@ const MARKETING_CATEGORY: CookieConsent.Category = {
   },
 };
 
-const INTRO_SECTION = {
-  description:
-    'עוגיות חיוניות נדרשות לתפקוד הבסיסי ואינן ניתנות לכיבוי; אנליטיקה ושיווק פועלים רק בהסכמתכם, בנפרד זה מזה, וניתן לשנות את הבחירה כאן בכל עת. למידע מלא ראו <a href="/cookies">מדיניות העוגיות</a>.',
-};
+// The modals' text for one language. The sections are keyed in the file and become the ordered list the library takes
+// here, so WHICH of them appear stays a decision of the code. The library has no placeholders of its own for this: its one
+// replacement is {{revisionMessage}}, so the links are filled in here.
+function toTranslation(
+  text: typeof heText,
+  language: string,
+  admin: CookieConsentAdminConfig,
+): CookieConsent.Translation {
+  const withLinks = (html: string) =>
+    html
+      .replaceAll('{{cookiesHref}}', hrefInLanguage('/cookies', language))
+      .replaceAll('{{privacyHref}}', hrefInLanguage('/privacy', language));
+  const { intro, necessary, analytics, marketing, moreInfo } = text.sections;
 
-const NECESSARY_SECTION = {
-  title: 'עוגיות חיוניות',
-  description:
-    'עוגיות אימות וזיהוי (Supabase), בחירת הארגון הפעיל, שמירת מצב סרגל הצד, ושמירת יציבות גרסה. ללא עוגיות אלה השירות אינו יכול לפעול.',
-  linkedCategory: 'necessary' as const,
-};
+  return {
+    consentModal: { ...text.consentModal, footer: withLinks(text.consentModal.footer) },
+    preferencesModal: {
+      ...text.preferencesModal,
+      sections: [
+        { description: withLinks(intro.description) },
+        { ...necessary, linkedCategory: 'necessary' },
+        ...(admin.analyticsEnabled ? [{ ...analytics, linkedCategory: 'analytics' }] : []),
+        ...(admin.marketingEnabled ? [{ ...marketing, linkedCategory: 'marketing' }] : []),
+        { ...moreInfo, description: withLinks(moreInfo.description) },
+      ],
+    },
+  };
+}
 
-const ANALYTICS_SECTION = {
-  title: 'אנליטיקה (Google Analytics)',
-  description:
-    'מדידת שימוש — אילו עמודים נצפים וכיצד משתמשים באתר — לצורך שיפורו. Google Signals (קישור ביקורים חוצה-מכשירים ונתוני דמוגרפיה ותחומי עניין מצרפיים) מופעל ברמת הנכס, אך פועל בפועל רק עבור מבקרים שאישרו גם את קטגוריית "שיווק ורימרקטינג" להלן — אישור האנליטיקה בלבד אינו מפעיל אותו. המדידה עשויה לכלול מזהים פנימיים אקראיים של המערכת (כגון מזהה אירוע או קמפיין בכתובות עמודים באזור האישי); המזהים אינם כוללים כשלעצמם את שם האירוע או את זהות בעליו. נטענת רק לאחר אישורכם, לא בדפי אישורי-ההגעה של אורחים, וביטול ההסכמה מוחק את עוגיות המדידה (_ga*).',
-  linkedCategory: 'analytics' as const,
-};
+// A language other than Hebrew, fetched only on its own pages. run() gives up on a translation that fails to load, after the
+// library has already marked itself as started: the page would have no notice and no preferences dialog, so Hebrew stands in.
+async function load(
+  importText: () => Promise<{ default: typeof heText }>,
+  language: string,
+  admin: CookieConsentAdminConfig,
+): Promise<CookieConsent.Translation> {
+  try {
+    const { default: text } = await importText();
+    return toTranslation(text, language, admin);
+  } catch (error) {
+    console.error(`[cookie-consent] the ${language} text failed to load`, error);
+    return toTranslation(heText, 'he', admin);
+  }
+}
 
-const MARKETING_SECTION = {
-  title: 'שיווק ורימרקטינג (Google Ads)',
-  description:
-    'חשבון Google Ads שלנו מקושר לנכס האנליטיקה. באישורכם, אנו משתפים עם Google Ads קהלים המבוססים על ביקורכם באתר (רימרקטינג), לצורך הצגת מודעות מותאמות באתרים אחרים ומדידת המרות ממודעות; אישור זה, יחד עם אישור האנליטיקה, גם מפעיל בפועל את Google Signals (ר\' לעיל). כבויה כברירת מחדל ונפרדת מהאנליטיקה — ניתן לאשר אחת בלי השנייה. ביטול ההסכמה מוחק את עוגיות/מזהי הפרסום. את העדפות המודעות בחשבון Google ניתן לנהל דרך מרכז המודעות שלי.',
-  linkedCategory: 'marketing' as const,
-};
-
-const MORE_INFO_SECTION = {
-  title: 'מידע נוסף',
-  description:
-    'לשאלות בנוגע לעוגיות ולפרטיות ראו <a href="/cookies">מדיניות העוגיות</a> ו־<a href="/privacy">מדיניות הפרטיות</a>.',
-};
-
-// Builds the config actually passed to CookieConsent.run(). Text stays fully
-// static (compile-time constants above) — only WHICH categories/sections are
+// Builds the config actually passed to CookieConsent.run(). The text comes from
+// src/locales/<language>/cookieConsent.json — only WHICH categories/sections are
 // included, and the revision number, depend on admin input (plan §7: no
 // admin-editable legal text, by design).
 export function buildCookieConsentConfig(
@@ -154,14 +172,6 @@ export function buildCookieConsentConfig(
   };
   if (admin.analyticsEnabled) categories.analytics = ANALYTICS_CATEGORY;
   if (admin.marketingEnabled) categories.marketing = MARKETING_CATEGORY;
-
-  const sections = [
-    INTRO_SECTION,
-    NECESSARY_SECTION,
-    ...(admin.analyticsEnabled ? [ANALYTICS_SECTION] : []),
-    ...(admin.marketingEnabled ? [MARKETING_SECTION] : []),
-    MORE_INFO_SECTION,
-  ];
 
   return {
     revision: CONSENT_REVISION + admin.revisionBump,
@@ -199,32 +209,18 @@ export function buildCookieConsentConfig(
 
     language: {
       default: 'he',
+      // <html lang> is the language of the request (src/app/layout.tsx), so a page in a language
+      // listed under `translations` shows it, and anything else falls back to `default`.
+      autoDetect: 'document',
       // RTL layout is driven by this option, NOT by the DOM `dir`: vanilla-cookieconsent
       // adds its `.cc--rtl` class (which mirrors the modal chrome — close button,
       // toggles, expand arrows, button spacing) only when the active language is
       // listed here. Inheriting dir="rtl" from <html> flips text but not the chrome.
       rtl: 'he',
       translations: {
-        he: {
-          consentModal: {
-            title: 'עוגיות באתר',
-            description:
-              'אנחנו משתמשים בעוגיות חיוניות הנדרשות להתחברות, לאבטחה ולתפעול השירות, ובנוסף — רק אם תאשרו, כל קטגוריה בנפרד — באנליטיקה (Google Analytics) שעוזרת לנו להבין את השימוש באתר ולשפר אותו, ובשיווק/רימרקטינג (Google Ads) המציג לכם מודעות מותאמות באתרים אחרים.',
-            acceptAllBtn: 'אישור הכול',
-            acceptNecessaryBtn: 'רק חיוניות',
-            showPreferencesBtn: 'פרטים',
-            footer:
-              '<a href="/cookies">מדיניות עוגיות</a> · <a href="/privacy">מדיניות פרטיות</a>',
-          },
-          preferencesModal: {
-            title: 'העדפות עוגיות',
-            acceptAllBtn: 'אישור הכול',
-            acceptNecessaryBtn: 'רק חיוניות',
-            savePreferencesBtn: 'שמירה',
-            closeIconLabel: 'סגירה',
-            sections,
-          },
-        },
+        he: toTranslation(heText, 'he', admin),
+        en: () => load(() => import('@/locales/en/cookieConsent.json'), 'en', admin),
+        fr: () => load(() => import('@/locales/fr/cookieConsent.json'), 'fr', admin),
       },
     },
   };

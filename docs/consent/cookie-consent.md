@@ -127,6 +127,8 @@ docs — the only "consent" there is the Google OAuth consent screen).
 | File | Role |
 |---|---|
 | `src/lib/consent/cookie-consent-config.ts` | Central config + `CONSENT_REVISION`. The one file to edit to add a category/service. |
+| `src/locales/he/cookieConsent.json` | The banner's Hebrew wording, imported directly (like `whatsappErrors`). It is the source, not a copy: `extract` keeps it through `preservePatterns`, and Locize translates from it. Admins cannot edit it. |
+| `src/locales/{en,fr}/cookieConsent.json` | The same wording in English and French, loaded with a dynamic import only on pages in that language. `language.autoDetect: 'document'` picks the language from `<html lang>`; if the file fails to load, the banner falls back to Hebrew. Every key of the Hebrew file must exist here, not empty: `cookie-consent-config.test.ts` fails otherwise. |
 | `src/components/consent/cookie-consent.tsx` | `'use client'` initialiser (`CookieConsent.run`). Renders `null`. Mounted in the root layout. |
 | `src/components/consent/manage-cookies-button.tsx` | `'use client'` button → `CookieConsent.showPreferences()`. |
 | `src/app/layout.tsx` | Imports `cookieconsent.css` (before `globals.css`) + mounts `<CookieConsentBanner />`. |
@@ -179,7 +181,8 @@ Google Signals (cross-device + demographics) needs **both** `analytics` and
      },
    }
    ```
-2. Add a preferences section with `linkedCategory: 'newCategory'` (+ Hebrew copy).
+2. Add the section's Hebrew to `src/locales/he/cookieConsent.json`, and include it with
+   `linkedCategory: 'newCategory'` in `toTranslation`.
 3. Gate the tracker's `<Script>` (or the signals it sends) so it only activates after
    consent — e.g. render/push from a client component that checks
    `CookieConsent.acceptedCategory('newCategory')`, and (re)acts on `cc:onConsent`/
@@ -200,6 +203,14 @@ It is wired into the landing footer, `/privacy` §10, and `/cookies`.
 
 Increment `CONSENT_REVISION` in `cookie-consent-config.ts`. `vanilla-cookieconsent`
 compares it to the stored value and re-shows the notice when it changes.
+
+Any change to the text of `src/locales/{he,en,fr}/cookieConsent.json` needs this
+decision, including one that arrives through `locize-download`:
+`cookie-consent-config.test.ts` pins each revision to the SHA-256 of the text of the
+three files, so the test fails until a new revision and its hashes are added.
+Formatting and key order do not count. Keep the old lines: a stored consent must stay
+traceable to the text it was given for. A new revision also shows the notice again to
+every returning visitor, in every language.
 
 ## Verifying that non-essential scripts are blocked
 

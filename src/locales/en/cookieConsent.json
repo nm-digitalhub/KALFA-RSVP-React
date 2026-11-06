@@ -1,0 +1,38 @@
+{
+  "consentModal": {
+    "acceptAllBtn": "Accept all",
+    "acceptNecessaryBtn": "Essential only",
+    "description": "We use essential cookies required for logging in, for security and for running the service. In addition, only if you approve, and for each category separately, we use analytics (Google Analytics), which helps us understand how the site is used and improve it, and marketing/remarketing (Google Ads), which shows you tailored ads on other sites.",
+    "footer": "<a href=\"{{cookiesHref}}\">Cookie policy</a> · <a href=\"{{privacyHref}}\">Privacy policy</a>",
+    "showPreferencesBtn": "Details",
+    "title": "Cookies on this site"
+  },
+  "preferencesModal": {
+    "acceptAllBtn": "Accept all",
+    "acceptNecessaryBtn": "Essential only",
+    "closeIconLabel": "Close",
+    "savePreferencesBtn": "Save",
+    "title": "Cookie preferences"
+  },
+  "sections": {
+    "analytics": {
+      "description": "Usage measurement (which pages are viewed and how the site is used) in order to improve the site. Google Signals (cross-device linking of visits and aggregate demographic and interest data) is enabled at the property level, but in practice it runs only for visitors who have also approved the \"Marketing and remarketing\" category below. Approving analytics alone does not activate it. The measurement may include random internal system identifiers (such as an event or campaign ID in the addresses of pages in your account area); the identifiers do not in themselves include the event's name or the identity of its host. Analytics loads only after your approval, not on guests' RSVP pages, and withdrawing consent deletes the measurement cookies (_ga*).",
+      "title": "Analytics (Google Analytics)"
+    },
+    "intro": {
+      "description": "Essential cookies are required for basic functioning and cannot be turned off; analytics and marketing run only with your consent, separately from each other, and you can change your choice here at any time. For full information, see the <a href=\"{{cookiesHref}}\">cookie policy</a>."
+    },
+    "marketing": {
+      "description": "Our Google Ads account is linked to the analytics property. With your approval, we share audiences based on your visit to the site (remarketing) with Google Ads, in order to show tailored ads on other sites and to measure conversions from ads; this approval, together with approval of analytics, also activates Google Signals in practice (see above). This category is off by default and separate from analytics: you can approve one without the other. Withdrawing consent deletes the advertising cookies/identifiers. You can manage the ad preferences in your Google account through My Ad Center.",
+      "title": "Marketing and remarketing (Google Ads)"
+    },
+    "moreInfo": {
+      "description": "For questions about cookies and privacy, see the <a href=\"{{cookiesHref}}\">cookie policy</a> and the <a href=\"{{privacyHref}}\">privacy policy</a>.",
+      "title": "More information"
+    },
+    "necessary": {
+      "description": "Authentication and identification cookies (Supabase), selection of the active organization, saving the sidebar state and maintaining version stability. Without these cookies, the service cannot operate.",
+      "title": "Essential cookies"
+    }
+  }
+}
