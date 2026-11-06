@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: finds-defects-in-real-files
+expected_outcome: |
+  The findings list the ten planted defects among about 1,280 real strings, with no false claim that the files are ready.
+context:
+  scaffold_script: place-files.sh

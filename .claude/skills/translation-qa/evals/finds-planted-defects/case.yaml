@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: finds-planted-defects
+expected_outcome: |
+  report.md lists the planted defects, each with its key and language, with the critical ones first, and says that meaning still needs a human reader.
+context:
+  scaffold_script: place-files.sh

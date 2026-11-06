@@ -1,0 +1,21 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: fr\n"
+
+#: app.c:10
+msgid "Hello %s, you have %d new messages"
+msgstr "Bonjour %s, vous avez de nouveaux messages"
+
+#, fuzzy
+#: app.c:12
+msgid "Save your changes"
+msgstr "Enregistrer"
+
+#: app.c:14
+msgid "Your invitation is ready"
+msgstr "Votre invitation est prête"
+
+#: app.c:16
+msgid "Delete this guest?"
+msgstr ""

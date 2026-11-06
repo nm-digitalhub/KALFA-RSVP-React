@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: audits-po-file
+expected_outcome: |
+  report.md lists the lost %d, the fuzzy entry and the empty entry.
+context:
+  scaffold_script: place-files.sh

@@ -1,0 +1,12 @@
+{
+  "greeting": "Bonjour {{name}},",
+  "save": "Enregistrer",
+  "saved": "Vos informations n’ont pas été enregistrées. Réessayez dans quelques minutes.",
+  "items_one": "{{count}} élément",
+  "items_many": "{{count}} d’éléments",
+  "items_other": "{{count}} éléments",
+  "note": "Le message a bien été envoyé à tous vos invités aujourd’hui.",
+  "link": "Consultez les <faq>questions fréquentes</faq> sur le site",
+  "invite": "La confirmation de l’invitation a été envoyée à tous vos invités ce matin.",
+  "faq": "Questions fréquentes"
+}

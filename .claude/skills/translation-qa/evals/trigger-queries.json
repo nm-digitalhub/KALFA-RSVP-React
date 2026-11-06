@@ -1,0 +1,138 @@
+[
+ {
+  "query": "תבדוק את התרגומים בקובצי src/locales/fr מול העברית, יש שם בעיות?",
+  "should_trigger": true
+ },
+ {
+  "query": "לפני שאנחנו מעלים לאוויר את האנגלית, תעשה ביקורת על קובצי התרגום בתיקיית הטיוטות",
+  "should_trigger": true
+ },
+ {
+  "query": "run a translation audit on docs/translations/drafts before we push to locize",
+  "should_trigger": true
+ },
+ {
+  "query": "check translations for missing placeholders in our i18n json files, en and fr against he",
+  "should_trigger": true
+ },
+ {
+  "query": "the french public.json came back from locize, can you validate it before release",
+  "should_trigger": true
+ },
+ {
+  "query": "האם יש מפתחות חסרים או משתנים שבורים בתרגום לצרפתית?",
+  "should_trigger": true
+ },
+ {
+  "query": "our translator sent back fr.po, please QA it, especially the format specifiers and fuzzy entries",
+  "should_trigger": true
+ },
+ {
+  "query": "localization QA on the en and fr files please, i worry the glossary terms arent used consistently",
+  "should_trigger": true
+ },
+ {
+  "query": "תבדוק שהתרגום לאנגלית עקבי עם מילון המונחים שלנו",
+  "should_trigger": true
+ },
+ {
+  "query": "i18n validation for the whatsappErrors namespace, is anything still untranslated or wrong?",
+  "should_trigger": true
+ },
+ {
+  "query": "תתרגם לי לצרפתית: נשמח לראותכם בחתונה שלנו ביום שלישי",
+  "should_trigger": false
+ },
+ {
+  "query": "add i18next to the customer dashboard pages and wrap the hebrew strings in t()",
+  "should_trigger": false
+ },
+ {
+  "query": "run npx i18next-cli locize-download and tell me which files it touched",
+  "should_trigger": false
+ },
+ {
+  "query": "כתוב לי פוסט לאינסטגרם בעברית על אישורי הגעה לחתונה",
+  "should_trigger": false
+ },
+ {
+  "query": "fix the layout on the contact page, the arrows point the wrong way when the site is in english",
+  "should_trigger": false
+ },
+ {
+  "query": "תסביר לי איך i18next בוחר צורות רבים בעברית כשיש count של 2",
+  "should_trigger": false
+ },
+ {
+  "query": "read this hebrew landing copy and make it sound less like AI wrote it",
+  "should_trigger": false
+ },
+ {
+  "query": "why does the french preview still show hebrew in the footer? find the bug in the layout code",
+  "should_trigger": false
+ },
+ {
+  "query": "set up next-i18next with proxy.ts so /en and /fr routes work",
+  "should_trigger": false
+ },
+ {
+  "query": "write unit tests for src/lib/i18n/site-language.ts",
+  "should_trigger": false
+ },
+ {
+  "query": "מישהו שם לב שבצרפתית חסרים רווחים לפני סימני שאלה? תראה מה עוד לא בסדר בקובץ",
+  "should_trigger": true
+ },
+ {
+  "query": "the fr file has 'de invitation' in it somewhere, can you go through it and find other mistakes like that",
+  "should_trigger": true
+ },
+ {
+  "query": "does the english copy in public.json still say what the hebrew says? i dont trust the last batch",
+  "should_trigger": true
+ },
+ {
+  "query": "תעבור על docs/translations/drafts/fr/public.json ותגיד לי אם זה מוכן לעלות",
+  "should_trigger": true
+ },
+ {
+  "query": "compare src/locales/fr/whatsappErrors.json to the hebrew one and tell me what's off",
+  "should_trigger": true
+ },
+ {
+  "query": "אחרי שהמתרגם סיים, אני צריך לוודא שאף כפתור לא נשבר ושהמונחים אחידים בכל השפות",
+  "should_trigger": true
+ },
+ {
+  "query": "quick sanity check on our xliff export from the agency before we import it",
+  "should_trigger": true
+ },
+ {
+  "query": "translate the whole public.json into spanish and save it as src/locales/es/public.json",
+  "should_trigger": false
+ },
+ {
+  "query": "push the new french keys to locize with auto translate",
+  "should_trigger": false
+ },
+ {
+  "query": "review my diff in src/lib/i18n/site-language.ts for bugs",
+  "should_trigger": false
+ },
+ {
+  "query": "תכתוב לי נוסח חדש ועדין יותר להודעת הוואטסאפ לאורחים בעברית",
+  "should_trigger": false
+ },
+ {
+  "query": "how many hebrew strings are still hardcoded outside t() in the admin pages?",
+  "should_trigger": false
+ },
+ {
+  "query": "תבדוק למה הדף /en מחזיר 404 בפרודקשן",
+  "should_trigger": false
+ },
+ {
+  "query": "check the accessibility of the rsvp form, contrast and focus states",
+  "should_trigger": false
+ }
+]

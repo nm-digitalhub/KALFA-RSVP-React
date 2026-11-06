@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hebrew-legal-term-translator"
+version = "2.2.0"
+description = "Structured Hebrew legal-term translator for Israeli small-business, freelance, and consumer contexts."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["hebrew", "israel", "legal", "translation", "consumer", "vat", "contracts", "privacy"]
+dependencies = ["typer>=0.9", "click>=8.1"]
+
+[project.scripts]
+hebrew-legal-term-translator = "hebrew_legal_term_translator.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["hebrew_legal_term_translator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["scripts"]
+python_files = ["test_*.py"]
+addopts = "-q"
+asyncio_mode = "auto"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

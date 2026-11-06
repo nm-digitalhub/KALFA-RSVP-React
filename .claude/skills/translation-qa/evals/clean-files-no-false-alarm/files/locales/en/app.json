@@ -1,0 +1,11 @@
+{
+  "greeting": "Hello {{name}},",
+  "save": "Save",
+  "saved": "Your details were not saved. Try again in a few minutes.",
+  "items_one": "One item",
+  "items_other": "{{count}} items",
+  "note": "The message was sent successfully to all your guests today.",
+  "link": "See the <faq>FAQ</faq> on the website",
+  "invite": "The invitation confirmation was sent to all your guests this morning.",
+  "faq": "FAQ"
+}

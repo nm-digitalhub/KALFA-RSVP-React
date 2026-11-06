@@ -1,0 +1,12 @@
+{
+  "fontPx": 14,
+  "narrowestControlPx": 66,
+  "fullRowButtonPx": 262,
+  "keyPattern": "(^|\\.)(cta|toggle|stepper|legal|submit|retry|label|navLabel|createEvent|newEvent|openFull|wazeLink|status)(\\.|$)",
+  "why": {
+    "fontPx": "KALFA's Button is text-sm: src/components/ui/button.tsx.",
+    "narrowestControlPx": "The narrowest control is the row of three RSVP status chips in src/app/(public)/r/[token]/rsvp-form.tsx. They share a row from 20rem of form width: (320 - 2 * 8 gap) / 3 - 2 * 12 padding - 2 border = 75px at 16px text, which is 66px at 14px.",
+    "fullRowButtonPx": "A whitespace-nowrap Button on a full row at a 320px screen: 320 - 2 * 16 gutter - 2 * 12 padding - 2 border.",
+    "keyPattern": "Key names of labels the code scan can't place, because they are defined in one file and shown in another. Used only for those keys."
+  }
+}

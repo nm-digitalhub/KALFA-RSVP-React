@@ -696,6 +696,12 @@
       "skillPath": "hebrew-i18n/SKILL.md",
       "computedHash": "d9bc3ff8fd2a8a3e7cf02db3ef36e2e32472556d863e40035be4ac5e072ab239"
     },
+    "hebrew-legal-term-translator": {
+      "source": "skillim-hub/skills",
+      "sourceType": "github",
+      "skillPath": "hebrew-legal-term-translator/SKILL.md",
+      "computedHash": "fa274e69d5ad419fc44eccb3ecb1fdcead062d8d45422bfd0ccf2b654734bf89"
+    },
     "hebrew-rtl-best-practices": {
       "source": "skills-il/localization",
       "sourceType": "github",
@@ -946,6 +952,12 @@
       "sourceType": "github",
       "skillPath": "skills/legal-compliance-phrase-avoidance/SKILL.md",
       "computedHash": "2e404925e27d25041ba691b04f5effff9cb537a90d8ceca5ea92d20fa0cd646f"
+    },
+    "legal-translation": {
+      "source": "thomasmoreai/legal-skills-open",
+      "sourceType": "github",
+      "skillPath": "general/general/skills/legal-translation/SKILL.md",
+      "computedHash": "e272dd34e6b2d0a8981081f1934765308d05b848bbdd09e658f423d6c41f4749"
     },
     "made-to-stick": {
       "source": "wondelai/skills",
@@ -1362,6 +1374,12 @@
       "skillPath": "skills/readme/SKILL.md",
       "computedHash": "b2c4624a194fd8aebbc9fc3d75b7b1da8d2033e0439c3f4e2802e4b07d308a89"
     },
+    "redaction-legale-numerique": {
+      "source": "JosephFa/redaction-legale-numerique",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "4af6610448c41a73c0d5c470a909a7c75789b01b421d7e0b797109008d1f4c7b"
+    },
     "refactoring-patterns": {
       "source": "wondelai/skills",
       "sourceType": "github",
@@ -1775,6 +1793,12 @@
       "sourceType": "github",
       "skillPath": "traction-eos/SKILL.md",
       "computedHash": "71ef96428f433991e19a32cef1c61c0909944748486e94811217ba05d393380a"
+    },
+    "translating-french": {
+      "source": "BrunoMiguens/translating-products-skill",
+      "sourceType": "github",
+      "skillPath": "skills/translating-french/SKILL.md",
+      "computedHash": "142095baee5dc6d208a79d6ea36cc0aba06ed59a74ed3146e4823b175ae22f07"
     },
     "translation-reframing-audience-shift": {
       "source": "lyndonkl/claude",
