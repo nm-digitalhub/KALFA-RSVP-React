@@ -1,34 +1,35 @@
 {
   "cb": {
     "errors": {
-      "checkFields": "",
-      "generic": "",
-      "rateLimited": "",
-      "unavailable": ""
+      "checkFields": "Please check the details you entered.",
+      "generic": "We couldn't send your details. Please try again.",
+      "rateLimited": "Too many requests. Please try again in a few minutes.",
+      "unavailable": "This link is no longer active. You can leave your details again on the contact page."
     },
     "form": {
       "contact": {
-        "label": "Your contact details",
-        "placeholder": "For example: your name, phone or email"
+        "label": "What should we call you?",
+        "placeholder": "Your name"
       },
       "lockedNotice": "Your call is already scheduled, and the time won't change.",
       "note": {
-        "label": "",
+        "label": "What would you like to talk about? <optional>(optional)</optional>",
         "placeholder": "Write the details here…"
       },
       "submit": "Send"
     },
     "header": {
-      "phoneHint": "",
+      "phoneHint": "We'll call you back at the number ending in <hint>{{phoneHint}}</hint>.",
       "subtitle": "We'll call you back. Two quick questions so we're ready when we do.",
       "title": "We missed your call"
     },
     "meta": {
-      "title": ""
+      "title": "Return call details"
     },
     "success": {
-      "locked": "",
-      "saved": ""
+      "honeypot": "Your details have been saved. We'll call you back as soon as we can.",
+      "locked": "Thanks, your details have been saved. Your scheduled time hasn't changed, so we'll call you back then.",
+      "saved": "Thanks, your details have been saved. We'll call you back as soon as we can."
     }
   },
   "error": {
@@ -50,6 +51,17 @@
     },
     "landing": {
       "cta": "Send a gift",
+      "greeting": {
+        "barMitzvah": "Mazel tov! Let's celebrate together",
+        "batMitzvah": "Mazel tov! Let's celebrate together",
+        "birthday": "Happy birthday!",
+        "brit": "We're glad you're part of the celebration",
+        "britah": "We're glad you're part of the celebration",
+        "engagement": "Mazel tov on the engagement!",
+        "henna": "Happy henna night!",
+        "other": "You're invited to celebrate with us",
+        "wedding": "Mazel tov! You're invited to celebrate with us"
+      },
       "toggle": {
         "back": "Back to invitation",
         "front": "Directions & calendar"
@@ -57,12 +69,64 @@
       "wazeLink": "Navigate with Waze"
     },
     "meta": {
-      "title": ""
+      "title": "Send a gift"
     },
     "rateLimited": "Too many requests. Please try again in a moment."
   },
   "guest": {
-    "brandLine": ""
+    "brandLine": "Managed with <brand>KALFA</brand>",
+    "calendar": {
+      "add": "Add to calendar",
+      "addToGoogle": "Add to Google Calendar",
+      "apple": "Apple Calendar",
+      "close": "Close",
+      "description": "Choose which calendar to save the event in",
+      "google": "Google Calendar",
+      "hint": {
+        "androidApp": "Opens in the app (or in your browser if it isn't installed)",
+        "androidDownload": "Download a calendar file and open it in the app",
+        "browser": "Opens in your browser",
+        "icsDownload": "Download an .ics file",
+        "iphone": "Opens in your iPhone's calendar"
+      },
+      "icsFile": "Calendar file (Apple, Outlook and more)",
+      "iosWebviewNotice": "Apple Calendar doesn't always open from a browser inside an app (such as WhatsApp). If that happens, open the link in Safari.",
+      "otherAndroid": "Other calendar (Samsung and more)"
+    },
+    "celebrants": {
+      "parentsHonoring": "{{parents}}, celebrating {{child}}",
+      "secondOfCouple": "and {{name}}"
+    },
+    "eventType": {
+      "barMitzvah": "bar mitzvah",
+      "batMitzvah": "bat mitzvah",
+      "birthday": "birthday party",
+      "brit": "brit milah",
+      "britah": "britah",
+      "engagement": "engagement party",
+      "henna": "henna night",
+      "other": "event",
+      "wedding": "wedding"
+    },
+    "form": {
+      "pending": "Just a moment…"
+    },
+    "gift": {
+      "ctaWithBrand": "Send a gift with {{brand}}"
+    },
+    "heading": {
+      "barMitzvah": "The bar mitzvah of {{names}}",
+      "batMitzvah": "The bat mitzvah of {{names}}",
+      "birthday": "Birthday party for {{names}}",
+      "brit": "Brit milah",
+      "britah": "Britah",
+      "celebrants": "Celebrating {{names}}",
+      "engagement": "The engagement of {{names}}",
+      "henna": "The henna night of {{names}}",
+      "parents": "Parents: {{names}}",
+      "wedding": "The wedding of {{names}}"
+    },
+    "loading": "Loading…"
   },
   "join": {
     "failed": "We couldn't add you to the team. The invitation may no longer be valid.",
@@ -70,9 +134,9 @@
       "backLink": "Back to my account",
       "notice": "This invitation is invalid, has expired or has already been used."
     },
-    "invited": "",
+    "invited": "You've been invited to join <org>{{orgName}}</org>.",
     "meta": {
-      "title": ""
+      "title": "Join the team"
     },
     "submit": "Join",
     "title": "Join the team"
@@ -85,14 +149,14 @@
       "notice": "The RSVP deadline has passed. For details, you can contact the person who invited you."
     },
     "errors": {
-      "checkFields": "",
-      "closed": "",
-      "deadlinePassed": "",
-      "invalidAnswers": "",
-      "invalidCount": "",
-      "invalidStatus": "",
-      "missingRequired": "",
-      "notFound": ""
+      "checkFields": "Please check the details you entered.",
+      "closed": "This event isn't open for RSVPs right now.",
+      "deadlinePassed": "The RSVP deadline has passed.",
+      "invalidAnswers": "One of your answers isn't valid. Please check it and try again.",
+      "invalidCount": "The number of guests isn't valid.",
+      "invalidStatus": "That selection isn't valid.",
+      "missingRequired": "Please fill in all the required fields.",
+      "notFound": "This RSVP link is invalid or no longer active."
     },
     "form": {
       "adults": "Adults",
@@ -113,18 +177,18 @@
         "label": "Show me on the \"Who else is coming\" list (first name only)"
       },
       "status": {
-        "attending": "",
-        "declined": "",
-        "maybe": ""
+        "attending": "Attending",
+        "declined": "Not attending",
+        "maybe": "Maybe"
       },
       "stepper": {
-        "decrease": "",
-        "increase": ""
+        "decrease": "{{label}}: decrease",
+        "increase": "{{label}}: increase"
       },
       "submit": "Submit RSVP",
       "success": {
-        "summary_one": "",
-        "summary_other": "",
+        "summary_one": "See you at the {{eventType}}. We've noted {{count}} person.",
+        "summary_other": "See you at the {{eventType}}. We've noted {{count}} people.",
         "updateHint": "You can update your reply at any time from this same link."
       }
     },
@@ -142,17 +206,17 @@
       "openFull": "Open the full-size invitation"
     },
     "meta": {
-      "title": ""
+      "title": "RSVP"
     },
     "rateLimited": "Too many requests. Please try again in a moment.",
     "success": {
-      "saved": "",
-      "unchanged": ""
+      "saved": "Your RSVP has been saved. Thank you!",
+      "unchanged": "We already have your reply. Thank you!"
     }
   },
   "rate": {
     "errors": {
-      "invalidScore": ""
+      "invalidScore": "Please choose a valid rating."
     },
     "form": {
       "comment": {
@@ -160,23 +224,23 @@
         "placeholder": "Tell us a little more…"
       },
       "feedback": {
-        "bad": "",
-        "great": "",
-        "ok": ""
+        "bad": "We're sorry to hear that. Thanks for telling us.",
+        "great": "Glad to hear it! 🎉",
+        "ok": "Thanks for your feedback. We'll keep improving."
       },
       "heading": "How was our service?",
       "legend": "Service rating",
       "option": {
-        "bad": "",
-        "great": "",
-        "ok": ""
+        "bad": "Not good",
+        "great": "Excellent",
+        "ok": "OK"
       },
       "submit": "Send rating",
       "submitting": "Sending…"
     },
     "invalidLink": "This link is invalid or no longer available.",
     "meta": {
-      "title": ""
+      "title": "Service rating"
     },
     "rateLimited": "Too many requests. Please try again in a moment.",
     "thanks": {
@@ -186,7 +250,7 @@
   },
   "site": {
     "about": {
-      "breadcrumb": "",
+      "breadcrumb": "About",
       "cta": {
         "createEvent": "Create a new event",
         "newEvent": "New event"
@@ -194,20 +258,20 @@
       "does": {
         "items": {
           "guestList": {
-            "body": "",
-            "title": ""
+            "body": "Groups, plus-ones, notes and statuses in one place, with import from a file or from WhatsApp.",
+            "title": "One guest list"
           },
           "personalInvite": {
-            "body": "",
-            "title": ""
+            "body": "A personal message for every guest and automatic reminders only to those who haven't replied yet.",
+            "title": "Personal invitations and reminders"
           },
           "privateLink": {
-            "body": "",
-            "title": ""
+            "body": "Every guest replies through their own link and sees only their own details, not the list and not anyone else's replies.",
+            "title": "Replies through a private link"
           },
           "snapshot": {
-            "body": "",
-            "title": ""
+            "body": "Who's confirmed, who's still pending and how many are coming, updated with every reply.",
+            "title": "An overview for the host"
           }
         },
         "limits": "What it doesn't do: it doesn't manage your venue, vendors or budget, and it doesn't send mass advertising. Messages go only to the event's invited guests, and only about that event.",
@@ -219,64 +283,73 @@
         "title": "About KALFA"
       },
       "meta": {
-        "title": ""
+        "title": "About KALFA: an Israeli RSVP system"
       },
-      "moreLinks": "",
+      "moreLinks": "More details: <faq>FAQ</faq> · <privacy>Privacy policy</privacy> · <terms>Terms of service</terms>",
       "operator": {
-        "body": "",
-        "contact": "",
+        "body": "The service is operated by {{operator}}. Full business details appear in the terms of service.",
+        "contact": "A question, a request or a comment? <contact>You can reach us on the contact page</contact>, where you can also ask us to call you back.",
         "title": "Who runs the service"
       },
       "principles": {
         "items": {
           "dataOwnership": {
-            "body": "",
-            "title": ""
+            "body": "Guest data belongs to the host. KALFA processes it on the host's behalf and doesn't sell personal information to third parties. The full details are in the privacy policy.",
+            "title": "Event data belongs to the host"
           },
           "hebrewFirst": {
-            "title": ""
+            "title": "Hebrew first"
           },
           "noShabbat": {
-            "body": "",
-            "title": ""
+            "body": "Anything due to go out on Shabbat, on a Jewish holiday or at night is automatically rescheduled to the next sending window.",
+            "title": "Nothing goes out on Shabbat or Jewish holidays"
           },
           "openPrice": {
-            "body": "",
-            "title": ""
+            "body": "Pricing, what it includes and when an additional charge applies are all set out in the FAQ and the terms of service, before you commit.",
+            "title": "Pricing you can see up front"
           }
         },
         "title": "How we work"
       }
     },
     "callMe": {
-      "busy": "",
-      "close": "",
-      "codeAria": "",
-      "codePrompt": "",
-      "disclosureAccept": "",
+      "busy": "Just a moment…",
+      "close": "Close",
+      "codeAria": "Verification code",
+      "codePrompt": "We've sent you a verification code by SMS. Enter it here:",
+      "disclosure": "We'll call you within a few minutes and connect you with a representative on KALFA's phone line. The call is recorded for documentation and to improve the service.",
+      "disclosureAccept": "Got it, continue",
       "errors": {
-        "generic": "",
-        "sendCodeFailed": ""
+        "generic": "We couldn't complete your request. Please try again.",
+        "sendCodeFailed": "We couldn't send the verification code."
       },
-      "noAgent": "",
-      "phoneLabel": "",
+      "noAgent": "No representative is available right now. We'll call you back as soon as we can.",
+      "phoneLabel": "Phone number",
       "refusal": {
-        "balance": "",
-        "concurrency": "",
-        "dailyBreaker": "",
-        "dnc": "",
-        "flagDisabled": "",
-        "liveCallsDisabled": "",
-        "otp": "",
-        "perPhoneRate": "",
-        "quietHours": "",
-        "registryPending": ""
+        "badBody": "This request isn't valid",
+        "balance": "We can't place a call right now. Please try again later.",
+        "bodyTooLarge": "This request is too large",
+        "concurrency": "Our phone lines are busy right now. Please try again in a few minutes.",
+        "dailyBreaker": "We've reached our daily call limit. Please try again tomorrow.",
+        "dnc": "We can't call this number.",
+        "flagDisabled": "The calling service isn't active right now.",
+        "invalidPhone": "This phone number isn't valid",
+        "liveCallsDisabled": "The phone channel isn't active right now.",
+        "otp": "The verification code is incorrect or has expired.",
+        "otpCreateFailed": "We couldn't create the verification code",
+        "perPhoneRate": "You recently asked us to call you back. Please try again later.",
+        "quietHours": "We can't place calls on Shabbat or Jewish holidays. Please try again once it's over.",
+        "rateLimited": "Too many requests. Please try again in a few minutes.",
+        "registryPending": "We can't place a call right now. Please try again in a few minutes.",
+        "sendFailed": "We couldn't send the verification code",
+        "tooManyCodes": "Too many codes have been sent. Please try again later."
       },
-      "retry": "",
-      "ringingSoon": "",
-      "sendCode": "",
-      "title": "",
-      "verifyAndCall": ""
+      "retry": "Try again",
+      "ringingSoon": "Your phone should ring shortly.",
+      "sendCode": "Send verification code",
+      "smsCode": "KALFA verification code: {{code}}",
+      "title": "Call me now",
+      "verifyAndCall": "Verify and call me"
     },
     "contact": {
       "callbackSection": {
@@ -286,29 +359,49 @@
         "title": "Send us a message"
       },
       "errors": {
-        "checkFields": "",
-        "rateLimited": "",
-        "sendFailed": ""
+        "checkFields": "Please check the details you entered.",
+        "rateLimited": "Too many requests. Please try again in a moment.",
+        "sendFailed": "We couldn't send your message. Please try again in a moment."
       },
-      "faqHint": "",
+      "faqHint": "Before you get in touch, it's worth checking the <faq>frequently asked questions</faq>. The answer may already be there.",
       "form": {
+        "callbackDisclosure": "The return call may be made by a human representative or through an automated digital/voice agent on behalf of KALFA. Following the call, a WhatsApp message may also be sent on behalf of KALFA, subject to your approval during the call itself.",
         "email": "Email",
         "fullName": "Full name",
+        "honeypot": "Leave this field empty",
         "message": "Your message",
         "noteOptional": "Note (optional)",
+        "pending": "Just a moment…",
         "phone": "Phone",
+        "privacyNote": "Your details will be used only to respond to your request. <privacy>Privacy policy</privacy>",
         "reachHint": "Please fill in an email or a phone number (at least one)",
+        "salesConsent": "By choosing the \"Sales\" topic, I am asking to be called back about purchasing KALFA's services, including information and details before purchase.",
         "submitCallback": "Call me back",
-        "submitContact": "Send message"
+        "submitContact": "Send message",
+        "timePreference": {
+          "afternoon": "In the afternoon",
+          "asap": "As soon as possible",
+          "evening": "In the evening",
+          "hint": "We'll do our best to call you back in the time frame you chose, during business hours.",
+          "legend": "When's a good time for us to call you back?",
+          "morning": "In the morning"
+        },
+        "topicLabel": "Topic",
+        "topics": {
+          "billing": "Billing and payment",
+          "other": "Other",
+          "sales": "Sales",
+          "support": "Support"
+        }
       },
       "meta": {
-        "description": "",
-        "title": ""
+        "description": "Contact KALFA: send a support message or a question before you sign up, or ask our team to call you back.",
+        "title": "Contact and support"
       },
       "subtitle": "Have a question, a request or a problem? Write to us or leave your number, and we'll get back to you.",
       "success": {
-        "callback": "",
-        "contact": ""
+        "callback": "Your request has been sent. We'll call you as soon as we can!",
+        "contact": "Your message has been sent. We'll get back to you as soon as we can!"
       },
       "title": "Contact and support"
     },
@@ -326,356 +419,356 @@
     },
     "eventPage": {
       "closing": {
-        "subtitle": "",
-        "title": ""
+        "subtitle": "An orderly list, automatic reminders and an overview that updates itself.",
+        "title": "{{h1}}, all in one place"
       },
       "cta": {
-        "createEvent": "",
-        "howItWorks": "",
-        "newEvent": "",
-        "template": ""
+        "createEvent": "Create a new event",
+        "howItWorks": "How KALFA works",
+        "newEvent": "New event",
+        "template": "Guest list template"
       },
       "faq": {
-        "eyebrow": "",
-        "moreLink": "",
-        "title": ""
+        "eyebrow": "FAQ",
+        "moreLink": "More questions about KALFA and pricing are answered <faq>on the FAQ page</faq>.",
+        "title": "Questions that keep coming up"
       },
       "guide": {
-        "eyebrow": ""
+        "eyebrow": "Guide"
       },
       "related": {
-        "ariaLabel": "",
-        "template": "",
-        "title": "",
-        "whatsapp": ""
+        "ariaLabel": "Related pages",
+        "template": "Downloadable guest list template",
+        "title": "More on this topic",
+        "whatsapp": "RSVPs on WhatsApp"
       },
       "timing": {
-        "cadenceBody": "",
-        "cadenceTitle": "",
-        "eyebrow": "",
-        "quietHours": "",
-        "subtitle": ""
+        "cadenceBody": "Once RSVPs are activated, guests are contacted automatically based on the event date: {{cadence}}.",
+        "cadenceTitle": "KALFA's sending schedule",
+        "eyebrow": "Schedule",
+        "quietHours": "Nothing goes out on Shabbat, on Jewish holidays or at night. Anything due at those times is automatically rescheduled.",
+        "subtitle": "A practical recommendation, not a hard rule. You can adapt it to any event."
       }
     },
     "eventType": {
       "barMitzva": {
         "challenges": {
           "c1": {
-            "body": "",
-            "title": ""
+            "body": "The caterer wants to know how many children's meals to prepare. Guests who reply through their personal link report separately how many adults and how many children are coming, and the breakdown appears next to their name on the list. A reply in a WhatsApp message is recorded as one total.",
+            "title": "Children and adults are counted separately"
           },
           "c2": {
-            "body": "",
-            "title": ""
+            "body": "A classmate won't answer messages, but their parent will. The invitation goes to the parent's number, and the reply is recorded under the child's name.",
+            "title": "Parents reply for their children"
           },
           "c3": {
-            "body": "",
-            "title": ""
+            "body": "You can import the contacts from the class group instead of typing in thirty names and numbers by hand.",
+            "title": "The class list comes as a WhatsApp list"
           },
           "c4": {
-            "body": "",
-            "title": ""
+            "body": "Family replies fast, colleagues reply late and the class hardly replies at all. Filtering the list by group and status shows exactly where the replies are stuck.",
+            "title": "Three groups that reply differently"
           },
-          "eyebrow": "",
-          "title": ""
+          "eyebrow": "Why a bar mitzvah is different",
+          "title": "What makes this event complicated"
         },
         "faq": {
           "q1": {
-            "answer": "",
-            "question": ""
+            "answer": "The form that opens from the personal link has one field for adults and another for children, and the numbers appear next to the guest's name on the list. Guests who reply directly in the WhatsApp message report one total, with no breakdown.",
+            "question": "How do you count children and adults separately?"
           },
           "q2": {
-            "answer": "",
-            "question": ""
+            "answer": "The invitation goes to the parent's number, and the automatic reminders continue only to those who haven't replied yet. Filtering the list to the class group and the \"Pending\" status shows exactly which classmates haven't replied yet.",
+            "question": "What do you do when your child's friend doesn't reply?"
           },
           "q3": {
-            "answer": "",
-            "question": ""
+            "answer": "Yes. A bar mitzvah and a bat mitzvah are managed in exactly the same way, with the same list, the same groups and the same reply tracking. You fill in the event name and the celebrant's details when you create the event.",
+            "question": "Can I manage a bat mitzvah on the same system?"
           }
         },
         "guide": {
           "g1": {
-            "body": "",
-            "heading": ""
+            "body": "Most celebrations have three circles: family, classmates and the parents' colleagues. When you put each circle in its own group, you can filter the list by group and status and see early on which circle hasn't replied yet.",
+            "heading": "Three circles, three reply speeds"
           },
           "g2": {
-            "body": "",
-            "heading": ""
+            "body": "You invite classmates through a parent's phone, and the name on the list is the child's. The parent gets the message, replies on the child's behalf and also reports whether a sibling or parent is coming along.",
+            "heading": "A classmate's invitation goes to the parent"
           },
           "g3": {
-            "body": "",
-            "heading": ""
+            "body": "When the aliyah to the Torah and the party take place on different days with different guests, each one is a separate event on KALFA, with its own list and replies. That way, someone invited only to the synagogue isn't counted at the party by mistake.",
+            "heading": "Aliyah and party: two events, two lists"
           },
-          "title": ""
+          "title": "The guide to bar and bat mitzvah RSVPs"
         },
         "hero": {
-          "lede": "",
-          "title": ""
+          "lede": "Three different lists at one event: family, classmates and the parents' colleagues. Each one acts differently, and they all have to add up to one number.",
+          "title": "Bar and bat mitzvah RSVPs"
         },
         "meta": {
-          "description": "",
-          "title": ""
+          "description": "Manage bar and bat mitzvah RSVPs: separate counts of children and adults, a list of classmates, automatic reminders and real-time tracking.",
+          "title": "Bar and bat mitzvah RSVPs"
         },
-        "navLabel": "",
+        "navLabel": "Bar and bat mitzvahs",
         "timing": {
-          "t1": "",
-          "t2": "",
-          "t3": "",
-          "t4": "",
-          "title": ""
+          "t1": "Collect the class list from parents or from the WhatsApp group about a month before. This is the part that takes the longest.",
+          "t2": "Divide guests into groups (family, class, work) and import them into KALFA before the RSVP round starts.",
+          "t3": "Keep an eye on the class group. It's usually the last to reply, so that's where to check who's still missing.",
+          "t4": "Give the caterer your numbers after the last message in the round, with a breakdown of adults and children.",
+          "title": "What to do and when"
         }
       },
       "brit": {
         "challenges": {
           "c1": {
-            "body": "",
-            "title": ""
+            "body": "There are usually just two or three days between the announcement and the event. There's no time to build a list from scratch, so importing an existing list makes all the difference.",
+            "title": "You have days, not weeks"
           },
           "c2": {
-            "body": "",
-            "title": ""
+            "body": "These days are taken up with entirely different things. Once the invitations are sent, reminders and tracking keep running without anyone having to sit over them.",
+            "title": "Parents have no time to manage a list"
           },
           "c3": {
-            "body": "",
-            "title": ""
+            "body": "Replies keep coming in even on the morning of the event. A live overview beats a list printed yesterday.",
+            "title": "The numbers keep moving until the last moment"
           },
           "c4": {
-            "body": "",
-            "title": ""
+            "body": "Everyone on the list is contacted automatically, instead of you copying the same text into dozens of separate chats.",
+            "title": "You need to reach everyone fast"
           },
-          "eyebrow": "",
-          "title": ""
+          "eyebrow": "Why a brit milah is different",
+          "title": "An event on a very tight schedule"
         },
         "faq": {
           "q1": {
-            "answer": "",
-            "question": ""
+            "answer": "Setting up the event takes minutes, and importing an existing list from a file or from WhatsApp saves you the typing. You can activate RSVPs on the same day the date is set.",
+            "question": "How long does it take to set up an event and send invitations?"
           },
           "q2": {
-            "answer": "",
-            "question": ""
+            "answer": "Yes. Once RSVPs are activated, guests are contacted at the points still left in the sending schedule before the event, and not on Shabbat, on Jewish holidays or at night. Anything scheduled for a point that has already passed isn't sent late.",
+            "question": "Can I activate RSVPs for a brit milah just a few days before?"
           },
           "q3": {
-            "answer": "",
-            "question": ""
+            "answer": "Yes. A britah, a zeved habat and a brit milah are all managed the same way: an event, a guest list and reply tracking. The only difference is usually that you have more time to prepare.",
+            "question": "Does the same work for a britah?"
           }
         },
         "guide": {
           "g1": {
-            "body": "",
-            "heading": ""
+            "body": "A brit milah takes place on the eighth day of the baby's life, so only a few days pass between the moment the date is known and the event itself. That makes speed of setup the most important thing: importing an existing list from a file or from WhatsApp saves you the typing, and your event is ready in minutes.",
+            "heading": "Why a brit milah comes together in days, not weeks"
           },
           "g2": {
-            "body": "",
-            "heading": ""
+            "body": "For a britah or zeved habat, ceremonies that welcome a baby girl, the date is more flexible, but the list is similar: close family, friends and people who live nearby. The same process works here too: create an event, import the list and activate RSVPs.",
+            "heading": "Also for a britah or zeved habat"
           },
           "g3": {
-            "body": "",
-            "heading": ""
+            "body": "Messages aren't sent on Shabbat, on Jewish holidays or at night. A message due at one of those times is automatically rescheduled to the next sending window, so no guest receives a message on Shabbat.",
+            "heading": "When the brit milah falls close to Shabbat or a Jewish holiday"
           },
-          "title": ""
+          "title": "The guide to brit milah and britah RSVPs"
         },
         "hero": {
-          "lede": "",
-          "title": ""
+          "lede": "You only learn the date at the birth, and the event takes place within days. Here, how fast you can set it up matters more than any other feature.",
+          "title": "Brit milah RSVPs"
         },
         "meta": {
-          "description": "",
-          "title": ""
+          "description": "Manage brit milah or britah RSVPs on a tight schedule: set up in minutes, contact all your guests automatically and track replies until the last moment.",
+          "title": "Brit milah and britah RSVPs on a tight schedule"
         },
-        "navLabel": "",
+        "navLabel": "Brit milah",
         "timing": {
-          "t1": "",
-          "t2": "",
-          "t3": "",
-          "title": ""
+          "t1": "Set up the event and import the list within minutes of knowing the date.",
+          "t2": "Activate RSVPs right after that, to catch the points still left in the sending schedule.",
+          "t3": "Track replies until the evening before, then give the headcount to the synagogue or venue.",
+          "title": "A realistic schedule"
         }
       },
       "event": {
         "challenges": {
           "c1": {
-            "body": "",
-            "title": ""
+            "body": "A venue or room has a fixed number of places. Keeping track of how many have confirmed stops you from finding out too late that too many have signed up.",
+            "title": "A capacity you can't exceed"
           },
           "c2": {
-            "body": "",
-            "title": ""
+            "body": "On an entry list, \"roughly\" doesn't work. The updated list is available at any moment, with no need to export a version that's out of date right away.",
+            "title": "An accurate entry list"
           },
           "c3": {
-            "body": "",
-            "title": ""
+            "body": "Dividing guests into groups lets you filter the list by department or guest type and see exactly who in each group hasn't replied yet.",
+            "title": "Groups and departments"
           },
           "c4": {
-            "body": "",
-            "title": ""
+            "body": "A clear summary of the numbers for whoever orders the food, manages the entrance or needs to pass them on.",
+            "title": "A report you can pass on"
           },
-          "eyebrow": "",
-          "title": ""
+          "eyebrow": "Why a structured event is different",
+          "title": "What an event host needs and doesn't always get"
         },
         "faq": {
           "q1": {
-            "answer": "",
-            "question": ""
+            "answer": "Yes. Each guest can belong to a group, such as a department, a guest type or any other division, and you can filter the guest list by group and reply status.",
+            "question": "Can I divide guests into groups?"
           },
           "q2": {
-            "answer": "",
-            "question": ""
+            "answer": "Each guest reports how many people their invitation covers, and the number updates in real time. Those who haven't replied yet and those who answered \"Maybe\" are shown separately, so it's clear how much of the number is still uncertain.",
+            "question": "How do I know how many people will really come?"
           },
           "q3": {
-            "answer": "",
-            "question": ""
+            "answer": "If a number was set for the invitation, the RSVP form won't let them go over it. A WhatsApp reply with a higher number is saved and flagged for the host, who decides what to do.",
+            "question": "What happens if a guest tries to confirm more people than were invited?"
           }
         },
         "guide": {
           "g1": {
-            "body": "",
-            "heading": ""
+            "body": "Set how many people each invitation covers. On the RSVP form, guests can't confirm more than that number, and a WhatsApp reply that goes over it is flagged for the host, so going over capacity shows up early and not at the door.",
+            "heading": "How to stay within capacity"
           },
           "g2": {
-            "body": "",
-            "heading": ""
+            "body": "A guest can reply \"Maybe\", and that reply is kept separate from \"Attending\" and \"Not attending\". That way you can see how many places are still uncertain and don't count them as confirmed by mistake.",
+            "heading": "What to do with \"Maybe\""
           },
           "g3": {
-            "body": "",
-            "heading": ""
+            "body": "At a conference or company evening, guests come from departments, clients and partners. A group for each source lets you filter the list and see who from each one has confirmed, and a guest can add a note, for example the name of someone coming in their place.",
+            "heading": "Business events: who invited whom"
           },
-          "title": ""
+          "title": "The guide to RSVPs for structured events"
         },
         "hero": {
-          "lede": "",
-          "title": ""
+          "lede": "A conference, a company evening or a large family event: when capacity is limited, an accurate list is worth more than an estimate.",
+          "title": "Event RSVPs"
         },
         "meta": {
-          "description": "",
-          "title": ""
+          "description": "Manage RSVPs for a business event, a conference or a family event: an accurate entry list, guest groups, automatic reminders and a report for the host.",
+          "title": "Event RSVPs: business, family or conference"
         },
-        "navLabel": "",
+        "navLabel": "Events and conferences",
         "timing": {
-          "t1": "",
-          "t2": "",
-          "t3": "",
-          "title": ""
+          "t1": "Announce the date first through your usual channels, depending on the size of the event.",
+          "t2": "Build the list, divide it into groups and set a number for each invitation before you activate RSVPs.",
+          "t3": "Close the entry list after the last message in the round, based on the latest overview.",
+          "title": "What to do and when"
         }
       },
       "wedding": {
         "challenges": {
           "c1": {
-            "body": "",
-            "title": ""
+            "body": "Each side manages its own guests, and mutual friends appear twice. Importing both lists into one place exposes the duplicates instead of hiding them.",
+            "title": "Two lists that need merging"
           },
           "c2": {
-            "body": "",
-            "title": ""
+            "body": "One invitation to a family could mean two people or six. When each guest reports how many are coming with them, the number stops being a guess.",
+            "title": "Not knowing how many plus-ones will come"
           },
           "c3": {
-            "body": "",
-            "title": ""
+            "body": "Some who confirm don't come, and some who stay silent do. Keeping track of who hasn't replied yet shrinks the group of unknowns before you lock in your numbers.",
+            "title": "The gap between \"I'm coming\" and who actually shows up"
           },
           "c4": {
-            "body": "",
-            "title": ""
+            "body": "Chasing 300 people by phone is a week's work. An automatic reminder goes only to those who haven't replied yet, and doesn't bother those who already have.",
+            "title": "Hundreds of manual reminders"
           },
-          "eyebrow": "",
-          "title": ""
+          "eyebrow": "Why a wedding is different",
+          "title": "Four problems that come up at almost every wedding"
         },
         "faq": {
           "q1": {
-            "answer": "",
-            "question": ""
+            "answer": "The invitation or Save the Date goes out weeks ahead, but it's better to ask \"who's coming?\" close to the date, when the answers are accurate. On KALFA, the RSVP round and reminders go out automatically in the days before the wedding, and no messages are sent on Shabbat or Jewish holidays.",
+            "question": "When do you ask for wedding RSVPs?"
           },
           "q2": {
-            "answer": "",
-            "question": ""
+            "answer": "You can import each list separately, from a file or from WhatsApp, and mark it as its own group. A phone number that's already on the list is flagged in the import draft with the existing guest's name, so you can decide before sending and avoid sending to the same person twice.",
+            "question": "How do you merge both sides' guest lists?"
           },
           "q3": {
-            "answer": "",
-            "question": ""
+            "answer": "Yes. Each guest gets their own private link and sees only their own details, not the guest list and not anyone else's replies.",
+            "question": "Does every guest get a personal link?"
           },
           "q4": {
-            "answer": "",
-            "question": ""
+            "answer": "No. The message arrives on WhatsApp, and guests reply with a tap or through their personal link, which opens in the phone's browser. There's nothing to sign up for or install.",
+            "question": "Do guests need to install an app?"
           },
           "q5": {
-            "answer": "",
-            "question": ""
+            "answer": "The full details, including the packages, the price of each and what's included, are on the FAQ page, which updates directly from the packages in the system.",
+            "question": "How much does it cost to manage wedding RSVPs?"
           }
         },
         "guide": {
           "g1": {
-            "body": "",
-            "heading": ""
+            "body": "An RSVP is each guest's reply: whether they're coming and how many people are coming with them. The replies add up to the number you give the venue and the caterer, so it's worth collecting them in one place rather than in dozens of separate calls. On KALFA, a guest can reply with a tap in the WhatsApp message, or through a personal link where they choose Attending, Maybe or Not attending, report how many adults and children are coming and add a note if they want to.",
+            "heading": "What a wedding RSVP is"
           },
           "g2": {
-            "body": "",
-            "heading": ""
+            "body": "The printed invitation and the Save the Date announce the date, so they go out weeks ahead. The RSVP asks who's really coming, so it works best close to the date, when guests already know their plans. On KALFA, the RSVP round goes out automatically in the days before the wedding, following the schedule further down this page.",
+            "heading": "Printed invitation, Save the Date and RSVP: three different things"
           },
           "g3": {
-            "body": "",
-            "heading": ""
+            "body": "Import each side's list separately, from a CSV file (Excel saves in this format) or from WhatsApp, and assign each row to a group such as \"Groom's side\", \"Bride's side\" or \"Friends\". Before the import reaches your list you see a draft, and a phone number that already belongs to another guest is flagged there with that guest's name, so duplicates show up before sending, not after.",
+            "heading": "How to merge two sides' guest lists"
           },
           "g4": {
-            "body": "",
-            "heading": ""
+            "body": "Guests who have replied get no more reminders. The automatic reminders continue only to those who haven't replied yet. The overview updates with every reply, so you can see at any moment how many have confirmed and how many are still pending, and you can filter the list by side or group to see who in it hasn't replied yet.",
+            "heading": "What happens with those who don't reply"
           },
-          "title": ""
+          "title": "The guide to wedding RSVPs"
         },
         "hero": {
-          "lede": "",
-          "title": ""
+          "lede": "Two families, one list. Instead of two files going back and forth on WhatsApp, one orderly list that updates itself.",
+          "title": "Wedding RSVPs"
         },
         "meta": {
-          "description": "",
-          "title": ""
+          "description": "Manage your wedding RSVPs: merge both sides' lists, count plus-ones, send automatic reminders to those who haven't replied yet and track replies in real time.",
+          "title": "Wedding RSVPs: manage your guest list"
         },
-        "navLabel": "",
+        "navLabel": "Weddings",
         "timing": {
-          "t1": "",
-          "t2": "",
-          "t3": "",
-          "t4": "",
-          "t5": "",
-          "title": ""
+          "t1": "Close both sides' guest lists about a month and a half before, so there's time to merge duplicates and fill in missing phone numbers.",
+          "t2": "A Save the Date or printed invitation, if you're sending one, weeks ahead. This is separate from the RSVP round.",
+          "t3": "Import the list into KALFA and activate RSVPs well before the round in KALFA's sending schedule starts.",
+          "t4": "Lock in the numbers with the venue after the last message in the round, by the date you agreed with them.",
+          "t5": "A thank-you message after the event goes out automatically to those who came.",
+          "title": "What to do and when"
         }
       }
     },
     "faq": {
       "categoriesAriaLabel": "Question categories",
-      "contactFallback": "",
+      "contactFallback": "For more questions, you can <contact>get in touch</contact>.",
       "eyebrow": {
-        "about": "",
-        "howItWorks": "",
-        "legalSupport": "",
-        "pricing": ""
+        "about": "About",
+        "howItWorks": "How it works",
+        "legalSupport": "Legal and support",
+        "pricing": "Pricing"
       },
       "meta": {
-        "description": "",
-        "title": ""
+        "description": "Answers about KALFA in one place: what it does, how to manage an event from start to finish, how pricing and billing work and what happens if you cancel.",
+        "title": "Frequently asked questions"
       },
-      "notFound": "",
+      "notFound": "Didn't find an answer? <contact>Get in touch</contact> and we'll get back to you.",
       "subtitle": "Everything you need to know about KALFA: what it is, how it works, what it costs and what happens if you want to cancel.",
       "title": "Frequently asked questions"
     },
     "footer": {
-      "copyright": "",
+      "copyright": "© {{year}} KALFA · All rights reserved",
       "legal": {
-        "about": "",
-        "contact": "",
-        "cookies": "",
-        "faq": "",
-        "privacy": "",
-        "terms": ""
+        "about": "About",
+        "contact": "Contact",
+        "cookies": "Cookie policy",
+        "faq": "FAQ",
+        "privacy": "Privacy policy",
+        "terms": "Terms of service"
       },
-      "legalAriaLabel": "",
-      "manageCookies": "",
+      "legalAriaLabel": "Legal and support",
+      "manageCookies": "Manage cookies",
       "pages": {
-        "template": "",
-        "whatsapp": ""
+        "template": "Guest list template",
+        "whatsapp": "Sending on WhatsApp"
       },
-      "pagesAriaLabel": "",
-      "tagline": ""
+      "pagesAriaLabel": "RSVPs by event type",
+      "tagline": "RSVP management for private and business events, all in one place."
     },
     "guestListTemplate": {
-      "breadcrumb": "",
+      "breadcrumb": "Guest list template",
       "closing": {
         "subtitle": "Import this file to send a personal invitation for every row, with automatic reminders only to those who haven't replied yet.",
         "title": "Your list is ready. What about the replies?"
@@ -689,34 +782,34 @@
         "eyebrow": "FAQ",
         "items": {
           "googleSheets": {
-            "answer": "",
-            "question": ""
+            "answer": "Yes. Upload the file to Google Sheets and share it, and when the list is ready, download it again as a CSV. That's the same format KALFA imports.",
+            "question": "Can I work on the list in Google Sheets with my partner?"
           },
           "howToBuild": {
-            "answer": "",
-            "question": ""
+            "answer": "Start with one file per side, one row per invitation with a quantity column, a group for each row and a mobile number in a single format. At the end, merge the files and check for duplicates by phone number, before anyone gets an invitation.",
+            "question": "How do you build a wedding guest list?"
           },
           "importToKalfa": {
-            "answer": "",
-            "question": ""
+            "answer": "Yes. It's exactly the same template as on KALFA's guest import screen, with the same columns. You can fill it in now and import it later without changing a thing.",
+            "question": "Can I import this file into KALFA?"
           },
           "listGrows": {
-            "answer": "",
-            "question": ""
+            "answer": "A spreadsheet works great for building the list in the first place. It stops working when you need to send a personal invitation for every row, track who replied and remind only those who haven't replied yet. Updating hundreds of rows by hand is the main source of mistakes.",
+            "question": "What happens as the list grows?"
           },
           "opensInExcel": {
-            "answer": "",
-            "question": ""
+            "answer": "Yes. The file is a UTF-8 CSV with a BOM, which is what makes Excel display Hebrew correctly. It also opens in Google Sheets and Numbers with no conversion.",
+            "question": "Does the template open in Excel?"
           },
           "rowPerInvite": {
-            "answer": "",
-            "question": ""
+            "answer": "Because the invitation is the unit that gets sent. The Cohen family gets one invitation covering four people. The quantity column says how many, so the number of invitations and the number of guests stay two separate, clear numbers.",
+            "question": "Why one row per invitation and not per person?"
           }
         },
         "title": "About the template"
       },
       "file": {
-        "intro": "",
+        "intro": "Four columns, and one row per <invite>invitation</invite>, not per person.",
         "sampleNote": "The row with no phone number is there on purpose: you can still manage a guest who has no number. They just won't get an automatic message.",
         "tableCaption": "Guest list template layout",
         "title": "What's in the file"
@@ -727,27 +820,27 @@
         "title": "Guest list template"
       },
       "meta": {
-        "description": "",
-        "title": ""
+        "description": "A ready-made guest list template for a wedding or any event. Opens in Excel and Google Sheets, with name, phone, quantity and group columns. Free to download.",
+        "title": "Wedding guest list: Excel template to download"
       },
       "mistakes": {
         "eyebrow": "Good to know",
         "items": {
           "excelPhone": {
-            "body": "",
-            "title": ""
+            "body": "The leading zero disappears and 0501234567 becomes 501234567. Setting the column to text before you paste solves this.",
+            "title": "Excel turns a phone number into a plain number"
           },
           "mixedPhones": {
-            "body": "",
-            "title": ""
+            "body": "050-1234567, +972501234567 and 0501234567 are the same number in three forms. A consistent column saves you duplicates that only show up after sending.",
+            "title": "Phone numbers in mixed formats"
           },
           "noGroup": {
-            "body": "",
-            "title": ""
+            "body": "Without groups you can't tell which part of the list is falling behind on replies, and you can't focus your effort on just the part that hasn't replied yet.",
+            "title": "No group column"
           },
           "rowPerPerson": {
-            "body": "",
-            "title": ""
+            "body": "One family is one invitation with a quantity, not four separate rows. Splitting it into people inflates the list and makes it harder to count how many invitations were really sent.",
+            "title": "A row per person instead of per invitation"
           }
         },
         "title": "Four mistakes that show up in almost every spreadsheet guest list"
@@ -755,54 +848,75 @@
       "steps": {
         "items": {
           "groupPerRow": {
-            "body": "",
-            "title": ""
+            "body": "Groom's side, bride's side, work, friends: one group per row. Later, this is what lets you see which part of the list hasn't replied yet.",
+            "title": "A group for each row"
           },
           "mergeDedupe": {
-            "body": "",
-            "title": ""
+            "body": "When you import the files into KALFA, a phone number that's already on the list is flagged in the import draft with the existing guest's name, so a mutual friend doesn't get two invitations.",
+            "title": "Merge and check for duplicates"
           },
           "ownCopy": {
-            "body": "",
-            "title": ""
+            "body": "When each family works on a separate file from the same template, nobody overwrites anyone else's changes. You merge once, at the end.",
+            "title": "Each side fills in its own copy"
           },
           "phoneFormat": {
-            "body": "",
-            "title": ""
+            "body": "The phone column is set as text and holds one mobile number per row. Without a number you can still manage the guest, but they won't get an automatic invitation.",
+            "title": "Mobile numbers in one format"
           },
           "rowPerInvite": {
-            "body": "",
-            "title": ""
+            "body": "A couple is one row with a quantity of 2, and a family with children is one row with its own quantity. That way the number of invitations and the number of guests stay two separate numbers.",
+            "title": "One row per invitation, with a quantity"
           }
         },
         "title": "How to build a wedding guest list in five steps"
       }
     },
     "header": {
-      "createEvent": "",
-      "login": ""
+      "createEvent": "Create an event",
+      "login": "Log in",
+      "menu": {
+        "ariaLabel": "Menu",
+        "close": "Close",
+        "description": "Homepage navigation menu"
+      },
+      "nav": {
+        "contact": "Contact",
+        "faq": "FAQ",
+        "features": "Features",
+        "how": "How it works",
+        "mainAriaLabel": "Main navigation",
+        "pageAriaLabel": "In-page navigation",
+        "trust": "Trust"
+      },
+      "userMenu": {
+        "account": "Go to my account",
+        "ariaLabel": "User menu",
+        "help": "Help and support",
+        "logout": "Log out",
+        "settings": "Settings"
+      }
     },
     "home": {
       "audiences": {
         "eyebrow": "Who it's for",
         "items": {
           "barBatMitzva": {
-            "title": ""
+            "title": "Bar and bat mitzvahs"
           },
           "brit": {
-            "title": ""
+            "title": "Brit milah"
           },
           "company": {
-            "title": ""
+            "title": "Company events"
           },
           "conferences": {
-            "title": ""
+            "title": "Conferences"
           },
           "family": {
-            "title": ""
+            "title": "Family celebrations"
           },
           "weddings": {
-            "title": ""
+            "title": "Weddings"
           }
         },
         "subtitle": "From an intimate family gathering to a large company conference, KALFA adapts to your size and style.",
@@ -810,7 +924,7 @@
       },
       "closing": {
         "subtitle": "Start managing your event's RSVPs today. Orderly, clear and all in one place.",
-        "title": ""
+        "title": "Less hassle, more control.<br/>A better-run event."
       },
       "cta": {
         "createEvent": "Create a new event",
@@ -825,32 +939,32 @@
         "eyebrow": "Key features",
         "items": {
           "communication": {
-            "body": "",
-            "title": ""
+            "body": "Updates and messages to guests through one clear channel.",
+            "title": "Streamlined communication"
           },
           "guestList": {
-            "body": "",
-            "title": ""
+            "body": "One orderly list with groups, plus-ones and notes, always up to date.",
+            "title": "Guest list management"
           },
           "import": {
-            "body": "",
-            "title": ""
+            "body": "Import an existing list from a file or from WhatsApp, with no manual typing.",
+            "title": "Fast guest import"
           },
           "invites": {
-            "body": "",
-            "title": ""
+            "body": "Personal invitations, plus automatic reminders for those who haven't replied yet.",
+            "title": "Invitations and reminders"
           },
           "liveStatus": {
-            "body": "",
-            "title": ""
+            "body": "A live overview of response rates, RSVPs and progress.",
+            "title": "Real-time event status"
           },
           "reports": {
-            "body": "",
-            "title": ""
+            "body": "A clear summary of the numbers for the host, before and after the event.",
+            "title": "Reports and summaries"
           },
           "tracking": {
-            "body": "",
-            "title": ""
+            "body": "Every reply is recorded right away: who's coming, who isn't and how many plus-ones.",
+            "title": "RSVP tracking"
           }
         },
         "subtitle": "Seven features that work together, from the guest list to the final report.",
@@ -861,69 +975,95 @@
         "private": "Private and secure",
         "readyInMinutes": "Ready in minutes",
         "subtitle": "Send invitations, track replies in real time and manage your guest list and plus-ones. No spreadsheets, no scattered messages, no mess.",
-        "title": ""
+        "title": "RSVPs,<br/><accent>all in one place.</accent>"
       },
       "how": {
         "eyebrow": "How it works",
         "items": {
           "addGuests": {
-            "body": "",
-            "title": ""
+            "body": "By hand or by importing an existing list, with groups and plus-ones.",
+            "title": "Add guests"
           },
           "arrive": {
-            "body": "",
-            "title": ""
+            "body": "With a clear overview of who's coming.",
+            "title": "Arrive at a well-run event"
           },
           "createEvent": {
-            "body": "",
-            "title": ""
+            "body": "A name, a date and a place, and your event is ready to manage.",
+            "title": "Create an event"
           },
           "sendInvites": {
-            "body": "",
-            "title": ""
+            "body": "A personal invitation for every guest, through the channel that suits you.",
+            "title": "Send invitations"
           },
           "sendUpdates": {
-            "body": "",
-            "title": ""
+            "body": "Automatic reminders for those who haven't replied yet and regular updates for your guests.",
+            "title": "Send updates and reminders"
           },
           "trackReplies": {
-            "body": "",
-            "title": ""
+            "body": "Every RSVP is recorded in real time, with a reminder for those who haven't replied yet.",
+            "title": "Track replies"
           }
         },
         "subtitle": "No complicated tutorials. Set up an event and get going.",
         "title": "Six simple steps, from first idea to the big day"
       },
       "jsonLd": {
-        "appDescription": ""
+        "appDescription": "An RSVP management system for events: manage your guest list and plus-ones, send invitations and reminders, track replies in real time."
       },
       "meta": {
-        "ogDescription": "",
-        "ogTitle": ""
+        "description": "An RSVP system for a wedding or any event: guest list and plus-ones, WhatsApp invitations and reminders, real-time reply tracking and reports, all in one place.",
+        "ogDescription": "Guest management, invitations and reminders, real-time reply tracking and reports, all in one place.",
+        "ogTitle": "KALFA: RSVP management"
       },
       "preview": {
         "ariaLabel": "Sample view of an event dashboard",
+        "confirmedBadge": "248 confirmed",
+        "eventMeta": "{{date, datetime}} · HaSharon Halls",
         "eventName": "Wedding · Dana & Yoav",
-        "snapshot": "At a glance"
+        "guests": {
+          "avni": {
+            "name": "Noa Avni",
+            "status": "Not attending"
+          },
+          "cohen": {
+            "name": "Yoav Cohen",
+            "status": "Pending"
+          },
+          "levi": {
+            "name": "Levi family",
+            "status": "Confirmed"
+          },
+          "party_one": "{{count}} guest",
+          "party_other": "{{count}} guests"
+        },
+        "invitedTotal": "340 invited",
+        "snapshot": "At a glance",
+        "stats": {
+          "confirmed": "Confirmed",
+          "pending": "Pending",
+          "responseRate": "Response rate",
+          "responseRateValue": "{{rate, number}}"
+        }
       },
       "problem": {
         "eyebrow": "The reality today",
         "items": {
           "lastMinuteLoad": {
-            "body": "",
-            "title": ""
+            "body": "The most stressful moments get wasted on coordination instead of the event.",
+            "title": "Overload before the event"
           },
           "manualTracking": {
-            "body": "",
-            "title": ""
+            "body": "Spreadsheets, notes and lists that are slow to update and full of mistakes.",
+            "title": "Tracking guests by hand"
           },
           "scatteredMessages": {
-            "body": "",
-            "title": ""
+            "body": "Replies come in by WhatsApp, phone and email, and they're hard to bring together.",
+            "title": "Scattered messages"
           },
           "uncertainty": {
-            "body": "",
-            "title": ""
+            "body": "There's no way to know in real time how many guests will really come.",
+            "title": "Not knowing who's coming"
           }
         },
         "subtitle": "Hosts run into the same problems again and again, and it all adds up to needless stress.",
@@ -932,10 +1072,10 @@
       "solution": {
         "eyebrow": "The solution",
         "items": {
-          "autoReminders": "",
-          "clearSnapshot": "",
-          "liveStatus": "",
-          "oneList": ""
+          "autoReminders": "RSVPs and automatic reminders",
+          "clearSnapshot": "A clear overview at any moment",
+          "liveStatus": "Statuses and updates in real time",
+          "oneList": "Guests and invitations in one place"
         },
         "subtitle": "Guests, invitations, RSVPs, reminders, statuses and updates: one orderly system that gives you full control.",
         "title": "KALFA brings everything together in one place"
@@ -944,24 +1084,51 @@
         "eyebrow": "Trust",
         "items": {
           "control": {
-            "body": "",
-            "title": ""
+            "body": "You see everything and decide everything, at any moment.",
+            "title": "Full control"
           },
           "easeOfUse": {
-            "title": ""
+            "title": "Ease of use"
           },
           "order": {
-            "body": "",
-            "title": ""
+            "body": "One source of truth for all your information, with no conflicting versions.",
+            "title": "Order instead of confusion"
           },
           "privacy": {
-            "body": "",
-            "title": ""
+            "body": "Your guest list and data are kept safe and private. They're yours alone.",
+            "title": "Privacy and security"
           }
         },
         "subtitle": "The goal is simple: prevent confusion, save time and give you full control of the process, with peace of mind.",
         "title": "Built to reduce stress, not add to it"
       }
+    },
+    "legal": {
+      "backHome": "Back to homepage",
+      "companyDetails": "Company details",
+      "companyId": "Company/business no. {{id}}",
+      "companyMissing": "[To be completed in the company details settings]",
+      "emailLabel": "Email:",
+      "phoneLabel": "Phone:",
+      "statusActive": "Active",
+      "statusDisabled": "Temporarily disabled"
+    },
+    "notFound": {
+      "back": "Back to the previous page",
+      "contact": "Contact",
+      "description": "The link may be wrong, the page may have been removed or the invitation may no longer be available.",
+      "faq": "FAQ",
+      "help": "Need help? Get in touch with us",
+      "home": "Back to homepage",
+      "navAriaLabel": "Useful links",
+      "privacy": "Privacy",
+      "title": "Oops, this page isn't on the guest list"
+    },
+    "phoneInput": {
+      "empty": "No country found",
+      "search": "Search for a country…",
+      "selectCountry": "Choose a country (currently {{country}})",
+      "unknownCountry": "Unknown country"
     },
     "whatsapp": {
       "cta": {
@@ -973,23 +1140,23 @@
         "eyebrow": "FAQ",
         "items": {
           "anyText": {
-            "answer": "",
-            "question": ""
+            "answer": "No. WhatsApp approves the structure of business-initiated messages in advance, and KALFA sends only approved templates. The personal details (name, date and place) change in each message.",
+            "question": "Can I send any text I want?"
           },
           "guestsSeeEachOther": {
-            "answer": "",
-            "question": ""
+            "answer": "No. Each message is sent separately, and each guest sees only their own details, not the guest list and not anyone else's replies.",
+            "question": "Can guests see each other?"
           },
           "howToSend": {
-            "answer": "",
-            "question": ""
+            "answer": "Import your guest list, and KALFA sends a personal message to each number through WhatsApp's official business platform. There's no need to send from your own phone or open a group.",
+            "question": "How do you collect RSVPs on WhatsApp?"
           },
           "noWhatsapp": {
-            "answer": "",
-            "question": ""
+            "answer": "They just won't receive anything on this channel. Their personal link still works by any other route, and you can also manage a guest with no phone number at all.",
+            "question": "What happens if a guest doesn't have WhatsApp?"
           }
         },
-        "moreLink": "",
+        "moreLink": "Pricing and the other channels are covered <faq>on the FAQ page</faq>.",
         "title": "Sending on WhatsApp: common questions"
       },
       "hero": {
@@ -1000,34 +1167,34 @@
       "limits": {
         "eyebrow": "Important to know up front",
         "items": {
-          "approvedTemplate": "",
-          "eventOnly": "",
-          "noGuarantee": "",
-          "stopRequest": ""
+          "approvedTemplate": "A business-initiated message must use a template approved in advance by WhatsApp.",
+          "eventOnly": "Messages are about the specific event and guest, not bulk advertising.",
+          "noGuarantee": "Delivery depends on WhatsApp itself, so it isn't guaranteed for every number.",
+          "stopRequest": "A guest who asks to stop receiving messages stops receiving them."
         },
         "title": "WhatsApp is a platform with rules, and we follow them"
       },
       "meta": {
-        "description": "",
-        "title": ""
+        "description": "Send RSVP invitations and reminders on WhatsApp via the official platform: a personal message for every guest, a tap to reply and automatic tracking of replies.",
+        "title": "RSVPs on WhatsApp"
       },
       "points": {
         "items": {
           "autoRecorded": {
-            "body": "",
-            "title": ""
+            "body": "The guest replies from the message or from their personal link, and the status updates on the list without anyone typing it in.",
+            "title": "Replies record themselves"
           },
           "personal": {
-            "body": "",
-            "title": ""
+            "body": "Each guest gets their own message with their own details. There's no group, no broadcast list that everyone can see, and nobody is exposed to the guest list.",
+            "title": "A personal message, not a group message"
           },
           "reach": {
-            "body": "",
-            "title": ""
+            "body": "Guests don't always open email or answer an unknown number. WhatsApp is the channel almost everyone checks the same day.",
+            "title": "The message goes where people are already looking"
           },
           "remindersOnly": {
-            "body": "",
-            "title": ""
+            "body": "The automatic reminder skips those who have already replied. That's the difference between a helpful reminder and a nuisance.",
+            "title": "Reminders only for those who haven't replied"
           }
         },
         "title": "Why WhatsApp"
@@ -1040,36 +1207,72 @@
       "imageAlt": "Event invitation",
       "openFull": "Open the full-size invitation"
     },
+    "landing": {
+      "greeting": {
+        "barMitzvah": "Thank you for coming to celebrate the bar mitzvah with us!",
+        "batMitzvah": "Thank you for coming to celebrate the bat mitzvah with us!",
+        "birthday": "Thank you for coming to celebrate the birthday with us!",
+        "brit": "Thank you for coming to celebrate the brit milah with us!",
+        "britah": "Thank you for coming to celebrate the britah with us!",
+        "engagement": "Thank you for coming to celebrate the engagement with us!",
+        "henna": "Thank you for coming to celebrate the henna night with us!",
+        "other": "Thank you for coming to celebrate with us!",
+        "wedding": "Thank you for coming to celebrate the wedding with us!"
+      }
+    },
     "meta": {
-      "title": ""
+      "title": "Thank you"
     },
     "rateLimited": "Too many requests. Please try again in a moment."
   },
   "validation": {
     "email": {
-      "invalidShort": ""
+      "invalidShort": "This email address isn't valid"
     },
     "inquiry": {
       "contact": {
-        "required": ""
+        "required": "Please fill in a phone number or an email so we can reach you"
       },
       "message": {
-        "required": "",
-        "tooLong": ""
+        "required": "Please write your message",
+        "tooLong": "This message is too long"
       },
       "topic": {
-        "required": ""
+        "required": "Please choose a topic"
       }
     },
     "name": {
-      "required": "",
-      "tooLong": ""
+      "required": "Please fill in your name",
+      "tooLong": "This name is too long"
     },
     "note": {
-      "tooLong": ""
+      "tooLong": "This note is too long"
     },
     "phone": {
-      "invalidShort": ""
+      "invalidShort": "This phone number isn't valid"
+    },
+    "rating": {
+      "score": {
+        "invalid": "This rating isn't valid"
+      }
+    },
+    "rsvp": {
+      "answer": {
+        "tooLong": "This answer is too long"
+      },
+      "count": {
+        "invalid": "This number isn't valid",
+        "tooLarge": "This number is too high"
+      },
+      "guests": {
+        "required": "Please enter at least one person"
+      },
+      "mealPref": {
+        "tooLong": "This text is too long"
+      },
+      "status": {
+        "required": "Please choose an answer"
+      }
     }
   }
 }

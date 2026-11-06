@@ -1,19 +1,35 @@
 {
   "cb": {
+    "errors": {
+      "checkFields": "Merci de vérifier les informations saisies.",
+      "generic": "L’envoi de vos informations a échoué. Vous pouvez réessayer.",
+      "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans quelques minutes.",
+      "unavailable": "Ce lien n’est plus actif. Vous pouvez laisser à nouveau vos coordonnées sur la page de contact."
+    },
     "form": {
       "contact": {
         "label": "Comment vous appeler ?",
-        "placeholder": "Par exemple : nom, téléphone ou e-mail"
+        "placeholder": "Votre nom"
       },
       "lockedNotice": "Votre créneau d’appel est déjà fixé et ne changera pas.",
       "note": {
+        "label": "De quoi souhaitiez-vous parler ? <optional>(facultatif)</optional>",
         "placeholder": "Écrivez les détails ici…"
       },
       "submit": "Envoyer"
     },
     "header": {
+      "phoneHint": "Nous vous rappellerons au numéro se terminant par <hint>{{phoneHint}}</hint>.",
       "subtitle": "Nous allons vous rappeler. Pour bien préparer cet appel, voici deux questions rapides.",
       "title": "Vous nous avez appelés et nous n’avons pas pu répondre"
+    },
+    "meta": {
+      "title": "Informations pour votre rappel"
+    },
+    "success": {
+      "honeypot": "Vos informations sont enregistrées. Nous vous rappellerons dès que possible.",
+      "locked": "Vos informations sont enregistrées, merci. Le créneau déjà fixé ne change pas : nous vous rappellerons à ce moment-là.",
+      "saved": "Vos informations sont enregistrées, merci. Nous vous rappellerons dès que possible."
     }
   },
   "error": {
@@ -35,19 +51,92 @@
     },
     "landing": {
       "cta": "Offrir un cadeau",
+      "greeting": {
+        "barMitzvah": "Mazal tov ! Fêtons cela ensemble",
+        "batMitzvah": "Mazal tov ! Fêtons cela ensemble",
+        "birthday": "Joyeux anniversaire !",
+        "brit": "Quelle joie de partager ce moment avec vous",
+        "britah": "Quelle joie de partager ce moment avec vous",
+        "engagement": "Mazal tov pour ces fiançailles !",
+        "henna": "Belle soirée du henné !",
+        "other": "Nous vous invitons à célébrer avec nous",
+        "wedding": "Mazal tov ! Nous vous invitons à célébrer avec nous"
+      },
       "toggle": {
         "back": "Retour à l’invitation",
         "front": "Itinéraire et agenda"
       },
       "wazeLink": "Y aller avec Waze"
     },
+    "meta": {
+      "title": "Offrir un cadeau"
+    },
     "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+  },
+  "guest": {
+    "brandLine": "Géré avec <brand>KALFA</brand>",
+    "calendar": {
+      "add": "Ajouter à l’agenda",
+      "addToGoogle": "Ajouter à Google Agenda",
+      "apple": "Calendrier Apple",
+      "close": "Fermer",
+      "description": "Choisissez l’agenda où enregistrer l’événement",
+      "google": "Google Agenda",
+      "hint": {
+        "androidApp": "S’ouvre dans l’application (ou dans le navigateur si elle n’est pas installée)",
+        "androidDownload": "Télécharge un fichier d’agenda à ouvrir dans l’application",
+        "browser": "S’ouvre dans le navigateur",
+        "icsDownload": "Télécharge un fichier .ics",
+        "iphone": "S’ouvre dans l’application Calendrier de l’iPhone"
+      },
+      "icsFile": "Fichier d’agenda (Apple, Outlook, etc.)",
+      "iosWebviewNotice": "Dans le navigateur intégré d’une application (comme WhatsApp), le Calendrier Apple ne s’ouvre pas toujours. Si cela arrive, ouvrez le lien dans Safari.",
+      "otherAndroid": "Autre agenda (Samsung, etc.)"
+    },
+    "celebrants": {
+      "parentsHonoring": "{{parents}}, avec {{child}} à l’honneur",
+      "secondOfCouple": "et {{name}}"
+    },
+    "eventType": {
+      "barMitzvah": "Bar-mitsva",
+      "batMitzvah": "Bat-mitsva",
+      "birthday": "Anniversaire",
+      "brit": "Brit-mila",
+      "britah": "Brit-bat",
+      "engagement": "Fiançailles",
+      "henna": "Soirée du henné",
+      "other": "Événement",
+      "wedding": "Mariage"
+    },
+    "form": {
+      "pending": "Un instant…"
+    },
+    "gift": {
+      "ctaWithBrand": "Offrir un cadeau avec {{brand}}"
+    },
+    "heading": {
+      "barMitzvah": "Bar-mitsva : {{names}}",
+      "batMitzvah": "Bat-mitsva : {{names}}",
+      "birthday": "Anniversaire : {{names}}",
+      "brit": "Brit-mila",
+      "britah": "Brit-bat",
+      "celebrants": "Vos hôtes : {{names}}",
+      "engagement": "Fiançailles : {{names}}",
+      "henna": "Soirée du henné : {{names}}",
+      "parents": "Les parents : {{names}}",
+      "wedding": "Mariage : {{names}}"
+    },
+    "loading": "Chargement…"
   },
   "join": {
     "failed": "Impossible de rejoindre l’équipe. Il est possible que cette invitation ne soit plus valide.",
     "invalid": {
       "backLink": "Retour à mon espace",
       "notice": "Cette invitation n’est pas valide, a expiré ou a déjà été utilisée."
+    },
+    "invited": "Vous avez reçu une invitation à rejoindre l’organisation <org>{{orgName}}</org>.",
+    "meta": {
+      "title": "Rejoindre l’organisation"
     },
     "submit": "Rejoindre",
     "title": "Rejoindre l’équipe"
@@ -58,6 +147,16 @@
     },
     "closed": {
       "notice": "La date limite de réponse est passée. Pour plus de détails, vous pouvez contacter la personne qui vous invite."
+    },
+    "errors": {
+      "checkFields": "Merci de vérifier les informations saisies.",
+      "closed": "Cet événement n’accepte pas de réponses pour le moment.",
+      "deadlinePassed": "La date limite de réponse est passée.",
+      "invalidAnswers": "L’une des réponses n’est pas valide. Merci de vérifier et de réessayer.",
+      "invalidCount": "Le nombre d’invités n’est pas valide.",
+      "invalidStatus": "Ce choix n’est pas valide.",
+      "missingRequired": "Merci de remplir tous les champs obligatoires.",
+      "notFound": "Ce lien d’invitation n’est pas valide ou a été annulé."
     },
     "form": {
       "adults": "Adultes",
@@ -75,10 +174,22 @@
         "selectPlaceholder": "Choisissez…"
       },
       "showInGuestList": {
-        "label": "Apparaître dans la liste « Qui sera là ? » (prénom uniquement)"
+        "label": "Apparaître dans la liste « Qui d’autre sera là ? » (prénom uniquement)"
+      },
+      "status": {
+        "attending": "Je viens",
+        "declined": "Je ne viens pas",
+        "maybe": "Peut-être"
+      },
+      "stepper": {
+        "decrease": "{{label}} : diminuer",
+        "increase": "{{label}} : augmenter"
       },
       "submit": "Envoyer ma réponse",
       "success": {
+        "summary_one": "À bientôt ! {{eventType}} : {{count}} personne inscrite.",
+        "summary_many": "À bientôt ! {{eventType}} : {{count}} de personnes inscrites.",
+        "summary_other": "À bientôt ! {{eventType}} : {{count}} personnes inscrites.",
         "updateHint": "Vous pouvez modifier votre réponse à tout moment depuis ce même lien."
       }
     },
@@ -95,20 +206,43 @@
       "imageAlt": "Invitation à l’événement",
       "openFull": "Ouvrir l’invitation en grand format"
     },
-    "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+    "meta": {
+      "title": "Confirmation de présence"
+    },
+    "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant.",
+    "success": {
+      "saved": "Votre réponse a bien été enregistrée. Merci !",
+      "unchanged": "Nous avons déjà enregistré votre réponse. Merci !"
+    }
   },
   "rate": {
+    "errors": {
+      "invalidScore": "Merci de choisir une option valide."
+    },
     "form": {
       "comment": {
         "label": "Un commentaire à ajouter ? (facultatif)",
         "placeholder": "Dites-nous-en un peu plus…"
       },
+      "feedback": {
+        "bad": "Nous sommes désolés de l’apprendre. Merci de nous l’avoir dit.",
+        "great": "Cela nous fait plaisir ! 🎉",
+        "ok": "Merci pour votre retour, nous allons continuer à nous améliorer."
+      },
       "heading": "Comment avez-vous trouvé notre service ?",
       "legend": "Votre avis sur notre service",
+      "option": {
+        "bad": "Pas satisfaisant",
+        "great": "Excellent",
+        "ok": "Correct"
+      },
       "submit": "Envoyer mon avis",
       "submitting": "Envoi en cours…"
     },
     "invalidLink": "Ce lien n’est pas valide ou n’est plus disponible.",
+    "meta": {
+      "title": "Votre avis sur notre service"
+    },
     "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant.",
     "thanks": {
       "body": "Cela nous aide à nous améliorer pour la prochaine fois",
@@ -117,11 +251,30 @@
   },
   "site": {
     "about": {
+      "breadcrumb": "À propos",
       "cta": {
         "createEvent": "Créer un événement",
         "newEvent": "Nouvel événement"
       },
       "does": {
+        "items": {
+          "guestList": {
+            "body": "Groupes, accompagnants, remarques et statuts au même endroit, avec import depuis un fichier ou depuis WhatsApp.",
+            "title": "Une seule liste d’invités"
+          },
+          "personalInvite": {
+            "body": "Un message personnel pour chaque invité, et des rappels automatiques uniquement aux personnes qui n’ont pas encore répondu.",
+            "title": "Invitation personnelle et rappels"
+          },
+          "privateLink": {
+            "body": "Chaque invité répond depuis son propre lien et ne voit que ses informations : ni la liste, ni les réponses des autres.",
+            "title": "Réponse par lien privé"
+          },
+          "snapshot": {
+            "body": "Qui a confirmé, qui n’a pas encore répondu et combien de personnes viennent : tout se met à jour à chaque réponse.",
+            "title": "Une vue d’ensemble pour la personne qui organise"
+          }
+        },
         "limits": "Ce qu’elle ne fait pas : elle ne gère ni la salle, ni les prestataires, ni le budget, et n’envoie pas de publicité de masse. Les messages sont envoyés uniquement aux invités de l’événement, et uniquement à son sujet.",
         "title": "Ce que fait la plateforme"
       },
@@ -130,12 +283,74 @@
         "intro": "KALFA est une plateforme israélienne de gestion des confirmations de présence pour les événements privés : mariages, bar-mitsva et bat-mitsva, brit-mila, fêtes de famille et événements d’entreprise. Elle fait une seule chose : aider la personne qui organise l’événement à savoir qui vient, sans tableurs ni dizaines de coups de fil.",
         "title": "À propos de KALFA"
       },
+      "meta": {
+        "title": "Plateforme israélienne de confirmations de présence"
+      },
+      "moreLinks": "Pour en savoir plus : <faq>questions fréquentes</faq> · <privacy>politique de confidentialité</privacy> · <terms>conditions générales</terms>",
       "operator": {
+        "body": "Le service est exploité par {{operator}}. Les informations complètes sur l’entreprise figurent dans les conditions générales.",
+        "contact": "Une question, une demande ou une remarque ? <contact>Vous pouvez nous joindre depuis la page de contact</contact>, y compris pour demander un rappel.",
         "title": "Qui exploite le service"
       },
       "principles": {
+        "items": {
+          "dataOwnership": {
+            "body": "Les données des invités appartiennent à la personne qui organise l’événement. KALFA les traite pour son compte et ne vend pas de données personnelles à des tiers. Tous les détails figurent dans la politique de confidentialité.",
+            "title": "Les données de l’événement appartiennent à la personne qui l’organise"
+          },
+          "hebrewFirst": {
+            "title": "L’hébreu d’abord"
+          },
+          "noShabbat": {
+            "body": "Tout message ou appel prévu pendant Chabbat, une fête juive ou la nuit est automatiquement reporté au prochain créneau d’envoi.",
+            "title": "Aucun message ni appel pendant Chabbat et les fêtes juives"
+          },
+          "openPrice": {
+            "body": "Le tarif, ce qu’il comprend et les cas où un supplément s’applique sont détaillés dans les questions fréquentes et les conditions générales, avant tout engagement.",
+            "title": "Un prix connu d’avance"
+          }
+        },
         "title": "Notre façon de travailler"
       }
+    },
+    "callMe": {
+      "busy": "Un instant…",
+      "close": "Fermer",
+      "codeAria": "Code de vérification",
+      "codePrompt": "Nous vous avons envoyé un code de vérification par SMS. Saisissez-le ici :",
+      "disclosure": "Nous vous appellerons d’ici quelques minutes et vous mettrons en relation avec une personne du standard KALFA. L’appel est enregistré à des fins de documentation et d’amélioration du service.",
+      "disclosureAccept": "J’ai compris, continuer",
+      "errors": {
+        "generic": "Votre demande n’a pas pu aboutir. Merci de réessayer.",
+        "sendCodeFailed": "L’envoi du code de vérification a échoué."
+      },
+      "noAgent": "Personne n’est disponible pour le moment. Nous vous rappellerons dès que possible.",
+      "phoneLabel": "Numéro de téléphone",
+      "refusal": {
+        "badBody": "La demande n’est pas valide",
+        "balance": "Impossible de passer un appel pour le moment. Merci de réessayer plus tard.",
+        "bodyTooLarge": "La demande est trop volumineuse",
+        "concurrency": "Notre standard est occupé pour le moment. Merci de réessayer dans quelques minutes.",
+        "dailyBreaker": "Nous avons atteint notre quota d’appels pour aujourd’hui. Merci de réessayer demain.",
+        "dnc": "Impossible d’appeler ce numéro.",
+        "flagDisabled": "Le service d’appel n’est pas actif pour le moment.",
+        "invalidPhone": "Le numéro de téléphone n’est pas valide",
+        "liveCallsDisabled": "Le canal téléphonique n’est pas actif pour le moment.",
+        "otp": "Ce code de vérification est incorrect ou a expiré.",
+        "otpCreateFailed": "La création du code de vérification a échoué",
+        "perPhoneRate": "Vous avez déjà demandé un rappel récemment. Merci de réessayer plus tard.",
+        "quietHours": "Impossible de passer un appel pendant Chabbat et les fêtes juives. Merci de réessayer après Chabbat ou la fête.",
+        "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans quelques minutes.",
+        "registryPending": "Impossible de passer un appel pour le moment. Merci de réessayer dans quelques minutes.",
+        "sendFailed": "L’envoi du code de vérification a échoué",
+        "tooManyCodes": "Trop de codes ont été envoyés. Merci de réessayer plus tard."
+      },
+      "retry": "Réessayer",
+      "ringingSoon": "Votre téléphone devrait sonner d’ici peu.",
+      "sendCode": "Envoyer un code de vérification",
+      "smsCode": "Votre code de vérification KALFA est {{code}}",
+      "title": "Appelez-moi maintenant",
+      "verifyAndCall": "Vérifier et lancer l’appel"
     },
     "contact": {
       "callbackSection": {
@@ -144,17 +359,51 @@
       "contactSection": {
         "title": "Envoyer un message"
       },
+      "errors": {
+        "checkFields": "Merci de vérifier les informations saisies.",
+        "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant.",
+        "sendFailed": "L’envoi de votre message a échoué. Merci de réessayer dans un instant."
+      },
+      "faqHint": "Avant de nous contacter, pensez à consulter les <faq>questions fréquentes</faq> : la réponse s’y trouve peut-être déjà.",
       "form": {
+        "callbackDisclosure": "Le rappel peut être effectué, au nom de KALFA, par une personne ou par un agent numérique ou vocal automatisé. À la suite de l’appel, un message WhatsApp peut également être envoyé au nom de KALFA, sous réserve de votre accord au cours de l’appel lui-même.",
         "email": "E-mail",
         "fullName": "Prénom et nom",
+        "honeypot": "Laissez ce champ vide",
         "message": "Votre message",
         "noteOptional": "Remarque (facultatif)",
+        "pending": "Un instant…",
         "phone": "Téléphone",
+        "privacyNote": "Ces informations serviront uniquement à répondre à votre demande. <privacy>Politique de confidentialité</privacy>",
         "reachHint": "Renseignez au moins un e-mail ou un numéro de téléphone",
+        "salesConsent": "En choisissant le sujet « Ventes », je demande que l’on me rappelle concernant l’achat des services de KALFA, y compris pour des informations et des précisions avant achat.",
         "submitCallback": "Rappelez-moi",
-        "submitContact": "Envoyer un message"
+        "submitContact": "Envoyer un message",
+        "timePreference": {
+          "afternoon": "L’après-midi",
+          "asap": "Dès que possible",
+          "evening": "Le soir",
+          "hint": "Nous ferons notre possible pour vous rappeler dans le créneau choisi, pendant nos heures d’ouverture.",
+          "legend": "Quand préférez-vous que nous vous rappelions ?",
+          "morning": "Le matin"
+        },
+        "topicLabel": "Sujet de votre demande",
+        "topics": {
+          "billing": "Facturation et paiement",
+          "other": "Autre",
+          "sales": "Ventes",
+          "support": "Assistance"
+        }
+      },
+      "meta": {
+        "description": "Contactez KALFA : un message à l’assistance, une question avant l’inscription ou une demande de rappel par l’équipe.",
+        "title": "Contact et assistance"
       },
       "subtitle": "Une question, une demande ou un problème ? Écrivez-nous ou laissez votre numéro, et nous vous recontacterons.",
+      "success": {
+        "callback": "Votre demande a bien été envoyée. Nous vous appellerons dès que possible !",
+        "contact": "Votre message a bien été envoyé. Nous vous recontacterons dès que possible !"
+      },
       "title": "Contact et assistance"
     },
     "error": {
@@ -169,12 +418,358 @@
         "title": "Le site a été mis à jour"
       }
     },
+    "eventPage": {
+      "closing": {
+        "subtitle": "Une liste bien organisée, des rappels automatiques et une vue d’ensemble qui se met à jour toute seule.",
+        "title": "{{h1}}, au même endroit"
+      },
+      "cta": {
+        "createEvent": "Créer un événement",
+        "howItWorks": "Comment ça marche",
+        "newEvent": "Nouvel événement",
+        "template": "Modèle de liste d’invités"
+      },
+      "faq": {
+        "eyebrow": "Questions fréquentes",
+        "moreLink": "Pour d’autres questions sur la plateforme et le prix, consultez <faq>la page des questions fréquentes</faq>.",
+        "title": "Les questions qui reviennent souvent"
+      },
+      "guide": {
+        "eyebrow": "Guide"
+      },
+      "related": {
+        "ariaLabel": "Pages associées",
+        "template": "Modèle de liste d’invités à télécharger",
+        "title": "Sur le même sujet",
+        "whatsapp": "Confirmations de présence par WhatsApp"
+      },
+      "timing": {
+        "cadenceBody": "Une fois les confirmations de présence activées, les messages et les appels aux invités partent automatiquement selon la date de l’événement : {{cadence}}.",
+        "cadenceTitle": "Le calendrier d’envoi de KALFA",
+        "eyebrow": "Calendrier",
+        "quietHours": "Aucun message ni appel pendant Chabbat, les fêtes juives et la nuit : ce qui était prévu à ces moments est automatiquement reporté.",
+        "subtitle": "Une recommandation pratique, pas une règle absolue. Vous pouvez l’adapter à chaque événement."
+      }
+    },
+    "eventType": {
+      "barMitzva": {
+        "challenges": {
+          "c1": {
+            "body": "Le traiteur veut savoir combien de menus enfants prévoir. La personne qui répond depuis son lien personnel indique séparément le nombre d’adultes et d’enfants, et le détail apparaît à côté de son nom dans la liste. Une réponse dans un message WhatsApp est enregistrée comme un nombre total.",
+            "title": "Enfants et adultes comptés séparément"
+          },
+          "c2": {
+            "body": "Les camarades de classe ne répondent pas aux messages, leurs parents si. L’invitation part au numéro du parent, et la réponse est enregistrée au nom de l’enfant.",
+            "title": "Les parents répondent à la place des enfants"
+          },
+          "c3": {
+            "body": "Vous pouvez importer les contacts du groupe de la classe au lieu de saisir à la main trente noms et numéros.",
+            "title": "La liste de la classe arrive sous forme de liste WhatsApp"
+          },
+          "c4": {
+            "body": "La famille répond vite, les collègues répondent tard et la classe ne répond presque pas. En filtrant la liste par groupe et par statut, vous voyez exactement où les réponses bloquent.",
+            "title": "Trois groupes qui se comportent différemment"
+          },
+          "eyebrow": "Ce qui rend une bar-mitsva différente",
+          "title": "Ce qui complique justement cet événement"
+        },
+        "faq": {
+          "q1": {
+            "answer": "Le formulaire ouvert depuis le lien personnel comporte un champ pour les adultes et un autre pour les enfants, et les chiffres apparaissent à côté du nom de l’invité dans la liste. Une personne qui répond directement dans le message WhatsApp indique un nombre total, sans répartition.",
+            "question": "Comment compter séparément les enfants et les adultes ?"
+          },
+          "q2": {
+            "answer": "L’invitation part au numéro du parent, et les rappels automatiques ne sont envoyés qu’aux personnes qui n’ont pas encore répondu. En filtrant la liste sur le groupe de la classe et le statut « En attente », vous voyez exactement quels enfants de la classe n’ont pas encore répondu.",
+            "question": "Que faire quand des camarades de votre enfant ne répondent pas ?"
+          },
+          "q3": {
+            "answer": "Oui. La gestion est la même pour une bar-mitsva et une bat-mitsva : même liste, mêmes groupes, même suivi des réponses. Le nom de l’événement et les informations sur la famille se renseignent à la création de l’événement.",
+            "question": "Peut-on gérer une bat-mitsva sur la même plateforme ?"
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "La plupart des fêtes comptent trois cercles : la famille, les camarades de classe et les collègues des parents. En plaçant chaque cercle dans son propre groupe, vous pouvez filtrer la liste par groupe et par statut, et voir tôt quel cercle n’a pas encore répondu.",
+            "heading": "Trois cercles, trois rythmes de réponse"
+          },
+          "g2": {
+            "body": "On invite les camarades de classe par le téléphone du parent, et le nom dans la liste est celui de l’enfant. Le parent reçoit le message, répond au nom de l’enfant et indique aussi si un frère, une sœur ou un parent l’accompagne.",
+            "heading": "Les invitations des camarades de classe partent aux parents"
+          },
+          "g3": {
+            "body": "Quand la montée à la Torah et la fête ont lieu des jours différents, avec des invités différents, chacune est un événement distinct dans KALFA, avec sa liste et ses réponses. Ainsi, une personne invitée seulement à la synagogue n’est pas comptée par erreur à la fête.",
+            "heading": "Montée à la Torah et fête : deux événements, deux listes"
+          },
+          "title": "Le guide des confirmations de présence pour une bar-mitsva ou une bat-mitsva"
+        },
+        "hero": {
+          "lede": "Trois listes différentes pour un seul événement : la famille, les camarades de classe et les collègues des parents. Chacune se comporte autrement, et toutes doivent aboutir à un seul chiffre.",
+          "title": "Confirmations de présence pour une bar-mitsva ou une bat-mitsva"
+        },
+        "meta": {
+          "description": "Bar-mitsva ou bat-mitsva : confirmations de présence, enfants et adultes comptés à part, liste des camarades, rappels automatiques et suivi en temps réel.",
+          "title": "Bar-mitsva et bat-mitsva : confirmations de présence"
+        },
+        "navLabel": "Bar-mitsva et bat-mitsva",
+        "timing": {
+          "t1": "Collecte de la liste de la classe auprès des parents ou dans le groupe WhatsApp : environ un mois avant, c’est l’étape la plus longue.",
+          "t2": "Répartition en groupes (famille, classe, travail) et import dans KALFA : avant le début de la série d’envois.",
+          "t3": "Suivi du groupe de la classe : c’est en général le dernier à répondre, et c’est là qu’il faut vérifier qui manque encore.",
+          "t4": "Transmission des chiffres au traiteur : après le dernier message de la série, avec le détail adultes et enfants.",
+          "title": "Que faire, et quand"
+        }
+      },
+      "brit": {
+        "challenges": {
+          "c1": {
+            "body": "Entre l’annonce et l’événement, il s’écoule le plus souvent deux ou trois jours. Pas le temps de construire une liste à partir de zéro : importer une liste existante fait toute la différence.",
+            "title": "Pas des semaines, mais des jours"
+          },
+          "c2": {
+            "body": "Ces jours-là sont occupés par tout autre chose. Une fois l’envoi lancé, les rappels et le suivi continuent sans que personne ait à s’en occuper.",
+            "title": "Les parents n’ont pas la tête à gérer une liste"
+          },
+          "c3": {
+            "body": "Des réponses arrivent encore le matin même. Une vue d’ensemble en direct vaut mieux qu’une liste imprimée la veille.",
+            "title": "Les chiffres bougent jusqu’au dernier moment"
+          },
+          "c4": {
+            "body": "Le message part automatiquement à toute la liste : plus besoin de copier le même texte dans des dizaines de conversations séparées.",
+            "title": "Il faut joindre tout le monde vite"
+          },
+          "eyebrow": "Ce qui rend une brit-mila différente",
+          "title": "Un événement au calendrier très serré"
+        },
+        "faq": {
+          "q1": {
+            "answer": "Créer l’événement prend quelques minutes, et importer une liste existante depuis un fichier ou WhatsApp évite la saisie. Vous pouvez activer les confirmations de présence le jour même où la date est fixée.",
+            "question": "Combien de temps faut-il pour créer un événement et lancer l’envoi ?"
+          },
+          "q2": {
+            "answer": "Oui. Après l’activation, les messages et les appels partent aux dates du calendrier d’envoi qui restent avant l’événement, jamais pendant Chabbat, une fête juive ou la nuit. Une date déjà passée n’est pas rattrapée.",
+            "question": "Peut-on activer les confirmations de présence pour une brit-mila quelques jours avant ?"
+          },
+          "q3": {
+            "answer": "Oui. Une brit-bat, un zeved habat et une brit-mila se gèrent de la même façon : un événement, une liste d’invités et un suivi des réponses. La seule différence, en général, c’est qu’il y a plus de temps pour s’organiser.",
+            "question": "Est-ce que cela convient aussi à une brit-bat ?"
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "La brit-mila a lieu le huitième jour de la vie de l’enfant : entre le moment où la date est connue et l’événement, il ne s’écoule que quelques jours. La rapidité de mise en place devient donc l’essentiel : une liste existante importée depuis un fichier ou WhatsApp évite la saisie, et l’événement est prêt en quelques minutes.",
+            "heading": "Pourquoi une brit-mila s’organise en jours et non en semaines"
+          },
+          "g2": {
+            "body": "Pour une brit-bat ou un zeved habat, la date est plus souple, mais la liste est comparable : famille proche, amis et voisins. La même méthode fonctionne : créez l’événement, importez la liste et activez les confirmations de présence.",
+            "heading": "Pour une brit-bat ou un zeved habat aussi"
+          },
+          "g3": {
+            "body": "Aucun message n’est envoyé pendant Chabbat, les fêtes juives ou la nuit. Un message prévu à ces moments est automatiquement reporté au prochain créneau d’envoi : aucun invité ne reçoit donc de message pendant Chabbat.",
+            "heading": "Quand la brit-mila tombe près de Chabbat ou d’une fête juive"
+          },
+          "title": "Le guide des confirmations de présence pour une brit-mila ou une brit-bat"
+        },
+        "hero": {
+          "lede": "La date n’est connue qu’à la naissance, et l’événement a lieu quelques jours plus tard. Ici, la rapidité de mise en place compte plus que toute autre fonctionnalité.",
+          "title": "Confirmations de présence pour une brit-mila"
+        },
+        "meta": {
+          "description": "Brit-mila, brit-bat au calendrier serré : confirmations de présence, création en quelques minutes, invités tous contactés automatiquement, suivi jusqu’au bout.",
+          "title": "Brit-mila, brit-bat en quelques jours : qui vient ?"
+        },
+        "navLabel": "Brit-mila",
+        "timing": {
+          "t1": "Création de l’événement et import de la liste : en quelques minutes, dès que la date est connue.",
+          "t2": "Activation des confirmations de présence : tout de suite après, pour ne pas manquer les dates restantes du calendrier d’envoi.",
+          "t3": "Suivi des réponses : jusqu’à la veille au soir, avant de transmettre un chiffre à la synagogue ou à la salle.",
+          "title": "Un calendrier réaliste"
+        }
+      },
+      "event": {
+        "challenges": {
+          "c1": {
+            "body": "Une salle a un nombre de places défini. Suivre en continu le nombre de confirmations évite de découvrir trop tard qu’il y a eu trop d’inscriptions.",
+            "title": "Une capacité à ne pas dépasser"
+          },
+          "c2": {
+            "body": "Pour une liste d’entrée, « à peu près » ne suffit pas. La liste à jour est disponible à tout moment, sans exporter une version aussitôt périmée.",
+            "title": "Une liste précise à l’entrée"
+          },
+          "c3": {
+            "body": "La répartition en groupes permet de filtrer la liste par service ou par type d’invité, et de voir exactement qui n’a pas encore répondu dans chaque groupe.",
+            "title": "Groupes et services"
+          },
+          "c4": {
+            "body": "Un récapitulatif chiffré clair pour la personne qui commande le repas, gère l’entrée ou doit rendre compte.",
+            "title": "Un rapport facile à transmettre"
+          },
+          "eyebrow": "Ce qui rend un événement organisé différent",
+          "title": "Ce dont on a besoin pour organiser un événement, et qu’on n’a pas toujours"
+        },
+        "faq": {
+          "q1": {
+            "answer": "Oui. Chaque invité peut appartenir à un groupe (service, type d’invité ou toute autre répartition), et vous pouvez filtrer la liste d’invités par groupe et par statut de réponse.",
+            "question": "Peut-on répartir les invités en groupes ?"
+          },
+          "q2": {
+            "answer": "Chaque invité indique le nombre de personnes couvertes par son invitation, et le chiffre se met à jour en temps réel. Les personnes qui n’ont pas encore répondu et celles qui ont répondu « Peut-être » apparaissent à part : vous voyez clairement quelle part du chiffre reste incertaine.",
+            "question": "Comment savoir combien de personnes viendront vraiment ?"
+          },
+          "q3": {
+            "answer": "Si un nombre de personnes a été défini pour l’invitation, le formulaire de réponse ne permet pas de le dépasser. Une réponse WhatsApp avec un chiffre plus élevé est enregistrée et signalée à la personne qui organise, qui décide de la suite.",
+            "question": "Que se passe-t-il si un invité essaie de confirmer plus de personnes que prévu ?"
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "Pour chaque invitation, vous définissez le nombre de personnes qu’elle couvre. Le formulaire de réponse ne permet pas de confirmer davantage, et une réponse WhatsApp qui dépasse ce nombre est signalée à la personne qui organise : un dépassement se repère ainsi tôt, et non à l’entrée.",
+            "heading": "Comment respecter la capacité"
+          },
+          "g2": {
+            "body": "Un invité peut répondre « Peut-être », et cette réponse est enregistrée séparément de « Je viens » et de « Je ne viens pas ». Vous voyez ainsi combien de places restent incertaines, sans les compter par erreur comme confirmées.",
+            "heading": "Que faire des « Peut-être » ?"
+          },
+          "g3": {
+            "body": "Pour une convention ou une soirée d’entreprise, les invités viennent de différents services, de la clientèle et de partenaires. Un groupe par origine permet de filtrer la liste et de voir qui a confirmé dans chacun, et un invité peut ajouter une remarque, par exemple le nom de la personne qui viendra à sa place.",
+            "heading": "Événement professionnel : qui a invité qui"
+          },
+          "title": "Le guide des confirmations de présence pour un événement organisé"
+        },
+        "hero": {
+          "lede": "Convention, soirée d’entreprise ou grande fête de famille : quand la capacité est limitée, une liste précise vaut mieux qu’une estimation.",
+          "title": "Confirmations de présence pour un événement"
+        },
+        "meta": {
+          "description": "Événement professionnel, convention ou fête de famille : confirmations de présence, liste précise à l’entrée, groupes, rappels automatiques et rapport.",
+          "title": "Entreprise ou famille : confirmations de présence"
+        },
+        "navLabel": "Événements et conventions",
+        "timing": {
+          "t1": "Première annonce de la date par les canaux habituels de l’organisation : selon la taille de l’événement.",
+          "t2": "Création de la liste, répartition en groupes et nombre de personnes par invitation : avant d’activer les confirmations de présence.",
+          "t3": "Clôture de la liste d’entrée : après le dernier message de la série, à partir de la vue d’ensemble à jour.",
+          "title": "Que faire, et quand"
+        }
+      },
+      "wedding": {
+        "challenges": {
+          "c1": {
+            "body": "Chaque famille gère ses invités de son côté, et les amis communs apparaissent deux fois. Importer les deux listes au même endroit fait apparaître les doublons au lieu de les cacher.",
+            "title": "Deux listes à fusionner"
+          },
+          "c2": {
+            "body": "Une invitation pour une famille peut représenter deux personnes comme six. Quand chaque invité indique le nombre de personnes qui l’accompagnent, le chiffre cesse d’être une supposition.",
+            "title": "Impossible de savoir combien d’accompagnants viendront"
+          },
+          "c3": {
+            "body": "Certaines personnes qui ont confirmé ne viennent pas, et d’autres qui n’ont rien dit viennent quand même. Suivre en continu qui n’a pas encore répondu réduit le nombre d’inconnues avant d’arrêter les chiffres.",
+            "title": "L’écart entre « J’ai confirmé » et les personnes vraiment présentes"
+          },
+          "c4": {
+            "body": "Relancer 300 personnes par téléphone, c’est une semaine de travail. Un rappel automatique n’est envoyé qu’aux personnes qui n’ont pas encore répondu, sans déranger celles qui l’ont déjà fait.",
+            "title": "Des centaines de rappels à la main"
+          },
+          "eyebrow": "Ce qui rend un mariage différent",
+          "title": "Quatre problèmes qui reviennent à presque chaque mariage"
+        },
+        "faq": {
+          "q1": {
+            "answer": "L’invitation ou le Save the Date partent plusieurs semaines à l’avance, mais mieux vaut poser la question « Qui sera là ? » près de la date, quand les réponses sont déjà fiables. Avec KALFA, la série d’envois pour les confirmations de présence et les rappels part automatiquement dans les jours qui précèdent le mariage, et aucun message n’est envoyé pendant Chabbat ni pendant les fêtes juives.",
+            "question": "Quand envoyer les demandes de confirmation de présence pour un mariage ?"
+          },
+          "q2": {
+            "answer": "Vous pouvez importer chaque liste séparément, depuis un fichier ou depuis WhatsApp, et en faire un groupe à part. Un numéro de téléphone déjà présent dans la liste est signalé dans le brouillon d’import avec le nom de l’invité existant : vous pouvez décider avant l’envoi et éviter d’écrire deux fois à la même personne.",
+            "question": "Comment fusionner les listes d’invités des deux familles ?"
+          },
+          "q3": {
+            "answer": "Oui. Un lien privé est créé pour chaque invité, qui ne voit que ses propres informations : ni la liste d’invités, ni les réponses des autres.",
+            "question": "Y a-t-il un lien personnel pour chaque invité ?"
+          },
+          "q4": {
+            "answer": "Non. Le message arrive par WhatsApp, et la réponse s’envoie d’un clic ou depuis le lien personnel, qui s’ouvre dans le navigateur du téléphone. Aucune inscription ni installation n’est nécessaire.",
+            "question": "Faut-il que les invités installent une application ?"
+          },
+          "q5": {
+            "answer": "Tous les détails (les formules, le prix de chacune et ce qu’elle comprend) figurent sur la page des questions fréquentes, mise à jour directement depuis les formules de la plateforme.",
+            "question": "Combien coûte la gestion des confirmations de présence pour un mariage ?"
+          }
+        },
+        "guide": {
+          "g1": {
+            "body": "La confirmation de présence est la réponse que donne chaque invité : sa venue ou non, et le nombre de personnes qui l’accompagnent. C’est de l’ensemble des réponses que découle le chiffre transmis à la salle et au traiteur : mieux vaut donc les réunir au même endroit plutôt que dans des dizaines de conversations séparées. Avec KALFA, un invité peut répondre d’un clic dans le message WhatsApp, ou depuis un lien personnel qui permet de choisir « Je viens », « Peut-être » ou « Je ne viens pas », d’indiquer le nombre d’adultes et d’enfants et d’ajouter une remarque si besoin.",
+            "heading": "Qu’est-ce qu’une confirmation de présence pour un mariage ?"
+          },
+          "g2": {
+            "body": "L’invitation imprimée et le Save the Date annoncent la date : ils partent donc plusieurs semaines à l’avance. La confirmation de présence demande qui vient vraiment : elle fonctionne donc mieux près de la date, quand les invités connaissent déjà leurs projets. Avec KALFA, la série d’envois pour les confirmations de présence part automatiquement dans les jours qui précèdent le mariage, selon le calendrier indiqué plus bas sur cette page.",
+            "heading": "Invitation imprimée, Save the Date et confirmation de présence : trois choses différentes"
+          },
+          "g3": {
+            "body": "Importez la liste de chaque famille séparément, depuis un fichier CSV (Excel sait enregistrer dans ce format) ou depuis WhatsApp, et associez chaque ligne à un groupe comme « Côté marié », « Côté mariée » ou « Amis ». Avant que l’import n’entre dans la liste, vous voyez un brouillon : un numéro de téléphone déjà attribué à un autre invité y est signalé avec le nom de cet invité, si bien qu’un doublon se repère avant l’envoi et non après.",
+            "heading": "Comment fusionner les listes d’invités des deux familles"
+          },
+          "g4": {
+            "body": "Les personnes qui ont déjà répondu ne reçoivent plus de rappels : les rappels automatiques ne sont envoyés qu’à celles qui n’ont pas encore répondu. La vue d’ensemble se met à jour à chaque réponse : vous voyez à tout moment combien de personnes ont confirmé et combien n’ont pas encore répondu, et vous pouvez filtrer la liste par famille ou par groupe pour voir qui n’a pas encore répondu.",
+            "heading": "Que se passe-t-il avec les personnes qui ne répondent pas ?"
+          },
+          "title": "Le guide des confirmations de présence pour un mariage"
+        },
+        "hero": {
+          "lede": "Deux familles, une seule liste. Au lieu de deux fichiers qui font l’aller-retour sur WhatsApp, une seule liste bien organisée qui se met à jour toute seule.",
+          "title": "Confirmations de présence pour un mariage"
+        },
+        "meta": {
+          "description": "Mariage : confirmations de présence, une seule liste pour les deux familles, accompagnants comptés, rappels automatiques et suivi des réponses en temps réel.",
+          "title": "Mariage : confirmations de présence, liste d’invités"
+        },
+        "navLabel": "Mariages",
+        "timing": {
+          "t1": "Clôture de la liste d’invités des deux familles : environ un mois et demi avant, pour avoir le temps de fusionner les doublons et de compléter les numéros de téléphone manquants.",
+          "t2": "Save the Date ou invitation imprimée, si vous en envoyez : plusieurs semaines à l’avance. C’est indépendant de la série d’envois pour les confirmations de présence.",
+          "t3": "Import de la liste dans KALFA et activation des confirmations de présence : suffisamment tôt avant le début de la série d’envois (voir le calendrier d’envoi de KALFA sur cette page).",
+          "t4": "Transmission des chiffres définitifs à la salle : après le dernier message de la série, à la date convenue avec le lieu.",
+          "t5": "Message de remerciement après l’événement : envoyé automatiquement aux personnes présentes.",
+          "title": "Que faire, et quand"
+        }
+      }
+    },
     "faq": {
       "categoriesAriaLabel": "Catégories de questions",
+      "contactFallback": "Pour toute autre question, vous pouvez <contact>nous contacter</contact>.",
+      "eyebrow": {
+        "about": "À propos",
+        "howItWorks": "Déroulement",
+        "legalSupport": "Informations légales et assistance",
+        "pricing": "Tarifs"
+      },
+      "meta": {
+        "description": "Les réponses sur KALFA au même endroit : ce que fait la plateforme, la gestion d’un événement du début à la fin, les tarifs, la facturation et l’annulation.",
+        "title": "Questions fréquentes"
+      },
+      "notFound": "Vous n’avez pas trouvé de réponse ? <contact>Contactez-nous</contact> et nous vous répondrons.",
       "subtitle": "Tout ce qu’il faut savoir sur KALFA : ce que c’est, comment ça marche, combien ça coûte et ce qui se passe en cas d’annulation.",
       "title": "Questions fréquentes"
     },
+    "footer": {
+      "copyright": "© {{year}} KALFA · Tous droits réservés",
+      "legal": {
+        "about": "À propos",
+        "contact": "Contact",
+        "cookies": "Politique de cookies",
+        "faq": "Questions fréquentes",
+        "privacy": "Politique de confidentialité",
+        "terms": "Conditions générales"
+      },
+      "legalAriaLabel": "Informations légales et assistance",
+      "manageCookies": "Gérer les cookies",
+      "pages": {
+        "template": "Modèle de liste d’invités",
+        "whatsapp": "Envoi par WhatsApp"
+      },
+      "pagesAriaLabel": "Confirmations de présence par type d’événement",
+      "tagline": "La gestion des confirmations de présence pour vos événements privés et professionnels, au même endroit."
+    },
     "guestListTemplate": {
+      "breadcrumb": "Modèle de liste d’invités",
       "closing": {
         "subtitle": "Importez ce fichier : une invitation personnelle pour chaque ligne et un rappel automatique uniquement aux personnes qui n’ont pas encore répondu.",
         "title": "La liste est prête. Et les réponses ?"
@@ -186,9 +781,36 @@
       },
       "faq": {
         "eyebrow": "Questions fréquentes",
+        "items": {
+          "googleSheets": {
+            "answer": "Oui. Importez le fichier dans Google Sheets et partagez-le, puis, quand la liste est prête, téléchargez-la de nouveau au format CSV. C’est le format que la plateforme importe.",
+            "question": "Pouvez-vous travailler sur la liste dans Google Sheets avec votre partenaire ?"
+          },
+          "howToBuild": {
+            "answer": "Commencez par un fichier pour chaque famille, avec une ligne par invitation et une colonne pour le nombre de personnes, un groupe par ligne et un numéro de portable au même format. À la fin, fusionnez les fichiers et recherchez les doublons par numéro de téléphone, avant que quiconque ne reçoive une invitation.",
+            "question": "Comment préparer une liste d’invités de mariage ?"
+          },
+          "importToKalfa": {
+            "answer": "Oui. C’est exactement le modèle proposé sur l’écran d’import des invités de la plateforme, avec les mêmes colonnes : vous pouvez le remplir maintenant et l’importer plus tard sans rien changer.",
+            "question": "Peut-on importer ce fichier dans KALFA ?"
+          },
+          "listGrows": {
+            "answer": "Un tableur convient très bien pour constituer la liste. Il ne suffit plus quand il faut envoyer une invitation personnelle pour chaque ligne, suivre qui a répondu et n’envoyer un rappel qu’aux personnes qui n’ont pas encore répondu : la mise à jour manuelle de centaines de lignes est la principale source d’erreurs.",
+            "question": "Que se passe-t-il quand la liste s’allonge ?"
+          },
+          "opensInExcel": {
+            "answer": "Oui. Le fichier est un CSV encodé en UTF-8 avec BOM, ce qui permet à Excel d’afficher correctement l’hébreu. Il s’ouvre aussi dans Google Sheets et Numbers sans conversion.",
+            "question": "Le modèle s’ouvre-t-il dans Excel ?"
+          },
+          "rowPerInvite": {
+            "answer": "Parce que c’est l’invitation qui est envoyée. La famille Cohen reçoit une invitation pour quatre personnes : la colonne du nombre de personnes l’indique, et le nombre d’invitations et le nombre d’invités restent ainsi deux nombres distincts et clairs.",
+            "question": "Pourquoi une ligne par invitation et non par personne ?"
+          }
+        },
         "title": "À propos du modèle"
       },
       "file": {
+        "intro": "Quatre colonnes et une ligne par <invite>invitation</invite>, pas par personne.",
         "sampleNote": "La dernière ligne, sans téléphone, est un exemple voulu : vous pouvez aussi gérer une personne invitée sans numéro. Elle ne recevra simplement pas de message automatique.",
         "tableCaption": "Structure du modèle de liste d’invités",
         "title": "Ce que contient le fichier"
@@ -198,22 +820,112 @@
         "subtitle": "Un fichier prêt à l’emploi, avec les bonnes colonnes, qui s’ouvre dans Excel et Google Sheets. Vous pouvez commencer à le remplir tout de suite et, si vous décidez ensuite de gérer votre événement sur KALFA, c’est ce même modèle que la plateforme importe.",
         "title": "Modèle de liste d’invités"
       },
+      "meta": {
+        "description": "Modèle de liste d’invités pour un mariage ou tout événement : s’ouvre dans Excel et Google Sheets, avec nom, téléphone, nombre de personnes et groupe. Gratuit.",
+        "title": "Liste d’invités de mariage : modèle Excel gratuit"
+      },
       "mistakes": {
         "eyebrow": "Bon à savoir",
+        "items": {
+          "excelPhone": {
+            "body": "Le zéro initial disparaît et 0501234567 devient 501234567. Définir la colonne au format texte avant de coller règle le problème.",
+            "title": "Excel transforme un numéro de téléphone en nombre"
+          },
+          "mixedPhones": {
+            "body": "050-1234567, +972501234567 et 0501234567 sont le même numéro sous trois formes. Une colonne uniforme évite des doublons qui n’apparaissent qu’après l’envoi.",
+            "title": "Des numéros de téléphone dans des formats différents"
+          },
+          "noGroup": {
+            "body": "Sans répartition en groupes, impossible de savoir quelle partie de la liste tarde à répondre, ni de concentrer vos efforts sur celle qui n’a pas encore répondu.",
+            "title": "Pas de colonne de groupe"
+          },
+          "rowPerPerson": {
+            "body": "Une famille, c’est une invitation avec un nombre de personnes, pas quatre lignes séparées. Séparer les personnes gonfle la liste et complique le décompte des invitations réellement envoyées.",
+            "title": "Une ligne par personne au lieu d’une ligne par invitation"
+          }
+        },
         "title": "Quatre erreurs qui reviennent dans presque toutes les listes sur tableur"
       },
       "steps": {
+        "items": {
+          "groupPerRow": {
+            "body": "Côté marié, côté mariée, travail, amis : un groupe par ligne. C’est ce qui permet ensuite de voir quelle partie de la liste n’a pas encore répondu.",
+            "title": "Un groupe par ligne"
+          },
+          "mergeDedupe": {
+            "body": "Quand vous importez les fichiers dans KALFA, un numéro de téléphone déjà présent dans la liste est signalé dans le brouillon d’import avec le nom de l’invité existant : les amis communs ne reçoivent donc pas deux invitations.",
+            "title": "Fusion et recherche des doublons"
+          },
+          "ownCopy": {
+            "body": "Quand chaque famille travaille sur un fichier séparé issu du même modèle, personne n’écrase les modifications des autres. La fusion se fait une seule fois, à la fin.",
+            "title": "Chaque famille remplit sa propre copie"
+          },
+          "phoneFormat": {
+            "body": "La colonne du téléphone est au format texte et contient un numéro de portable par ligne. Sans numéro, vous pouvez gérer la personne invitée, mais elle ne recevra pas d’invitation automatique.",
+            "title": "Un numéro de portable dans un seul format"
+          },
+          "rowPerInvite": {
+            "body": "Un couple, c’est une ligne avec le nombre 2. Une famille avec enfants, c’est une ligne avec son propre nombre. Le nombre d’invitations et le nombre d’invités restent ainsi deux nombres distincts.",
+            "title": "Une ligne par invitation, avec un nombre de personnes"
+          }
+        },
         "title": "Comment préparer une liste d’invités de mariage en cinq étapes"
+      }
+    },
+    "header": {
+      "createEvent": "Créer un événement",
+      "login": "Connexion",
+      "menu": {
+        "ariaLabel": "Menu",
+        "close": "Fermer",
+        "description": "Menu de navigation de la page d’accueil"
+      },
+      "nav": {
+        "contact": "Contact",
+        "faq": "Questions fréquentes",
+        "features": "Fonctionnalités",
+        "how": "Comment ça marche",
+        "mainAriaLabel": "Navigation principale",
+        "pageAriaLabel": "Navigation dans la page",
+        "trust": "Confiance"
+      },
+      "userMenu": {
+        "account": "Mon espace",
+        "ariaLabel": "Menu du compte",
+        "help": "Aide et assistance",
+        "logout": "Déconnexion",
+        "settings": "Paramètres"
       }
     },
     "home": {
       "audiences": {
         "eyebrow": "Pour qui ?",
+        "items": {
+          "barBatMitzva": {
+            "title": "Bar-mitsva et bat-mitsva"
+          },
+          "brit": {
+            "title": "Brit-mila"
+          },
+          "company": {
+            "title": "Événements d’entreprise"
+          },
+          "conferences": {
+            "title": "Conventions"
+          },
+          "family": {
+            "title": "Fêtes de famille"
+          },
+          "weddings": {
+            "title": "Mariages"
+          }
+        },
         "subtitle": "De la fête de famille intime à la grande convention d’entreprise, KALFA s’adapte à la taille et au style de votre événement.",
         "title": "Un événement ou des centaines : la même maîtrise"
       },
       "closing": {
-        "subtitle": "Commencez dès aujourd’hui à gérer les confirmations de présence de votre événement, de façon claire et organisée, au même endroit."
+        "subtitle": "Commencez dès aujourd’hui à gérer les confirmations de présence de votre événement, de façon claire et organisée, au même endroit.",
+        "title": "Moins de tracas, plus de maîtrise.<br/>Un événement mieux organisé."
       },
       "cta": {
         "createEvent": "Créer un événement",
@@ -226,6 +938,36 @@
       "features": {
         "closing": "Tout est connecté. Rien ne se perd.",
         "eyebrow": "Fonctionnalités clés",
+        "items": {
+          "communication": {
+            "body": "Mises à jour et messages aux invités, par un seul canal clair.",
+            "title": "Communication organisée"
+          },
+          "guestList": {
+            "body": "Une seule liste bien organisée, avec groupes, accompagnants et remarques, toujours à jour.",
+            "title": "Gestion de la liste d’invités"
+          },
+          "import": {
+            "body": "Import d’une liste existante depuis un fichier ou WhatsApp, sans saisie manuelle.",
+            "title": "Import rapide des invités"
+          },
+          "invites": {
+            "body": "Des invitations personnelles et des rappels automatiques aux personnes qui n’ont pas encore répondu.",
+            "title": "Envoi des invitations et des rappels"
+          },
+          "liveStatus": {
+            "body": "Une vue d’ensemble en direct du taux de réponse, des confirmations et de l’avancement.",
+            "title": "Statut de l’événement en temps réel"
+          },
+          "reports": {
+            "body": "Un récapitulatif chiffré clair pour la personne qui organise, avant et après l’événement.",
+            "title": "Rapports et récapitulatifs"
+          },
+          "tracking": {
+            "body": "Chaque réponse est enregistrée aussitôt : qui vient, qui ne vient pas et combien d’accompagnants.",
+            "title": "Suivi des confirmations de présence"
+          }
+        },
         "subtitle": "Sept outils qui fonctionnent ensemble, de la liste d’invités au rapport final.",
         "title": "Tout ce qu’il faut pour gérer vos confirmations de présence"
       },
@@ -233,33 +975,162 @@
         "eyebrow": "Une gestion intelligente pour un événement parfait",
         "private": "Privé et sécurisé",
         "readyInMinutes": "Prêt en quelques minutes",
-        "subtitle": "Envoyez vos invitations, suivez les réponses en temps réel et gérez votre liste d’invités et d’accompagnants, sans tableurs, sans messages éparpillés, sans pagaille."
+        "subtitle": "Envoyez vos invitations, suivez les réponses en temps réel et gérez votre liste d’invités et d’accompagnants, sans tableurs, sans messages éparpillés, sans pagaille.",
+        "title": "Vos confirmations de présence,<br/><accent>au même endroit.</accent>"
       },
       "how": {
         "eyebrow": "Comment ça marche",
+        "items": {
+          "addGuests": {
+            "body": "À la main ou en important une liste existante, avec groupes et accompagnants.",
+            "title": "Ajoutez vos invités"
+          },
+          "arrive": {
+            "body": "Avec une vue d’ensemble claire des personnes qui viennent.",
+            "title": "Arrivez à un événement bien organisé"
+          },
+          "createEvent": {
+            "body": "Un nom, une date, un lieu, et votre événement est prêt à être géré.",
+            "title": "Créez votre événement"
+          },
+          "sendInvites": {
+            "body": "Une invitation personnelle pour chaque invité, par le canal qui vous convient.",
+            "title": "Envoyez les invitations"
+          },
+          "sendUpdates": {
+            "body": "Des rappels automatiques aux personnes qui n’ont pas encore répondu et des mises à jour régulières aux invités.",
+            "title": "Envoyez les mises à jour et les rappels"
+          },
+          "trackReplies": {
+            "body": "Chaque confirmation est enregistrée en temps réel, avec un rappel aux personnes qui n’ont pas encore répondu.",
+            "title": "Suivez les réponses"
+          }
+        },
         "subtitle": "Pas de formation compliquée : créez votre événement et c’est parti.",
         "title": "Six étapes simples, de l’idée au jour J"
       },
+      "jsonLd": {
+        "appDescription": "Plateforme de gestion des confirmations de présence pour les événements : gestion de la liste d’invités et d’accompagnants, envoi d’invitations et de rappels, suivi des réponses en temps réel."
+      },
+      "meta": {
+        "description": "Mariage ou tout événement : confirmations de présence, invités, invitations et rappels WhatsApp, suivi des réponses en temps réel et rapports, au même endroit.",
+        "ogDescription": "Gestion des invités, invitations et rappels, suivi des réponses en temps réel et rapports, le tout au même endroit.",
+        "ogTitle": "KALFA : gestion des confirmations de présence"
+      },
       "preview": {
         "ariaLabel": "Exemple de tableau de bord de gestion d’un événement",
+        "confirmedBadge": "248 ont confirmé",
+        "eventMeta": "{{date, datetime}} · Salles HaSharon",
         "eventName": "Mariage · Dana et Yoav",
-        "snapshot": "Vue d’ensemble"
+        "guests": {
+          "avni": {
+            "name": "Noa Avni",
+            "status": "Ne vient pas"
+          },
+          "cohen": {
+            "name": "Yoav Cohen",
+            "status": "En attente"
+          },
+          "levi": {
+            "name": "Famille Levi",
+            "status": "Ont confirmé"
+          },
+          "party_one": "{{count}} personne",
+          "party_many": "{{count}} de personnes",
+          "party_other": "{{count}} personnes"
+        },
+        "invitedTotal": "340 invités",
+        "snapshot": "Vue d’ensemble",
+        "stats": {
+          "confirmed": "Ont confirmé",
+          "pending": "En attente",
+          "responseRate": "Taux de réponse",
+          "responseRateValue": "{{rate, number}}"
+        }
       },
       "problem": {
         "eyebrow": "La situation aujourd’hui",
+        "items": {
+          "lastMinuteLoad": {
+            "body": "Les moments les plus stressants sont gaspillés en coordination, plutôt que consacrés à l’événement.",
+            "title": "Surcharge avant l’événement"
+          },
+          "manualTracking": {
+            "body": "Des tableurs, des notes et des listes qui se mettent à jour lentement et regorgent d’erreurs.",
+            "title": "Suivi manuel des invités"
+          },
+          "scatteredMessages": {
+            "body": "Des réponses qui arrivent par WhatsApp, par téléphone et par e-mail, et qu’il est difficile de rassembler.",
+            "title": "Messages éparpillés"
+          },
+          "uncertainty": {
+            "body": "Impossible de savoir en temps réel combien d’invités viendront vraiment.",
+            "title": "Incertitude sur les présences"
+          }
+        },
         "subtitle": "Quand on organise un événement, on retombe sans cesse sur les mêmes problèmes, et tout cela finit en stress inutile.",
         "title": "Organiser un événement ne devrait pas être un travail à plein temps"
       },
       "solution": {
         "eyebrow": "La solution",
+        "items": {
+          "autoReminders": "Confirmations de présence et rappels automatiques",
+          "clearSnapshot": "Une vue d’ensemble claire à tout moment",
+          "liveStatus": "Statuts et mises à jour en temps réel",
+          "oneList": "Invités et invitations au même endroit"
+        },
         "subtitle": "Invités, invitations, confirmations de présence, rappels, statuts et mises à jour : une seule plateforme bien organisée, qui vous donne une maîtrise totale.",
         "title": "KALFA réunit tout au même endroit"
       },
       "trust": {
         "eyebrow": "Confiance",
+        "items": {
+          "control": {
+            "body": "Vous voyez tout et vous décidez de tout, à tout moment.",
+            "title": "Maîtrise totale"
+          },
+          "easeOfUse": {
+            "title": "Facilité d’utilisation"
+          },
+          "order": {
+            "body": "Une seule source fiable pour toutes les informations, sans versions contradictoires.",
+            "title": "L’ordre plutôt que la confusion"
+          },
+          "privacy": {
+            "body": "Votre liste d’invités et vos données sont protégées et privées : elles n’appartiennent qu’à vous.",
+            "title": "Confidentialité et sécurité"
+          }
+        },
         "subtitle": "L’objectif est simple : éviter la confusion, gagner du temps et vous donner une maîtrise totale et sereine de l’organisation.",
         "title": "Conçue pour réduire le stress, pas pour en ajouter"
       }
+    },
+    "legal": {
+      "backHome": "Retour à l’accueil",
+      "companyDetails": "Informations sur l’entreprise",
+      "companyId": "N° d’immatriculation {{id}}",
+      "companyMissing": "[À compléter dans les paramètres de l’entreprise]",
+      "emailLabel": "E-mail :",
+      "phoneLabel": "Téléphone :",
+      "statusActive": "Actif",
+      "statusDisabled": "Temporairement désactivé"
+    },
+    "notFound": {
+      "back": "Retour à la page précédente",
+      "contact": "Contact",
+      "description": "Il est possible que le lien soit erroné, que la page ait été supprimée ou que l’invitation ne soit plus disponible.",
+      "faq": "Questions fréquentes",
+      "help": "Besoin d’aide ? Contactez-nous",
+      "home": "Retour à l’accueil",
+      "navAriaLabel": "Liens utiles",
+      "privacy": "Confidentialité",
+      "title": "Oups, cette page n’est pas sur la liste des invités"
+    },
+    "phoneInput": {
+      "empty": "Aucun pays trouvé",
+      "search": "Rechercher un pays…",
+      "selectCountry": "Choisir un pays, actuellement : {{country}}",
+      "unknownCountry": "Pays non reconnu"
     },
     "whatsapp": {
       "cta": {
@@ -269,6 +1140,25 @@
       },
       "faq": {
         "eyebrow": "Questions fréquentes",
+        "items": {
+          "anyText": {
+            "answer": "Non. WhatsApp approuve à l’avance la structure des messages envoyés à l’initiative de l’entreprise, et la plateforme n’envoie que des modèles approuvés. Les informations personnelles (nom, date et lieu) changent dans chaque message.",
+            "question": "Peut-on envoyer n’importe quel texte ?"
+          },
+          "guestsSeeEachOther": {
+            "answer": "Non. Chaque message est envoyé séparément, et chaque invité ne voit que ses propres informations : ni la liste d’invités, ni les réponses des autres.",
+            "question": "Peut-on voir les autres invités ?"
+          },
+          "howToSend": {
+            "answer": "Importez la liste d’invités, et KALFA envoie un message personnel à chaque numéro via la plateforme professionnelle officielle de WhatsApp. Inutile d’envoyer depuis votre téléphone personnel ou de créer un groupe.",
+            "question": "Comment envoyer les demandes de confirmation de présence par WhatsApp ?"
+          },
+          "noWhatsapp": {
+            "answer": "Cette personne ne recevra simplement rien par ce canal. Son lien personnel continue de fonctionner par tout autre moyen, et vous pouvez aussi gérer une personne invitée sans aucun numéro de téléphone.",
+            "question": "Que se passe-t-il si une personne invitée n’a pas WhatsApp ?"
+          }
+        },
+        "moreLink": "Pour le prix et les autres canaux, consultez <faq>la page des questions fréquentes</faq>.",
         "title": "Envoi par WhatsApp : les questions qui reviennent"
       },
       "hero": {
@@ -278,9 +1168,37 @@
       },
       "limits": {
         "eyebrow": "À savoir avant de commencer",
+        "items": {
+          "approvedTemplate": "Un message envoyé à l’initiative de l’entreprise doit utiliser un modèle approuvé à l’avance par WhatsApp.",
+          "eventOnly": "Les messages portent sur un événement précis et s’adressent à un invité précis : ce ne sont pas des envois publicitaires.",
+          "noGuarantee": "La distribution dépend de WhatsApp lui-même : elle n’est donc pas garantie pour chaque numéro.",
+          "stopRequest": "Une personne invitée qui demande à ne plus recevoir de messages n’en reçoit plus."
+        },
         "title": "WhatsApp a ses règles, et nous les respectons"
       },
+      "meta": {
+        "description": "Invitations et rappels par WhatsApp, via la plateforme officielle : message personnel pour chaque invité, réponse en un clic et suivi automatique des réponses.",
+        "title": "Confirmations de présence par WhatsApp"
+      },
       "points": {
+        "items": {
+          "autoRecorded": {
+            "body": "L’invité répond depuis le message ou depuis son lien personnel, et le statut se met à jour dans la liste sans que personne ait à le saisir.",
+            "title": "La réponse s’enregistre toute seule"
+          },
+          "personal": {
+            "body": "Chaque invité reçoit son propre message, avec ses informations. Pas de groupe, pas de liste de diffusion visible par tous, et personne n’a accès à la liste d’invités.",
+            "title": "Un message personnel, pas un message de groupe"
+          },
+          "reach": {
+            "body": "Les invités n’ouvrent pas toujours leurs e-mails et ne répondent pas toujours à un numéro inconnu. WhatsApp est le canal que presque tout le monde consulte le jour même.",
+            "title": "Le message arrive là où l’on regarde déjà"
+          },
+          "remindersOnly": {
+            "body": "Le rappel automatique épargne les personnes qui ont déjà répondu. C’est la différence entre un rappel utile et un rappel qui dérange.",
+            "title": "Un rappel uniquement aux personnes qui n’ont pas encore répondu"
+          }
+        },
         "title": "Pourquoi passer par ce canal ?"
       }
     }
@@ -291,6 +1209,72 @@
       "imageAlt": "Invitation à l’événement",
       "openFull": "Ouvrir l’invitation en grand format"
     },
+    "landing": {
+      "greeting": {
+        "barMitzvah": "Merci d’avoir fêté la bar-mitsva avec nous !",
+        "batMitzvah": "Merci d’avoir fêté la bat-mitsva avec nous !",
+        "birthday": "Merci d’avoir fêté l’anniversaire avec nous !",
+        "brit": "Merci d’avoir fêté la brit-mila avec nous !",
+        "britah": "Merci d’avoir fêté la brit-bat avec nous !",
+        "engagement": "Merci d’avoir fêté les fiançailles avec nous !",
+        "henna": "Merci d’avoir partagé la soirée du henné avec nous !",
+        "other": "Merci d’avoir fêté ce moment avec nous !",
+        "wedding": "Merci d’avoir fêté le mariage avec nous !"
+      }
+    },
+    "meta": {
+      "title": "Merci"
+    },
     "rateLimited": "Trop de demandes ont été envoyées. Merci de réessayer dans un instant."
+  },
+  "validation": {
+    "email": {
+      "invalidShort": "L’adresse e-mail n’est pas valide"
+    },
+    "inquiry": {
+      "contact": {
+        "required": "Merci d’indiquer un téléphone ou un e-mail de contact"
+      },
+      "message": {
+        "required": "Merci d’écrire votre message",
+        "tooLong": "Le message est trop long"
+      },
+      "topic": {
+        "required": "Merci de choisir un sujet"
+      }
+    },
+    "name": {
+      "required": "Merci d’indiquer votre nom",
+      "tooLong": "Le nom est trop long"
+    },
+    "note": {
+      "tooLong": "La remarque est trop longue"
+    },
+    "phone": {
+      "invalidShort": "Le numéro de téléphone n’est pas valide"
+    },
+    "rating": {
+      "score": {
+        "invalid": "L’avis n’est pas valide"
+      }
+    },
+    "rsvp": {
+      "answer": {
+        "tooLong": "La réponse est trop longue"
+      },
+      "count": {
+        "invalid": "Le nombre n’est pas valide",
+        "tooLarge": "Le nombre est trop élevé"
+      },
+      "guests": {
+        "required": "Merci d’indiquer au moins une personne"
+      },
+      "mealPref": {
+        "tooLong": "Le texte est trop long"
+      },
+      "status": {
+        "required": "Merci de choisir une réponse"
+      }
+    }
   }
 }

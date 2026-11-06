@@ -13,7 +13,10 @@ export default defineConfig({
     defaultNS: "common",
     extractFromComments: false,
     warnOnConflicts: "warn",
-    preservePatterns: ["whatsappErrors:*"]
+    preservePatterns: ["whatsappErrors:*", "cookieConsent:*"]
+  },
+  lint: {
+    checkTranslationPlaceholders: "error"
   },
   locize: {
     projectId: "f50fa8fe-abd4-4f62-97b9-8ae406dbb223",

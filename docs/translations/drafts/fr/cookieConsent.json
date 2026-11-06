@@ -1,0 +1,38 @@
+{
+  "consentModal": {
+    "acceptAllBtn": "Tout accepter",
+    "acceptNecessaryBtn": "Essentiels uniquement",
+    "description": "Nous utilisons des cookies essentiels, nécessaires à la connexion, à la sécurité et au fonctionnement du service. En outre, uniquement avec votre accord et pour chaque catégorie séparément, nous utilisons la mesure d’audience (Google Analytics), qui nous aide à comprendre l’utilisation du site et à l’améliorer, et le marketing et le remarketing (Google Ads), qui vous présentent des annonces personnalisées sur d’autres sites.",
+    "footer": "<a href=\"{{cookiesHref}}\">Politique de cookies</a> · <a href=\"{{privacyHref}}\">Politique de confidentialité</a>",
+    "showPreferencesBtn": "Détails",
+    "title": "Cookies sur le site"
+  },
+  "preferencesModal": {
+    "acceptAllBtn": "Tout accepter",
+    "acceptNecessaryBtn": "Essentiels uniquement",
+    "closeIconLabel": "Fermer",
+    "savePreferencesBtn": "Enregistrer",
+    "title": "Préférences de cookies"
+  },
+  "sections": {
+    "analytics": {
+      "description": "Mesure de l’utilisation (quelles pages sont consultées et comment le site est utilisé) afin de l’améliorer. Google Signals (association des visites entre appareils et données agrégées sur les caractéristiques démographiques et les centres d’intérêt) est activé au niveau de la propriété, mais ne fonctionne concrètement que pour les personnes qui ont également accepté la catégorie « Marketing et remarketing » ci-dessous : l’accord donné à la seule mesure d’audience ne l’active pas. La mesure peut inclure des identifiants internes aléatoires de la plateforme (comme un identifiant d’événement ou de campagne dans les adresses des pages de « Mon espace ») ; ces identifiants ne comprennent pas en eux-mêmes le nom de l’événement ni l’identité de la personne qui l’organise. La mesure d’audience n’est chargée qu’après votre accord, et pas sur les pages de confirmation de présence des invités, et le retrait du consentement supprime les cookies de mesure (_ga*).",
+      "title": "Mesure d’audience (Google Analytics)"
+    },
+    "intro": {
+      "description": "Les cookies essentiels sont nécessaires au fonctionnement de base et ne peuvent pas être désactivés ; la mesure d’audience et le marketing ne fonctionnent qu’avec votre consentement, séparément l’un de l’autre, et vous pouvez modifier votre choix ici à tout moment. Pour toutes les informations, consultez la <a href=\"{{cookiesHref}}\">politique de cookies</a>."
+    },
+    "marketing": {
+      "description": "Notre compte Google Ads est lié à la propriété Google Analytics. Avec votre accord, nous partageons avec Google Ads des audiences fondées sur votre visite du site (remarketing), afin d’afficher des annonces personnalisées sur d’autres sites et de mesurer les conversions issues des annonces ; cet accord, avec celui donné à la mesure d’audience, active aussi concrètement Google Signals (voir ci-dessus). Cette catégorie est désactivée par défaut et séparée de la mesure d’audience : vous pouvez accepter l’une sans l’autre. Le retrait du consentement supprime les cookies et identifiants publicitaires. Vous pouvez gérer les préférences publicitaires de votre compte Google depuis « Mes préférences publicitaires ».",
+      "title": "Marketing et remarketing (Google Ads)"
+    },
+    "moreInfo": {
+      "description": "Pour toute question sur les cookies et la confidentialité, consultez la <a href=\"{{cookiesHref}}\">politique de cookies</a> et la <a href=\"{{privacyHref}}\">politique de confidentialité</a>.",
+      "title": "Plus d’informations"
+    },
+    "necessary": {
+      "description": "Cookies d’authentification et d’identification (Supabase), choix de l’organisation active, mémorisation de l’état de la barre latérale et maintien de la stabilité de la version. Sans ces cookies, le service ne peut pas fonctionner.",
+      "title": "Cookies essentiels"
+    }
+  }
+}
