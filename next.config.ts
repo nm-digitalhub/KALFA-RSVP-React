@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import type { NextConfig } from 'next';
 
+import { languageRewrites } from './src/lib/i18n/site-language';
+
 // Version-skew protection (docs: next-config-js/deploymentId). The deploy
 // script writes a fresh id to .deploy-id BEFORE building, so the id baked into
 // client assets and the one the pm2 `next start` process reads at boot are
@@ -48,16 +50,10 @@ const nextConfig: NextConfig = {
     ];
   },
 
-  // Trial of the language URLs: /en/about serves the /about route. src/proxy.ts runs first and sets the language header,
-  // and this only maps the URL. A rewrite returned by the proxy is treated as external when the server binds to
-  // 127.0.0.1 (vercel/next.js#94745) and fails with a 500; a rewrite here does not take that path.
+  // The language URLs: /en/about serves the /about route. src/proxy.ts runs first and sets the language header, and this
+  // only maps the URL.
   async rewrites() {
-    return {
-      beforeFiles: ['en', 'fr'].flatMap((language) => [
-        { source: `/${language}`, destination: '/' },
-        { source: `/${language}/about`, destination: '/about' },
-      ]),
-    };
+    return { beforeFiles: languageRewrites() };
   },
 
   deploymentId: readDeployId(),

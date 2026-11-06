@@ -1,9 +1,10 @@
 // The languages of the public site and how a URL selects one. Hebrew is the default and has no prefix: /about is Hebrew,
-// /en/about and /fr/about are the translations. The pages stay where they are; src/proxy.ts maps the prefixed URL onto the
-// plain route and passes the language in LANGUAGE_HEADER, which next-i18next's getT reads (localeInPath: false).
-// This file runs in the proxy, so it holds no i18next import.
+// /en/about and /fr/about are the translations. The pages stay where they are: next.config.ts maps the prefixed URL onto
+// the plain route, and src/proxy.ts passes the language in LANGUAGE_HEADER, which next-i18next's getT reads
+// (localeInPath: false). This file runs in the proxy and in next.config.ts, so it holds no i18next import.
 
-import { MARKDOWN_NEGOTIABLE_PATHS } from '@/lib/http/markdown-negotiation';
+// A relative path: next.config.ts loads this file outside the bundler, where the @/ alias does not resolve.
+import { MARKDOWN_NEGOTIABLE_PATHS } from '../http/markdown-negotiation';
 
 export const DEFAULT_LANGUAGE = 'he';
 export const SITE_LANGUAGES = [DEFAULT_LANGUAGE, 'en', 'fr'] as const;
@@ -30,4 +31,13 @@ export function hrefInLanguage(href: string, language: string): string {
   const path = pathEnd === -1 ? href : href.slice(0, pathEnd);
   if (language === DEFAULT_LANGUAGE || !MARKDOWN_NEGOTIABLE_PATHS.has(path)) return href;
   return `/${language}${path === '/' ? '' : path}${href.slice(path.length)}`;
+}
+
+// One rewrite per translated URL, from the list parseLanguagePath reads, so a URL the proxy gives a language always reaches
+// its page. They belong in next.config.ts and not in the proxy: Next treats a rewrite returned by the proxy as external when
+// the server binds to 127.0.0.1 (vercel/next.js#94745), and it answers 500.
+export function languageRewrites(): { source: string; destination: string }[] {
+  return SITE_LANGUAGES.filter((language) => language !== DEFAULT_LANGUAGE).flatMap((language) =>
+    [...MARKDOWN_NEGOTIABLE_PATHS].map((path) => ({ source: hrefInLanguage(path, language), destination: path })),
+  );
 }

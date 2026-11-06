@@ -29,12 +29,7 @@ function withRefreshedSession(
   return target;
 }
 
-// `rewrite` serves another route under the same URL (a translated page). It goes through withRefreshedSession like the
-// redirects, so a refreshed session survives it.
-export async function updateSession(
-  request: NextRequest,
-  rewrite?: { url: URL; headers: Headers },
-) {
+export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
   // The exact headers @supabase/ssr asks us to set alongside auth cookies,
   // captured verbatim from setAll so a redirect can carry ALL of them (see above).
@@ -91,14 +86,6 @@ export async function updateSession(
   if (user && AUTH_PAGES.includes(path)) {
     return withRefreshedSession(
       NextResponse.redirect(new URL('/app', request.url)),
-      supabaseResponse,
-      refreshHeaders,
-    );
-  }
-
-  if (rewrite) {
-    return withRefreshedSession(
-      NextResponse.rewrite(rewrite.url, { request: { headers: rewrite.headers } }),
       supabaseResponse,
       refreshHeaders,
     );

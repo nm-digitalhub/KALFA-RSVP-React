@@ -22,15 +22,16 @@ vi.mock('@/lib/supabase/env', () => ({ getPublicSupabaseEnv: () => ({ url: 'http
 
 const { updateSession } = await import('./proxy');
 
-describe('updateSession — a rewritten page', () => {
-  it('keeps a refreshed session on the rewrite response', async () => {
+describe('updateSession — a translated page', () => {
+  it('keeps the language and a refreshed session on one response, with no rewrite of its own', async () => {
     claims.mockResolvedValue({ data: { claims: { sub: 'user' } } });
-    const request = new NextRequest('https://beta.kalfa.me/en/about');
-    const url = new URL('https://beta.kalfa.me/about');
+    const request = new NextRequest('https://beta.kalfa.me/en/about', {
+      headers: { 'x-i18next-current-language': 'en' },
+    });
 
-    const response = await updateSession(request, { url, headers: new Headers({ 'x-i18next-current-language': 'en' }) });
+    const response = await updateSession(request);
 
-    expect(response.headers.get('x-middleware-rewrite')).toBe(url.toString());
+    expect(response.headers.get('x-middleware-rewrite')).toBeNull();
     expect(response.headers.get('x-middleware-request-x-i18next-current-language')).toBe('en');
     expect(response.cookies.get('sb-session')?.value).toBe('refreshed');
     expect(response.headers.get('cache-control')).toBe('private, no-store');

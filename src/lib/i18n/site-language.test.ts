@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { hrefInLanguage, parseLanguagePath } from './site-language';
+import getNextConfig from '../../../next.config';
+
+import { MARKDOWN_NEGOTIABLE_PATHS } from '@/lib/http/markdown-negotiation';
+
+import { hrefInLanguage, languageRewrites, parseLanguagePath } from './site-language';
 
 describe('parseLanguagePath', () => {
   it('maps a translated marketing URL to its plain route', () => {
@@ -49,5 +53,30 @@ describe('hrefInLanguage', () => {
     ['a mail link', 'mailto:hello@example.com'],
   ])('leaves %s alone', (_name, href) => {
     expect(hrefInLanguage(href, 'en')).toBe(href);
+  });
+});
+
+describe('languageRewrites', () => {
+  const rewrites = languageRewrites();
+
+  it('has one rewrite per translated page and language', () => {
+    expect(rewrites).toHaveLength(MARKDOWN_NEGOTIABLE_PATHS.size * 2);
+    expect(rewrites).toContainEqual({ source: '/en', destination: '/' });
+    expect(rewrites).toContainEqual({ source: '/fr/faq', destination: '/faq' });
+  });
+
+  it('maps exactly the URLs the proxy gives a language', () => {
+    for (const { source, destination } of rewrites) {
+      expect(parseLanguagePath(source)?.pathname, source).toBe(destination);
+    }
+  });
+
+  it.each(['/en/app', '/fr/admin', '/en/r/abc', '/en/api/health'])('leaves %s out', (url) => {
+    expect(rewrites.map((rewrite) => rewrite.source)).not.toContain(url);
+  });
+
+  it('is what next.config.ts serves, before the file system', async () => {
+    const nextConfig = await getNextConfig();
+    expect(await nextConfig.rewrites!()).toEqual({ beforeFiles: rewrites });
   });
 });
