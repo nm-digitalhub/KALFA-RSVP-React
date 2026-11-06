@@ -9,7 +9,6 @@ import { CookieConsentBannerLazy } from '@/components/consent/cookie-consent-laz
 import { DirectionProvider } from '@/components/ui/direction';
 import { getT } from '@/i18n.server';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
-import { directionOf } from '@/lib/i18n/site-language';
 import { getAppOrigin } from '@/lib/url';
 import { OPEN_GRAPH_BASE } from '@/lib/seo/open-graph';
 
@@ -26,6 +25,9 @@ const heebo = Heebo({
 // canonical/og URL below (and in child segments) resolve absolute.
 export async function generateMetadata(): Promise<Metadata> {
   const origin = await getAppOrigin();
+  // Read here once, so a page with no title of its own inherits this one in the visitor's language with no code of its own.
+  const { t } = await getT('public');
+  const title = t('site.home.meta.ogTitle', 'KALFA — ניהול אישורי הגעה');
   return {
     metadataBase: new URL(origin),
     // title.template brands every CHILD segment's title automatically
@@ -33,19 +35,23 @@ export async function generateMetadata(): Promise<Metadata> {
     // append the brand by hand. `default` covers segments with no title of
     // their own (a default is required alongside a template per the docs).
     title: {
-      default: 'KALFA — ניהול אישורי הגעה',
+      default: title,
       template: '%s | KALFA',
     },
-    description:
+    description: t(
+      'site.home.meta.description',
       'מערכת אישורי הגעה לחתונה ולכל אירוע: ניהול רשימת מוזמנים ומלווים, שליחת הזמנות ותזכורות בוואטסאפ, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד.',
+    ),
     openGraph: {
       // Shared base (type/locale/siteName) lives in src/lib/seo/open-graph.ts
       // so a page can spread it: setting `openGraph` on a page REPLACES this
       // whole object rather than merging into it.
       ...OPEN_GRAPH_BASE,
-      title: 'KALFA — ניהול אישורי הגעה',
-      description:
+      title,
+      description: t(
+        'site.home.meta.ogDescription',
         'ניהול מוזמנים, הזמנות ותזכורות, מעקב תשובות בזמן אמת ודוחות — הכול במקום אחד.',
+      ),
       // og:image intentionally NOT set here — the file convention
       // (src/app/opengraph-image.png + .alt.txt) emits it and takes priority.
     },
@@ -74,8 +80,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieConsentAdminConfig = await getCookieConsentPublicConfig();
-  const { lng } = await getT('public');
-  const direction = directionOf(lng);
+  const { i18n, lng } = await getT('public');
+  const direction = i18n.dir(lng);
   return (
     <html lang={lng} dir={direction} className={`${heebo.variable} h-full font-sans`}>
       <body className="min-h-full bg-background text-foreground antialiased">

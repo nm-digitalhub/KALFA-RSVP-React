@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { DirectionProvider } from '@base-ui/react/direction-provider';
+import { SiteLink as Link } from '@/components/site/site-link';
 import { ArrowLeft, Menu } from 'lucide-react';
+import { useT } from 'next-i18next/client';
 
+import { landingNavItems } from '@/components/landing-header-nav';
 import { siteCta } from '@/components/site/cta';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,8 +25,7 @@ import { cn } from '@/lib/utils';
 // visitor on a phone isn't stuck with only the footer link. Base UI's Dialog
 // portal ignores the DOM `dir` attribute (same as the dropdown menu in
 // landing-user-menu.tsx and the mobile sidebar sheet in app-shell.tsx) and
-// reads a DirectionProvider instead; the root layout already provides one, so
-// the local provider here is redundant but harmless.
+// reads the DirectionProvider of the root layout, which follows the language.
 //
 // `open` is controlled (rather than left to the Sheet's own state) so nav
 // clicks can close the drawer immediately instead of leaving it open behind
@@ -45,80 +45,69 @@ export function LandingMobileNav({
 }: {
   showAuthCta: boolean;
 }) {
+  const { t } = useT('public');
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
 
   return (
-    <DirectionProvider direction="rtl">
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger
-          render={
-            // `size-11`: the shared `icon` size is 32px; this is the ONLY way
-            // into the nav on a phone, so it gets the 44px target (cn() lets
-            // size-11 win over the variant's size-8).
-            <Button variant="ghost" size="icon" className="size-11 md:hidden" aria-label="תפריט">
-              <Menu />
-            </Button>
-          }
-        />
-        <SheetContent side="right">
-          {/* Visible brand row (owner report 24.8: with the header hidden
-              behind the overlay, the open drawer showed only an X and a bare
-              list — "KALFA disappeared"). Same height and wordmark as the page
-              header, so the brand stays in place when the menu opens; the
-              Sheet's close button sits at top/end, mirroring the hamburger's
-              position in the header. The wordmark is the dialog title (a11y
-              name) AND a home link. */}
-          <SheetHeader className="h-16 flex-row items-center justify-between border-b border-border px-4 py-0">
-            <SheetTitle
-              render={<Link href="/" onClick={close} />}
-              className="text-2xl font-extrabold tracking-tight text-foreground"
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger
+        render={
+          // `size-11`: the shared `icon` size is 32px; this is the ONLY way
+          // into the nav on a phone, so it gets the 44px target (cn() lets
+          // size-11 win over the variant's size-8).
+          <Button variant="ghost" size="icon" className="size-11 md:hidden" aria-label={t('site.header.menu.ariaLabel', 'תפריט')}>
+            <Menu />
+          </Button>
+        }
+      />
+      <SheetContent side="right" closeLabel={t('site.header.menu.close', 'סגירה')}>
+        {/* Visible brand row (owner report 24.8: with the header hidden
+            behind the overlay, the open drawer showed only an X and a bare
+            list — "KALFA disappeared"). Same height and wordmark as the page
+            header, so the brand stays in place when the menu opens; the
+            Sheet's close button sits at top/end, mirroring the hamburger's
+            position in the header. The wordmark is the dialog title (a11y
+            name) AND a home link. */}
+        <SheetHeader className="h-16 flex-row items-center justify-between border-b border-border px-4 py-0">
+          <SheetTitle
+            render={<Link href="/" onClick={close} />}
+            className="text-2xl font-extrabold tracking-tight text-foreground"
+          >
+            KALFA
+          </SheetTitle>
+          <SheetDescription className="sr-only">{t('site.header.menu.description', 'תפריט ניווט לעמוד הבית')}</SheetDescription>
+        </SheetHeader>
+        <nav className="flex flex-col gap-1 px-4" aria-label={t('site.header.nav.pageAriaLabel', 'ניווט בעמוד')}>
+          {/* Absolute section hrefs: the drawer is shared by every (site)
+              page via the layout's SiteHeader, so from /faq these must
+              navigate home and then scroll (Next.js Link "/#id"). */}
+          {landingNavItems(t).map((item) => (
+            <Link key={item.href} href={item.href} onClick={close} className={NAV_LINK_CLASS}>
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+        {showAuthCta ? (
+          <SheetFooter className="border-t border-border">
+            <Link
+              href="/auth/login"
+              onClick={close}
+              className="inline-flex min-h-11 items-center justify-center rounded-md px-2 py-2.5 text-base font-semibold transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
-              KALFA
-            </SheetTitle>
-            <SheetDescription className="sr-only">תפריט ניווט לעמוד הבית</SheetDescription>
-          </SheetHeader>
-          <nav className="flex flex-col gap-1 px-4" aria-label="ניווט בעמוד">
-            {/* Absolute section hrefs: the drawer is shared by every (site)
-                page via the layout's SiteHeader, so from /faq these must
-                navigate home and then scroll (Next.js Link "/#id"). */}
-            <Link href="/#features" onClick={close} className={NAV_LINK_CLASS}>
-              יכולות
+              {t('site.header.login', 'כניסה')}
             </Link>
-            <Link href="/#how" onClick={close} className={NAV_LINK_CLASS}>
-              איך זה עובד
+            <Link
+              href="/auth/signup"
+              onClick={close}
+              className={cn(siteCta({ size: 'md' }), 'text-base')}
+            >
+              {t('site.header.createEvent', 'צרו אירוע')}
+              <ArrowLeft className="size-4 ltr:rotate-180" aria-hidden />
             </Link>
-            <Link href="/#trust" onClick={close} className={NAV_LINK_CLASS}>
-              אמון
-            </Link>
-            <Link href="/faq" onClick={close} className={NAV_LINK_CLASS}>
-              שאלות נפוצות
-            </Link>
-            <Link href="/contact" onClick={close} className={NAV_LINK_CLASS}>
-              יצירת קשר
-            </Link>
-          </nav>
-          {showAuthCta ? (
-            <SheetFooter className="border-t border-border">
-              <Link
-                href="/auth/login"
-                onClick={close}
-                className="inline-flex min-h-11 items-center justify-center rounded-md px-2 py-2.5 text-base font-semibold transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                כניסה
-              </Link>
-              <Link
-                href="/auth/signup"
-                onClick={close}
-                className={cn(siteCta({ size: 'md' }), 'text-base')}
-              >
-                צרו אירוע
-                <ArrowLeft className="size-4" aria-hidden />
-              </Link>
-            </SheetFooter>
-          ) : null}
-        </SheetContent>
-      </Sheet>
-    </DirectionProvider>
+          </SheetFooter>
+        ) : null}
+      </SheetContent>
+    </Sheet>
   );
 }

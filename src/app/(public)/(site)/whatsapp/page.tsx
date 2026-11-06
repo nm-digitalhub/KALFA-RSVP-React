@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 import { ArrowLeft, ListChecks, MessageCircle, ShieldCheck } from 'lucide-react';
 import { Trans } from 'react-i18next/TransWithoutContext';
 
@@ -116,7 +116,7 @@ export default async function WhatsappRsvpPage() {
                 className={siteCta()}
               >
                 {startLabel}
-                <ArrowLeft className="size-5" aria-hidden />
+                <ArrowLeft className="size-5 ltr:rotate-180" aria-hidden />
               </Link>
               <Link
                 href="/guest-list-template"

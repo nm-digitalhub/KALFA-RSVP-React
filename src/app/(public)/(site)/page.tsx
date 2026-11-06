@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 import { Trans } from 'react-i18next/TransWithoutContext';
 
 import { HeroParallax, ParallaxLayer } from '@/components/motion/hero-parallax';
@@ -135,10 +135,25 @@ const audiences = (t: TFunction<'public'>): { icon: LucideIcon; title: string; h
   { icon: Building2, title: t('site.home.audiences.items.company.title', 'אירועי חברה') },
 ];
 
-const PREVIEW_GUESTS = [
-  { n: 'משפחת לוי', m: '4 אורחים', label: 'אישרו', cls: 'bg-emerald-50 text-emerald-700' },
-  { n: 'יואב כהן', m: '2 אורחים', label: 'ממתין', cls: 'bg-amber-50 text-amber-700' },
-  { n: 'נועה אבני', m: '1 אורח', label: 'לא מגיע', cls: 'bg-rose-50 text-rose-700' },
+const previewGuests = (t: TFunction<'public'>) => [
+  {
+    n: t('site.home.preview.guests.levi.name', 'משפחת לוי'),
+    party: 4,
+    label: t('site.home.preview.guests.levi.status', 'אישרו'),
+    cls: 'bg-emerald-50 text-emerald-700',
+  },
+  {
+    n: t('site.home.preview.guests.cohen.name', 'יואב כהן'),
+    party: 2,
+    label: t('site.home.preview.guests.cohen.status', 'ממתין'),
+    cls: 'bg-amber-50 text-amber-700',
+  },
+  {
+    n: t('site.home.preview.guests.avni.name', 'נועה אבני'),
+    party: 1,
+    label: t('site.home.preview.guests.avni.status', 'לא מגיע'),
+    cls: 'bg-rose-50 text-rose-700',
+  },
 ];
 
 function Eyebrow({
@@ -311,7 +326,7 @@ export default async function HomePage() {
               <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
                 <Link href={startHref} className={siteCta()}>
                   {startLabel}
-                  <ArrowLeft className="size-5" aria-hidden />
+                  <ArrowLeft className="size-5 ltr:rotate-180" aria-hidden />
                 </Link>
                 <a href="#how" className={siteCta({ variant: 'outline' })}>
                   {t('site.home.cta.howItWorks', 'איך זה עובד')}
@@ -369,16 +384,28 @@ export default async function HomePage() {
               <div className="flex flex-col gap-2 border-b border-border px-4 py-3 @[20rem]/preview:flex-row @[20rem]/preview:items-center @[20rem]/preview:justify-between">
                 <div>
                   <div className="font-bold">{t('site.home.preview.eventName', 'חתונה · דנה ויואב')}</div>
-                  <div className="text-xs text-muted-foreground">14.06.2026 · אולמי השרון</div>
+                  <div className="text-xs text-muted-foreground">
+                    {t('site.home.preview.eventMeta', '{{date, datetime}} · אולמי השרון', {
+                      date: new Date(2026, 5, 14),
+                      formatParams: { date: { day: '2-digit', month: '2-digit', year: 'numeric' } },
+                    })}
+                  </div>
                 </div>
-                <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">248 אישרו</span>
+                <span className="w-fit rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">{t('site.home.preview.confirmedBadge', '248 אישרו')}</span>
               </div>
               <div className="grid gap-4 p-4">
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { l: 'אישרו', v: '248', c: 'text-emerald-700' },
-                    { l: 'ממתינים', v: '63', c: 'text-amber-700' },
-                    { l: 'היענות', v: '82%', c: 'text-primary' },
+                    { l: t('site.home.preview.stats.confirmed', 'אישרו'), v: '248', c: 'text-emerald-700' },
+                    { l: t('site.home.preview.stats.pending', 'ממתינים'), v: '63', c: 'text-amber-700' },
+                    {
+                      l: t('site.home.preview.stats.responseRate', 'היענות'),
+                      v: t('site.home.preview.stats.responseRateValue', '{{rate, number}}', {
+                        rate: 0.82,
+                        formatParams: { rate: { style: 'percent' } },
+                      }),
+                      c: 'text-primary',
+                    },
                   ].map((s) => (
                     <div key={s.l} className="rounded-lg border border-border p-3 text-center">
                       <div className={`text-xl font-extrabold tabular-nums @[22rem]/preview:text-2xl ${s.c}`}>{s.v}</div>
@@ -389,7 +416,7 @@ export default async function HomePage() {
                 <div>
                   <div className="mb-2 flex justify-between text-xs font-medium text-muted-foreground">
                     <span>{t('site.home.preview.snapshot', 'תמונת מצב')}</span>
-                    <span>340 מוזמנים</span>
+                    <span>{t('site.home.preview.invitedTotal', '340 מוזמנים')}</span>
                   </div>
                   <div className="flex h-3 overflow-hidden rounded-full bg-border">
                     <div className="bg-emerald-500" style={{ width: '73%' }} />
@@ -398,14 +425,21 @@ export default async function HomePage() {
                   </div>
                 </div>
                 <div className="grid gap-1">
-                  {PREVIEW_GUESTS.map((g) => (
+                  {previewGuests(t).map((g) => (
                     <div key={g.n} className="flex items-center gap-3 border-t border-border py-2">
                       <span className="grid size-8 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">
                         {g.n[0]}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold">{g.n}</div>
-                        <div className="text-xs text-muted-foreground">{g.m}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {t('site.home.preview.guests.party', {
+                            count: g.party,
+                            defaultValue: '{{count}} אורחים',
+                            defaultValue_one: '{{count}} אורח',
+                            defaultValue_other: '{{count}} אורחים',
+                          })}
+                        </div>
                       </div>
                       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${g.cls}`}>{g.label}</span>
                     </div>
@@ -510,7 +544,7 @@ export default async function HomePage() {
                   className={siteCta({ size: 'md', className: 'w-fit' })}
                 >
                   {user ? t('site.home.cta.newEvent', 'אירוע חדש') : t('site.home.cta.startNow', 'התחילו עכשיו')}
-                  <ArrowLeft className="size-4" aria-hidden />
+                  <ArrowLeft className="size-4 ltr:rotate-180" aria-hidden />
                 </Link>
               </div>
             </div>
@@ -624,7 +658,7 @@ export default async function HomePage() {
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               <Link href={startHref} className={siteCta({ variant: 'dark', size: 'xl' })}>
                 {startLabel}
-                <ArrowLeft className="size-5" aria-hidden />
+                <ArrowLeft className="size-5 ltr:rotate-180" aria-hidden />
               </Link>
               <Link
                 href={user ? '/app/events/new' : '/auth/login'}

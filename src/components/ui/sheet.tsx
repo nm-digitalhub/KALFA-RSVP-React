@@ -41,10 +41,14 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  closeLabel = "סגירה",
   ...props
 }: SheetPrimitive.Popup.Props & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
+  // A prop, not useT: admin and the customer app render this outside the
+  // I18nProvider of (public)/layout.tsx and keep the Hebrew default.
+  closeLabel?: string
 }) {
   return (
     <SheetPortal>
@@ -72,7 +76,7 @@ function SheetContent({
           >
             <XIcon
             />
-            <span className="sr-only">סגירה</span>
+            <span className="sr-only">{closeLabel}</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Popup>

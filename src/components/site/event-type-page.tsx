@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 import { ArrowLeft, BookOpen, CalendarClock, CircleCheck, ListChecks, Sparkles } from 'lucide-react';
 import { Trans } from 'react-i18next/TransWithoutContext';
 
@@ -108,7 +108,7 @@ export async function EventTypePage({ slug }: { slug: EventTypeSlug }) {
             <div className="mt-7 flex flex-wrap gap-3 transition-[opacity,translate] duration-700 ease-k-out motion-safe:starting:translate-y-3 k-delay-300">
               <Link href={startHref} className={siteCta()}>
                 {startLabel}
-                <ArrowLeft className="size-5" aria-hidden />
+                <ArrowLeft className="size-5 ltr:rotate-180" aria-hidden />
               </Link>
               <Link href="/guest-list-template" className={siteCta({ variant: 'outline' })}>
                 {t('site.eventPage.cta.template', 'תבנית רשימת מוזמנים')}
@@ -263,7 +263,7 @@ export async function EventTypePage({ slug }: { slug: EventTypeSlug }) {
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               <Link href={startHref} className={siteCta({ variant: 'dark', size: 'xl' })}>
                 {startLabel}
-                <ArrowLeft className="size-5" aria-hidden />
+                <ArrowLeft className="size-5 ltr:rotate-180" aria-hidden />
               </Link>
               <Link href="/#how" className={siteCta({ variant: 'onPrimary', size: 'xl' })}>
                 <CircleCheck className="size-5" aria-hidden />

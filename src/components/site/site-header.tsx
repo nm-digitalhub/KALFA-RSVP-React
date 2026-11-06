@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 import { ArrowLeft } from 'lucide-react';
 
 import { LandingHeaderNav } from '@/components/landing-header-nav';
@@ -62,7 +62,7 @@ export async function SiteHeader() {
               </Link>
               <Link href="/auth/signup" className={cn(siteCta({ size: 'sm' }), 'min-h-11')}>
                 {t('site.header.createEvent', 'צרו אירוע')}
-                <ArrowLeft className="size-4" aria-hidden />
+                <ArrowLeft className="size-4 ltr:rotate-180" aria-hidden />
               </Link>
             </div>
           )}

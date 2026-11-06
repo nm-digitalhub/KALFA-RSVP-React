@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 
 import { ManageCookiesButton } from '@/components/consent/manage-cookies-button';
 import { getT } from '@/i18n.server';

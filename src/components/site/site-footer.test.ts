@@ -10,6 +10,8 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 // The component's getT reaches next/headers, which only resolves inside Next. The builders take `t` as an argument.
 vi.mock('@/i18n.server', () => ({ getT: vi.fn() }));
+// SiteLink's useT needs next/navigation, which also only resolves inside Next. Nothing here renders a link.
+vi.mock('next-i18next/client', () => ({ useT: vi.fn() }));
 
 import { getT } from '@/lib/i18n';
 import { EVENT_TYPES } from '@/lib/marketing/event-types';

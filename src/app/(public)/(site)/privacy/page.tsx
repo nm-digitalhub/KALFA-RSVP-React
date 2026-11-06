@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 
 import { getCompanyLegal } from '@/lib/data/company';
 import { isMarketingConsentEnabled } from '@/lib/data/marketing-consent';

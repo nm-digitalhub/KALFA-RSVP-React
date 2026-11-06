@@ -1,7 +1,9 @@
 'use client';
 
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 import { usePathname } from 'next/navigation';
+import type { TFunction } from 'i18next';
+import { useT } from 'next-i18next/client';
 
 import {
   NavigationMenu,
@@ -10,6 +12,7 @@ import {
   NavigationMenuList,
   navigationMenuTriggerStyle,
 } from '@/components/ui/navigation-menu';
+import { parseLanguagePath } from '@/lib/i18n/site-language';
 import { cn } from '@/lib/utils';
 
 // Desktop header navigation for the public landing pages — shadcn
@@ -34,12 +37,12 @@ import { cn } from '@/lib/utils';
 // the homepage sections must be reachable from /faq, /contact, … as well.
 // Next.js <Link href="/#id"> navigates and then scrolls to the id (installed
 // docs, link.md "Scrolling to an id"); on the homepage itself it just scrolls.
-export const LANDING_NAV_ITEMS: readonly { href: string; label: string }[] = [
-  { href: '/#features', label: 'יכולות' },
-  { href: '/#how', label: 'איך זה עובד' },
-  { href: '/#trust', label: 'אמון' },
-  { href: '/faq', label: 'שאלות נפוצות' },
-  { href: '/contact', label: 'יצירת קשר' },
+export const landingNavItems = (t: TFunction<'public'>): readonly { href: string; label: string }[] => [
+  { href: '/#features', label: t('site.header.nav.features', 'יכולות') },
+  { href: '/#how', label: t('site.header.nav.how', 'איך זה עובד') },
+  { href: '/#trust', label: t('site.header.nav.trust', 'אמון') },
+  { href: '/faq', label: t('site.header.nav.faq', 'שאלות נפוצות') },
+  { href: '/contact', label: t('site.header.nav.contact', 'יצירת קשר') },
 ];
 
 // shadcn rule: className is for layout only — the link's colours, hover,
@@ -50,18 +53,21 @@ export const LANDING_NAV_ITEMS: readonly { href: string; label: string }[] = [
 // `md`, i.e. on touch tablets too, where the 44px target applies (min-height
 // beats height, so the pill grows to 44px inside the 64px header).
 export function LandingHeaderNav({ className }: { className?: string }) {
+  const { t } = useT('public');
+  // A translated page keeps its prefix in the URL, and the items hold the plain route.
   const pathname = usePathname();
+  const route = parseLanguagePath(pathname)?.pathname ?? pathname;
   return (
-    <NavigationMenu className={cn('max-w-none', className)} aria-label="ניווט ראשי">
+    <NavigationMenu className={cn('max-w-none', className)} aria-label={t('site.header.nav.mainAriaLabel', 'ניווט ראשי')}>
       <NavigationMenuList className="gap-1">
-        {LANDING_NAV_ITEMS.map((item) => {
+        {landingNavItems(t).map((item) => {
           // Section anchors never count as "active" — only a routed page does.
           const isSection = item.href.includes('#');
           return (
             <NavigationMenuItem key={item.href}>
               <NavigationMenuLink
                 className={cn(navigationMenuTriggerStyle(), 'min-h-11')}
-                active={!isSection && pathname === item.href}
+                active={!isSection && route === item.href}
                 render={<Link href={item.href} />}
               >
                 {item.label}

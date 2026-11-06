@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render } from '@testing-library/react';
-import type { ReactElement } from 'react';
+import { act, cleanup, render } from '@testing-library/react';
+import { Suspense, type ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
@@ -10,6 +10,13 @@ vi.mock('@/lib/consent/admin-config', () => ({
 }));
 vi.mock('@/lib/data/marketing-consent', () => ({ isMarketingConsentEnabled: vi.fn() }));
 vi.mock('@/components/consent/manage-cookies-button', () => ({ ManageCookiesButton: () => null }));
+// getT reaches next/headers and SiteLink's useT reaches next/navigation, and both only resolve inside Next. The fixed
+// Hebrew translator keeps the assertions on the real default text.
+vi.mock('@/i18n.server', async () => {
+  const { getT } = await import('@/lib/i18n');
+  return { getT: async () => ({ t: getT('public') }) };
+});
+vi.mock('next-i18next/client', () => ({ useT: () => ({ i18n: { language: 'he' } }) }));
 
 import { isMarketingConsentEnabled } from '@/lib/data/marketing-consent';
 
@@ -19,7 +26,9 @@ afterEach(cleanup);
 
 async function text(enabled: boolean): Promise<string> {
   vi.mocked(isMarketingConsentEnabled).mockResolvedValue(enabled);
-  const { container } = render((await PrivacyPage()) as ReactElement);
+  const page = (await PrivacyPage()) as ReactElement;
+  // LegalShell and CategoryStatusBadge are async Server Components: React resolves them inside a Suspense boundary.
+  const { container } = await act(async () => render(<Suspense>{page}</Suspense>));
   return container.textContent ?? '';
 }
 

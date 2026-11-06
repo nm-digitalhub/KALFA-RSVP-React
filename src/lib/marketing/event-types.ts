@@ -232,7 +232,7 @@ function britCopy(t: TFunction<'public'>): EventTypeCopy {
     h1: t('site.eventType.brit.hero.title', 'אישורי הגעה לברית'),
     lede: t('site.eventType.brit.hero.lede', 'התאריך נודע רק בלידה, והאירוע מתקיים תוך ימים ספורים. כאן מהירות ההקמה חשובה יותר מכל יכולת אחרת.'),
     eyebrow: t('site.eventType.brit.challenges.eyebrow', 'למה ברית שונה'),
-    challengesTitle: t('site.eventType.brit.challenges.title', 'אירוע שכל הלוח זמנים שלו דחוס'),
+    challengesTitle: t('site.eventType.brit.challenges.title', 'אירוע שכל לוח הזמנים שלו דחוס'),
     challenges: [
       {
         title: t('site.eventType.brit.challenges.c1.title', 'אין שבועות — יש ימים'),

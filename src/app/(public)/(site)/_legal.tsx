@@ -1,6 +1,7 @@
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 import { ArrowRight } from 'lucide-react';
 
+import { getT } from '@/i18n.server';
 import { toE164Israel, type CompanyLegal } from '@/lib/data/company';
 
 // Shared shell for the public legal pages (privacy policy, terms). RTL Hebrew,
@@ -12,7 +13,7 @@ import { toE164Israel, type CompanyLegal } from '@/lib/data/company';
 // toward the reading START, i.e. right — the mirror of the ArrowLeft the
 // marketing CTAs use for "forward". The glyph pointed the wrong way.
 
-export function LegalShell({
+export async function LegalShell({
   title,
   updatedText,
   company,
@@ -23,8 +24,9 @@ export function LegalShell({
   company: CompanyLegal;
   children: React.ReactNode;
 }) {
+  const { t } = await getT('public');
   const todo = (v: string) =>
-    v.trim() ? v.trim() : '[יושלם בהגדרות פרטי החברה]';
+    v.trim() ? v.trim() : t('site.legal.companyMissing', '[יושלם בהגדרות פרטי החברה]');
   // Contact details are real links (tap-to-call / mail). A phone that does not
   // normalise to E.164 stays plain text rather than a broken tel: link.
   const phoneE164 = company.contactPhone ? toE164Israel(company.contactPhone) : '';
@@ -37,8 +39,8 @@ export function LegalShell({
         href="/"
         className="inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
-        <ArrowRight className="size-4" aria-hidden />
-        לדף הבית
+        <ArrowRight className="size-4 ltr:rotate-180" aria-hidden />
+        {t('site.legal.backHome', 'לדף הבית')}
       </Link>
 
       {/* Same heading scale + rhythm as /faq and /contact. */}
@@ -49,16 +51,16 @@ export function LegalShell({
 
       <hr className="my-8 border-border" />
       <section className="space-y-1 text-sm text-muted-foreground">
-        <p className="font-medium text-foreground">פרטי החברה</p>
+        <p className="font-medium text-foreground">{t('site.legal.companyDetails', 'פרטי החברה')}</p>
         <p>
           {todo(company.name)}
-          {company.id ? ` · ח.פ./ע.מ. ${company.id}` : ''}
+          {company.id ? ` · ${t('site.legal.companyId', 'ח.פ./ע.מ. {{id}}', { id: company.id })}` : ''}
         </p>
         {company.address ? <p>{company.address}</p> : null}
         <p>
           {company.contactPhone ? (
             <>
-              טלפון:{' '}
+              {t('site.legal.phoneLabel', 'טלפון:')}{' '}
               {phoneE164 ? (
                 <a href={`tel:${phoneE164}`} dir="ltr" className="underline underline-offset-4 hover:text-foreground">
                   {company.contactPhone}
@@ -71,7 +73,7 @@ export function LegalShell({
           {company.contactPhone && company.contactEmail ? ' · ' : ''}
           {company.contactEmail ? (
             <>
-              דוא״ל:{' '}
+              {t('site.legal.emailLabel', 'דוא״ל:')}{' '}
               <a href={`mailto:${company.contactEmail}`} className="underline underline-offset-4 hover:text-foreground">
                 {company.contactEmail}
               </a>
@@ -113,13 +115,14 @@ export function LegalSection({
 // underlying legal text stays fixed in code regardless (plan
 // plans/cookie-consent-admin-control.md §8) — this only reflects whether the
 // admin currently offers the category, never a substitute for the text.
-export function CategoryStatusBadge({
+export async function CategoryStatusBadge({
   active,
   label,
 }: {
   active: boolean;
   label?: string;
 }) {
+  const { t } = await getT('public');
   return (
     <span
       className={
@@ -128,7 +131,7 @@ export function CategoryStatusBadge({
       }
     >
       {label ? `${label}: ` : ''}
-      {active ? 'פעיל' : 'מושבת זמנית'}
+      {active ? t('site.legal.statusActive', 'פעיל') : t('site.legal.statusDisabled', 'מושבת זמנית')}
     </span>
   );
 }

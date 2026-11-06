@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 
 import { useVersionSkewReload } from '@/components/use-version-skew-reload';
 import { useT } from 'next-i18next/client';

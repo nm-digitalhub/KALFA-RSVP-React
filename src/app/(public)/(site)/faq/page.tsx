@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { SiteLink as Link } from '@/components/site/site-link';
 import { Info, Route, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react';
 import { Trans } from 'react-i18next/TransWithoutContext';
 
