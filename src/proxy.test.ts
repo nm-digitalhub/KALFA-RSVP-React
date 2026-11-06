@@ -52,13 +52,37 @@ function post(actionId?: string): NextRequest {
 describe('proxy — language URLs', () => {
   beforeEach(() => updateSession.mockClear());
 
-  it('serves /en/about as the /about route, in English, kept out of search', async () => {
-    const response = await proxy(new NextRequest('https://beta.kalfa.me/en/about'));
+  it('serves /en/faq as the /faq route, in English, kept out of search', async () => {
+    const response = await proxy(new NextRequest('https://beta.kalfa.me/en/faq'));
 
     const [, rewrite] = updateSession.mock.calls[0] as unknown as [NextRequest, { url: URL; headers: Headers }];
-    expect(rewrite.url.pathname).toBe('/about');
+    expect(rewrite.url.pathname).toBe('/faq');
     expect(rewrite.headers.get('x-i18next-current-language')).toBe('en');
     expect(response.headers.get('x-robots-tag')).toBe('noindex');
+  });
+
+  it.each([
+    ['/en/about', 'en'],
+    ['/fr/about', 'fr'],
+    ['/en', 'en'],
+  ])('leaves %s to the next.config rewrite and only sets the language', async (path, language) => {
+    const request = new NextRequest(`https://beta.kalfa.me${path}`);
+
+    const response = await proxy(request);
+
+    expect(updateSession.mock.calls[0]).toHaveLength(1);
+    expect(request.headers.get('x-i18next-current-language')).toBe(language);
+    expect(response.headers.get('x-robots-tag')).toBe('noindex');
+  });
+
+  it('takes the language from the URL, not from a header the browser sent', async () => {
+    const request = new NextRequest('https://beta.kalfa.me/en/about', {
+      headers: { 'x-i18next-current-language': 'fr' },
+    });
+
+    await proxy(request);
+
+    expect(request.headers.get('x-i18next-current-language')).toBe('en');
   });
 
   it('never lets the browser choose the language through the header', async () => {

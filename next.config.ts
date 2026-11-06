@@ -48,6 +48,18 @@ const nextConfig: NextConfig = {
     ];
   },
 
+  // Trial of the language URLs: /en/about serves the /about route. src/proxy.ts runs first and sets the language header,
+  // and this only maps the URL. A rewrite returned by the proxy is treated as external when the server binds to
+  // 127.0.0.1 (vercel/next.js#94745) and fails with a 500; a rewrite here does not take that path.
+  async rewrites() {
+    return {
+      beforeFiles: ['en', 'fr'].flatMap((language) => [
+        { source: `/${language}`, destination: '/' },
+        { source: `/${language}/about`, destination: '/about' },
+      ]),
+    };
+  },
+
   deploymentId: readDeployId(),
   // Build output directory. Defaults to `.next`, but verification and deploy
   // builds set NEXT_DIST_DIR to an ISOLATED directory so a build never

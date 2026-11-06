@@ -57,12 +57,21 @@ function notAcceptable(): NextResponse {
   return new NextResponse('Not Acceptable', { status: 406, headers });
 }
 
+// Trial: next.config.ts maps these URLs onto their route, so the proxy only sets the language.
+const CONFIG_REWRITE_PATHS = new Set(['/', '/about']);
+
 // /en/about shows the /about route with LANGUAGE_HEADER set to en. noindex until the translations are complete: most of
 // these pages are still Hebrew, and they stay out of sitemap.ts for the same reason.
 async function serveTranslatedPage(
   request: NextRequest,
   translated: NonNullable<ReturnType<typeof parseLanguagePath>>,
 ): Promise<NextResponse> {
+  if (CONFIG_REWRITE_PATHS.has(translated.pathname)) {
+    request.headers.set(LANGUAGE_HEADER, translated.language);
+    const response = await updateSession(request);
+    response.headers.set('X-Robots-Tag', 'noindex');
+    return response;
+  }
   const url = request.nextUrl.clone();
   url.pathname = translated.pathname;
   const headers = new Headers(request.headers);
