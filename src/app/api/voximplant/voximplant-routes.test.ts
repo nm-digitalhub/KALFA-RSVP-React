@@ -9,7 +9,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // context); stub it, same convention as call-result-processing.test.ts.
 vi.mock('server-only', () => ({}));
 
-vi.mock('@/lib/data/call-attempts', () => ({
+// The real TERMINAL_STATUSES (the ctx route builds its refusal set from it); only the I/O is mocked.
+vi.mock('@/lib/data/call-attempts', async (importOriginal) => ({
+  TERMINAL_STATUSES: (await importOriginal<typeof import('@/lib/data/call-attempts')>()).TERMINAL_STATUSES,
   getCallContextByAccessToken: vi.fn(),
   getCallAttemptByAccessToken: vi.fn(),
   recordCallbackRequest: vi.fn(async () => ({ applied: true })),
