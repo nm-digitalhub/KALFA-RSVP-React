@@ -11,12 +11,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // guests-actions.test.ts pattern (the guests/ directory's precedent for action tests).
 vi.mock('server-only', () => ({}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
-// redirect() throws a NEXT_REDIRECT control-flow signal in real Next; model it
-// (same as guests-actions.test.ts) so the happy path is observable.
+// x-real-ip is what nginx sets from the socket; the x-forwarded-for value is a different, forged address so a
+// test that sees 203.0.113.5 proves the forged chain was not used. A test may swap `requestHeaders.current`.
+const requestHeaders = vi.hoisted(() => ({
+  current: new Headers({ 'x-real-ip': '203.0.113.5', 'x-forwarded-for': '198.51.100.66, 10.0.0.1', 'user-agent': 'UA/1' }),
+}));
 vi.mock('next/headers', () => ({
-  headers: vi.fn().mockResolvedValue(new Headers({ 'x-forwarded-for': '203.0.113.5, 10.0.0.1', 'user-agent': 'UA/1' })),
+  headers: vi.fn(async () => requestHeaders.current),
   cookies: vi.fn().mockResolvedValue({ set: vi.fn() }),
 }));
+// redirect() throws a NEXT_REDIRECT control-flow signal in real Next; model it
+// (same as guests-actions.test.ts) so the happy path is observable.
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
   return {
@@ -412,6 +417,17 @@ describe('approvePackageTermsAction — the customer approves the package terms'
       userAgent: 'UA/1',
     });
     expect(redirect).toHaveBeenCalledWith(`/app/events/${EVENT_ID}/campaign/${CAMPAIGN}/payment`);
+  });
+
+  it('a forged x-forwarded-for never reaches the agreement — without x-real-ip the address is unknown', async () => {
+    const socketHeaders = requestHeaders.current;
+    requestHeaders.current = new Headers({ 'x-forwarded-for': '198.51.100.66, 10.0.0.1', 'user-agent': 'UA/1' });
+    try {
+      await expect(approvePackageTermsAction(EVENT_ID, CAMPAIGN, {}, form())).rejects.toThrow('NEXT_REDIRECT');
+      expect(recordPackageApproval).toHaveBeenCalledWith(expect.objectContaining({ ip: null }));
+    } finally {
+      requestHeaders.current = socketHeaders;
+    }
   });
 
   it.each([

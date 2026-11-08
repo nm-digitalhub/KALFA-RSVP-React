@@ -33,6 +33,7 @@ import {
 } from '@/lib/validation/campaigns';
 import { rescheduleEventForAdmin } from '@/lib/data/admin/events';
 import { actionClient, returnUserError } from '@/lib/safe-action';
+import { socketClientIp } from '@/lib/security/client-ip';
 import { zfd } from 'zod-form-data';
 
 // A form whose fields this file does not read: the one-button forms (pause, close, cancel, the three sends, the event
@@ -171,7 +172,9 @@ export const approvePackageTermsAction = actionClient
   .bindArgsSchemas([z.uuid(), z.uuid()])
   .stateAction(async ({ parsedInput, bindArgsParsedInputs: [eventId, campaignId] }) => {
     const h = await headers();
-    const ip = h.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    // Evidence on the signed agreement (PDF and approve_package_terms), so the address is the one nginx
+    // saw on the socket, never the client-controlled x-forwarded-for. Unknown stays null.
+    const ip = socketClientIp((name) => h.get(name));
     const userAgent = h.get('user-agent');
 
     let result: Awaited<ReturnType<typeof recordPackageApproval>>;
