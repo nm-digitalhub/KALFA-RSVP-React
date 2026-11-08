@@ -26,7 +26,7 @@ import { recordWebhookEventFailure } from './webhooks';
 // in submit_rsvp: the row's last_error and the worker log carry the Supabase
 // cause behind the data layer's Hebrew message — never the token or the answers.
 const TOKEN = 'rsvp-token-secret-abc123';
-const ANSWERS = { status: 'attending' as const, adults: 2, kids: 1, meal_pref: 'צמחוני', note: 'הערה פרטית של האורח' };
+const ANSWERS = { status: 'attending' as const, headcount: 3, meal_pref: 'צמחוני', note: 'הערה פרטית של האורח' };
 const ROW = { id: 'row-1', attempts: 0 };
 
 async function failingSubmit(error: Record<string, unknown>): Promise<unknown> {

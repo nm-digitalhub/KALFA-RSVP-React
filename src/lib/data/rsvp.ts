@@ -53,8 +53,8 @@ export interface RsvpGuestInfo {
   expected_count: number | null;
   status: string;
   event_id: string;
-  confirmed_adults: number | null;
-  confirmed_kids: number | null;
+  /** How many are coming, as last answered (0 = no count given yet). */
+  confirmed_headcount: number;
   meal_pref: string | null;
   /**
    * Guest-supplied RSVP note (guests.rsvp_note), written by submit_rsvp. The
@@ -99,6 +99,14 @@ export type RsvpFailureReason =
   | 'invalid_count'
   | 'invalid_answers'
   | 'missing_required';
+
+/**
+ * One RSVP answer. `headcount` is the guest's own count (the web page, the voice
+ * agent's read-back): submit_rsvp stores it as the answer, final for the WhatsApp
+ * "how many" question. `null` means "coming" with no count given (the WhatsApp
+ * button, the call digit).
+ */
+export type RsvpSubmission = Omit<RsvpSubmitInput, 'headcount'> & { headcount: number | null };
 
 export type RsvpSubmitOutcome =
   | { ok: true; status: RsvpStatus; unchanged: boolean }
@@ -161,14 +169,22 @@ export async function getEventAttendeesPublic(
  */
 export async function submitRsvp(
   token: string,
-  input: RsvpSubmitInput,
+  input: RsvpSubmission,
 ): Promise<RsvpSubmitOutcome> {
   const supabase = createAdminClient();
+  // No count given: submit_rsvp's adults/kids shape, which keeps today's behaviour
+  // (counted as one, the WhatsApp flow then asks "how many"). Kept in this one
+  // place until the owner decides how a count-less "coming" is counted; then this
+  // branch and the RPC's _adults/_kids go (contract step of migration
+  // 20261108080252_rsvp_single_headcount).
+  const count =
+    input.headcount === null
+      ? { _adults: input.status === 'attending' ? 1 : 0, _kids: 0 }
+      : { _headcount: input.headcount };
   const { data, error } = await supabase.rpc('submit_rsvp', {
     _token: token,
     _status: input.status,
-    _adults: input.adults,
-    _kids: input.kids,
+    ...count,
     _meal: input.meal_pref ?? '',
     _note: input.note ?? '',
     _answers: (input.answers ?? {}) as Json,

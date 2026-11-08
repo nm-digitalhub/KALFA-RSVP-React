@@ -67,3 +67,9 @@ export const RATING_SUBMIT_RATE = { limit: intEnv('RATING_SUBMIT_LIMIT', 10), wi
 // submit_rsvp `_status` whitelist in the DB.
 export const RSVP_STATUSES = ['attending', 'declined', 'maybe'] as const;
 export type RsvpStatus = (typeof RSVP_STATUSES)[number];
+
+// Most people one RSVP answer may count ("how many are coming"): the bound the
+// page had when it asked adults and kids separately (50 + 50). Here, zod-free,
+// for the same reason as RSVP_STATUSES. The real per-guest ceiling is
+// expected_count, enforced inside submit_rsvp.
+export const HEADCOUNT_MAX = 100;

@@ -211,10 +211,24 @@ describe('happy path', () => {
             full_name: 'אורח א',
             phone: '0501112222',
             status: 'attending',
+            // An answer stored before the one-count question: no count, adults + kids.
+            confirmed_headcount: 0,
             confirmed_adults: 2,
             confirmed_kids: 1,
             rsvp_note: 'ללא גלוטן',
             meal_pref: 'צמחוני',
+          },
+          {
+            id: 'g2',
+            full_name: 'אורח ב',
+            phone: '0503334444',
+            status: 'attending',
+            // The one count wins (15: no ceiling of 10).
+            confirmed_headcount: 15,
+            confirmed_adults: 15,
+            confirmed_kids: 0,
+            rsvp_note: null,
+            meal_pref: null,
           },
         ],
         error: null,
@@ -229,11 +243,11 @@ describe('happy path', () => {
         phone: '0501112222',
         status: 'attending',
         statusLabel: 'מגיע',
-        confirmedAdults: 2,
-        confirmedKids: 1,
+        confirmedCount: 3,
         rsvpNote: 'ללא גלוטן',
         mealPref: 'צמחוני',
       }),
+      expect.objectContaining({ id: 'g2', confirmedCount: 15 }),
     ]);
   });
 });

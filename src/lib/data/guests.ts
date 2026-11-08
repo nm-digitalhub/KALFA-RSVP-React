@@ -69,7 +69,7 @@ export const GUEST_LIST_COLUMNS =
 // Columns for a single guest (edit form). Adds note/meal_pref but still
 // excludes rsvp_token and extras.
 export const GUEST_DETAIL_COLUMNS =
-  'id, full_name, phone, status, contact_status, group_id, expected_count, confirmed_adults, confirmed_kids, meal_pref, note, callback_requested, created_at, updated_at';
+  'id, full_name, phone, status, contact_status, group_id, expected_count, confirmed_adults, confirmed_kids, confirmed_headcount, meal_pref, note, callback_requested, created_at, updated_at';
 
 export const GROUP_COLUMNS = 'id, event_id, name, color, created_at';
 
@@ -136,6 +136,7 @@ export type GuestDetail = Pick<
   | 'expected_count'
   | 'confirmed_adults'
   | 'confirmed_kids'
+  | 'confirmed_headcount'
   | 'meal_pref'
   | 'note'
   | 'callback_requested'

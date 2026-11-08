@@ -256,8 +256,7 @@ export function SupportClient() {
                     <TableHead>שם</TableHead>
                     <TableHead>טלפון</TableHead>
                     <TableHead>סטטוס</TableHead>
-                    <TableHead>מבוגרים</TableHead>
-                    <TableHead>ילדים</TableHead>
+                    <TableHead>מגיעים</TableHead>
                     <TableHead>העדפת מזון</TableHead>
                     <TableHead>הערת RSVP</TableHead>
                   </TableRow>
@@ -272,8 +271,7 @@ export function SupportClient() {
                       <TableCell>
                         <Badge>{g.statusLabel}</Badge>
                       </TableCell>
-                      <TableCell>{g.confirmedAdults ?? '—'}</TableCell>
-                      <TableCell>{g.confirmedKids ?? '—'}</TableCell>
+                      <TableCell>{g.confirmedCount > 0 ? g.confirmedCount : '—'}</TableCell>
                       <TableCell>{g.mealPref ?? '—'}</TableCell>
                       <TableCell className="max-w-xs truncate">{g.rsvpNote ?? '—'}</TableCell>
                     </TableRow>

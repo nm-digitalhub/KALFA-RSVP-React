@@ -104,7 +104,8 @@ describe('processCallResult', () => {
     expect(writeReach).toHaveBeenCalledWith(
       expect.objectContaining({ channel: 'call', attemptId: AID, evidence: 'voximplant_call_completed' }),
     );
-    expect(submitRsvp).toHaveBeenCalledWith('tok', expect.objectContaining({ status: 'attending', adults: 1, kids: 0 }));
+    // A digit carries no count.
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', headcount: null });
     expect(recordRsvpFromCall).toHaveBeenCalledWith('ev1', 'g1', 'attending', AID);
   });
 
@@ -132,7 +133,7 @@ describe('processCallResult', () => {
     // The schema's refine is an OR, so {rsvp_method:'agent', rsvp_digit:'1'} is
     // accepted. The live scenario never sends both, but the digit path must be
     // gated on the METHOD too — otherwise a hand-crafted payload would replace
-    // the real adults/children the in-call save_rsvp already wrote with 1/0.
+    // the real count the in-call save_rsvp already wrote with a count-less answer.
     await processCallResult(
       row({ call_status: 'completed', rsvp_method: 'agent', rsvp_digit: '1' }),
     );
@@ -141,10 +142,10 @@ describe('processCallResult', () => {
     expect(recordRsvpFromCall).not.toHaveBeenCalled();
   });
 
-  it('completed digit 2 → RSVP declined (adults 0)', async () => {
+  it('completed digit 2 → RSVP declined, no count', async () => {
     vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'declined', unchanged: false } as never);
     await processCallResult(row({ call_status: 'completed', rsvp_digit: '2' }));
-    expect(submitRsvp).toHaveBeenCalledWith('tok', expect.objectContaining({ status: 'declined', adults: 0 }));
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'declined', headcount: null });
   });
 
   it('partial failure (writeReach throws) then retry re-runs billing + RSVP — NO action lost', async () => {
@@ -320,17 +321,17 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
     expect(r).toEqual({ status: 'saved' });
   });
 
-  it('attending → submitRsvp with REAL adult/child counts (kids ← children) + source marker; ok:true', async () => {
+  it('attending → submitRsvp with ONE count, the total the agent read back (adults + children) + source marker; ok:true', async () => {
     const r = await processCallRsvp(AID, { attending: true, adults: 2, children: 3 });
-    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', adults: 2, kids: 3 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', headcount: 5 });
     expect(recordRsvpFromCall).toHaveBeenCalledWith('ev1', 'g1', 'attending', AID);
     expect(r).toEqual({ status: 'saved' });
   });
 
-  it('declined → submitRsvp status declined with adults/kids zeroed', async () => {
+  it('declined → submitRsvp status declined with a zero count', async () => {
     vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'declined', unchanged: false } as never);
     await processCallRsvp(AID, { attending: false, adults: 4, children: 2 });
-    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'declined', adults: 0, kids: 0 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'declined', headcount: 0 });
   });
 
   it('does NOT bill (writeReach/insertInteraction untouched — billing stays on the completed path)', async () => {
@@ -373,7 +374,7 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
 
   it('processCallRsvpRow: parses the stored payload and delegates by message_id', async () => {
     await processCallRsvpRow(row({ attending: true, adults: 2, children: 0 }));
-    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', adults: 2, kids: 0 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', headcount: 2 });
   });
 
   it('processCallRsvpRow: bad stored payload → no-op', async () => {
@@ -381,17 +382,17 @@ describe('processCallRsvp (Tier 2 save_rsvp)', () => {
     expect(getCallAttemptById).not.toHaveBeenCalled();
   });
 
-  it('canonical status maybe → submitRsvp maybe with zeroed counts', async () => {
+  it('canonical status maybe → submitRsvp maybe with a zero count', async () => {
     vi.mocked(submitRsvp).mockResolvedValue({ ok: true, status: 'maybe', unchanged: false } as never);
     const r = await processCallRsvp(AID, { status: 'maybe', adults: 2, children: 1 });
-    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'maybe', adults: 0, kids: 0 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'maybe', headcount: 0 });
     expect(recordRsvpFromCall).toHaveBeenCalledWith('ev1', 'g1', 'maybe', AID);
     expect(r).toEqual({ status: 'saved' });
   });
 
-  it('canonical status attending → counts pass through', async () => {
+  it('canonical status attending → the agent\'s adults + children arrive as one count', async () => {
     await processCallRsvp(AID, { status: 'attending', adults: 3, children: 2 });
-    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', adults: 3, kids: 2 });
+    expect(submitRsvp).toHaveBeenCalledWith('tok', { status: 'attending', headcount: 5 });
   });
 });
 

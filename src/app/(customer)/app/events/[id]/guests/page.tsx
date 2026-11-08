@@ -79,15 +79,15 @@ function webhookStateBadges(g: GuestListItem): ReactNode {
   );
 }
 
-// Confirmed headcount for an attending guest (WhatsApp-confirmed headcount,
-// else adults + kids). Returns null for non-attending guests and when no count
-// was given. Shared by table + card so the "prefers WhatsApp-confirmed
-// headcount" rule lives in one place.
+// Confirmed count for an attending guest: the count the guest gave (web page,
+// WhatsApp answer, voice agent), else adults + kids from answers stored before
+// the one-count question (same order as guest_effective_attending). Returns null
+// for non-attending guests and when no count was given. Shared by table + card.
 function actualConfirmedCount(g: GuestListItem): number | null {
   if (g.status !== 'attending') return null;
 
   const headcount = g.confirmed_headcount ?? 0;
-  if (headcount >= 1 && headcount <= 10) return headcount;
+  if (headcount >= 1) return headcount;
 
   const adults = Math.max(g.confirmed_adults ?? 0, 0);
   const kids = Math.max(g.confirmed_kids ?? 0, 0);
@@ -112,8 +112,6 @@ function headcountValue(g: GuestListItem): ReactNode {
 
   const actual = actualConfirmedCount(g);
   const effective = effectiveAttendingCount(g);
-  const adults = Math.max(g.confirmed_adults ?? 0, 0);
-  const kids = Math.max(g.confirmed_kids ?? 0, 0);
 
   return (
     <div className="space-y-0.5">
@@ -124,7 +122,7 @@ function headcountValue(g: GuestListItem): ReactNode {
         ) : null}
       </span>
       <p className="text-xs text-muted-foreground">
-        מבוגרים: {adults} · ילדים: {kids} · צפי: {g.expected_count ?? '—'} · נספר כ:{' '}
+        צפי: {g.expected_count ?? '—'} · נספר כ:{' '}
         {effective ?? '—'}
       </p>
     </div>
@@ -136,7 +134,7 @@ function headcountValue(g: GuestListItem): ReactNode {
 // guest is a compact list row instead — two lines plus optional extras:
 //   line 1: status badge · name · edit/delete (icons)
 //   line 2: phone · group · headcount   |   contact-status quick-select
-//   line 3: adults · kids · expected · counted-as (attending guests only)
+//   line 3: expected · counted-as (attending guests only)
 //   line 4: over-invite flag + WhatsApp webhook badges (only when present)
 // Denser than a stacked card (~90–115px vs ~230px) while dropping no
 // information and using no fixed width.
@@ -152,8 +150,6 @@ function GuestCard({
   const webhook = webhookStateBadges(g);
   const actualCount = actualConfirmedCount(g);
   const effectiveCount = effectiveAttendingCount(g);
-  const adults = Math.max(g.confirmed_adults ?? 0, 0);
-  const kids = Math.max(g.confirmed_kids ?? 0, 0);
 
   return (
     <li className="rounded-lg border border-border bg-card px-3 py-2.5">
@@ -189,7 +185,7 @@ function GuestCard({
 
       {effectiveCount !== null ? (
         <p className="mt-1 text-xs text-muted-foreground">
-          מבוגרים: {adults} · ילדים: {kids} · צפי: {g.expected_count ?? '—'} · נספר כ:{' '}
+          צפי: {g.expected_count ?? '—'} · נספר כ:{' '}
           {effectiveCount}
         </p>
       ) : null}
@@ -333,7 +329,7 @@ export default async function GuestsPage({ params, searchParams }: PageProps) {
 
       {/* People-level truth for the WHOLE event (unaffected by filters):
           a household row invited as 4 counts as 4 people; "אישרו" prefers the
-          WhatsApp-confirmed headcount over adults+kids. */}
+          count the guest gave over adults+kids from older answers. */}
       {totals.rows > 0 ? (
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-lg border border-border bg-card px-4 py-3">

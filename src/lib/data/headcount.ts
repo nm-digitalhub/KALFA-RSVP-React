@@ -1,12 +1,14 @@
 import 'server-only';
 
+import { HEADCOUNT_MAX } from '@/lib/constants';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
 
 // Headcount-after-RSVP flow (plans/rsvp-headcount-flow-plan.md, owner
 // decisions 2026-07-05): right after a guest presses "מגיע/ה" we ask, inside
-// the 24h service window, how many people are coming (1-10).
+// the 24h service window, how many people are coming (one number, up to
+// HEADCOUNT_MAX — the same bound as the web page; owner 08.11.2026 lifted the old 1-10 range).
 //   confirmed_headcount 0  = not answered yet (the owner's chosen default).
 //   A "0" reply re-asks the question, capped at HEADCOUNT_MAX_ATTEMPTS.
 //   Anything non-numeric is ignored (stays 0) — never nag on free text.
@@ -14,14 +16,14 @@ import { sendWhatsAppText } from '@/lib/whatsapp/client';
 
 export const HEADCOUNT_MAX_ATTEMPTS = 3;
 export const HEADCOUNT_QUESTION =
-  'תודה על האישור! 🎉\nכמה תגיעו בסך הכול? השיבו במספר (1–10).';
+  'תודה על האישור! 🎉\nכמה תגיעו בסך הכול? השיבו במספר.';
 
 // Personalized variant: when the owner recorded an invited size, remind the
 // guest of it — informational only, NEVER a cap (an answer above it is a
 // legitimate business overage, flagged to the OWNER via over_invited).
 export function headcountQuestionFor(expectedCount: number | null): string {
   if (expectedCount && expectedCount > 0) {
-    return `תודה על האישור! 🎉\nלפי הרישום שלנו הוזמנתם כ־${expectedCount} אנשים. כמה תגיעו בסך הכול? השיבו במספר (1–10).`;
+    return `תודה על האישור! 🎉\nלפי הרישום שלנו הוזמנתם כ־${expectedCount} אנשים. כמה תגיעו בסך הכול? השיבו במספר.`;
   }
   return HEADCOUNT_QUESTION;
 }
@@ -82,12 +84,11 @@ export async function handleHeadcountReply(
   rawText: string,
 ): Promise<boolean> {
   const text = rawText.trim();
-  // PRODUCT DEBT (docs/product-debt.md): the global 1-10 answer range is
-  // inconsistent with expected_count > 10 — a 12-person household cannot give
-  // its true size over WhatsApp and must use the web link. Future: raise the
-  // cap to max(10, expected_count) or offer the RSVP link in the question.
-  if (!/^(10|[0-9])$/.test(text)) return false;
+  // One whole number up to HEADCOUNT_MAX. expected_count is not a cap here: an
+  // answer above it is a legitimate overage, flagged to the owner via over_invited.
+  if (!/^\d{1,3}$/.test(text)) return false;
   const n = Number(text);
+  if (n > HEADCOUNT_MAX) return false;
 
   const admin = createAdminClient();
   const { data: guests } = await admin

@@ -336,17 +336,17 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
     // Still a billable reach (a button tap is a human reply).
     expect(recordReached).toHaveBeenCalledTimes(1);
     // Exactly one guest behind the contact (within the same event) → submitted
-    // via the shared atomic RPC. attending => 1 adult (the RPC rejects 0).
+    // via the shared atomic RPC. A button carries no count (the "how many"
+    // question follows an attending press).
     expect(getGuestsForContact).toHaveBeenCalledWith('e1', 'k1');
     expect(submitRsvp).toHaveBeenCalledWith('tok-1', {
       status: 'attending',
-      adults: 1,
-      kids: 0,
+      headcount: null,
     });
     expect(recordRsvpFromWhatsapp).toHaveBeenCalledWith('e1', 'g1', 'attending');
   });
 
-  it('records a declined RSVP from an interactive button reply — 0 counts', async () => {
+  it('records a declined RSVP from an interactive button reply — no count', async () => {
     await processWebhookEvent(
       buttonRow({
         type: 'interactive',
@@ -356,13 +356,12 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
 
     expect(submitRsvp).toHaveBeenCalledWith('tok-1', {
       status: 'declined',
-      adults: 0,
-      kids: 0,
+      headcount: null,
     });
     expect(recordRsvpFromWhatsapp).toHaveBeenCalledWith('e1', 'g1', 'declined');
   });
 
-  it('records a maybe RSVP from an interactive list reply — 0 counts', async () => {
+  it('records a maybe RSVP from an interactive list reply — no count', async () => {
     await processWebhookEvent(
       buttonRow({
         type: 'interactive',
@@ -372,8 +371,7 @@ describe('processWebhookEvent — RSVP from a quick-reply button (C9)', () => {
 
     expect(submitRsvp).toHaveBeenCalledWith('tok-1', {
       status: 'maybe',
-      adults: 0,
-      kids: 0,
+      headcount: null,
     });
     expect(recordRsvpFromWhatsapp).toHaveBeenCalledWith('e1', 'g1', 'maybe');
   });

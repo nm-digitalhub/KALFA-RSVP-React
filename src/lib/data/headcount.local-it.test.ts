@@ -224,7 +224,7 @@ describe.skipIf(!RUN)('headcount flow — finding 2 and E3 (partial failure), re
       const id = `wamid.${f.tag}.mark-crash`;
       await crashedAfterInsert(f, id);
       // what the crashed first attempt had already done: the bot's submit_rsvp call
-      expect((await submitRsvp(f.rsvpToken, { status: 'declined', adults: 0, kids: 0 })).ok).toBe(true);
+      expect((await submitRsvp(f.rsvpToken, { status: 'declined', headcount: null })).ok).toBe(true);
       await processRow(await press(f, 'rsvp_declined', id));
       const marker = await pool.query(
         `select count(*)::int n from public.activity_log where event_id = $1 and action = 'rsvp.from_whatsapp'`,

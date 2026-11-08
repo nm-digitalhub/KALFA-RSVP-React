@@ -15,16 +15,16 @@ import {
   asEventType,
   formatEventDateLine,
 } from '@/lib/data/event-display';
-import { RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
+import { HEADCOUNT_MAX, RSVP_STATUSES, type RsvpStatus } from '@/lib/constants';
 import type { RsvpAttendee, RsvpView } from '@/lib/data/rsvp';
 import { actionFormError, type ActionFormResult } from '@/lib/action-result';
 import { useT } from 'next-i18next/client';
 
 import { submitRsvpAction } from './actions';
 
-// Absolute fallback cap when the guest has no invited count (expected_count
-// NULL) — mirrors COUNT_MAX in the Zod schema so the UI never offers a value
-// the server would reject.
+// The most the page offers when the host gave no invited count (expected_count
+// NULL). With a count, the page offers up to it; never more than HEADCOUNT_MAX,
+// so the UI never offers a value the server would reject.
 const COUNT_FALLBACK_CAP = 50;
 
 // Guest-page form fields. The page's whole audience is on a phone, so every
@@ -46,6 +46,7 @@ function Stepper({
   label,
   name,
   value,
+  min = 0,
   max,
   onChange,
   describedBy,
@@ -53,9 +54,10 @@ function Stepper({
   label: string;
   name: string;
   value: number;
+  min?: number;
   max: number;
   onChange: (next: number) => void;
-  // id of a FieldError shared by several steppers (the adults/kids total).
+  // id of the FieldError that describes this field.
   describedBy?: string;
 }) {
   const { t } = useT('public');
@@ -73,10 +75,10 @@ function Stepper({
       >
         <button
           type="button"
-          onClick={() => onChange(Math.max(0, value - 1))}
+          onClick={() => onChange(Math.max(min, value - 1))}
           aria-label={t('r.form.stepper.decrease', 'הפחתת {{label}}', { label })}
           className={STEPPER_BUTTON_CLASS}
-          disabled={value <= 0}
+          disabled={value <= min}
         >
           −
         </button>
@@ -141,23 +143,22 @@ export function RsvpForm({
     ? (guest.status as RsvpStatus)
     : null;
   const [status, setStatus] = useState<RsvpStatus | null>(initialStatus);
-  const [adults, setAdults] = useState<number>(
-    guest.confirmed_adults && guest.confirmed_adults > 0 ? guest.confirmed_adults : 1,
+  // One question, how many are coming: up to the invited count (or the fallback
+  // when the host gave none), starting from the last answer or 1.
+  const headcountCap = Math.min(guest.expected_count ?? COUNT_FALLBACK_CAP, HEADCOUNT_MAX);
+  const [headcount, setHeadcount] = useState<number>(
+    Math.min(Math.max(guest.confirmed_headcount, 1), headcountCap),
   );
-  const [kids, setKids] = useState<number>(guest.confirmed_kids ?? 0);
 
   const eventDate = formatEventDateLine(event.event_date);
   const attending = status === 'attending';
-  // Combined ceiling: adults + kids must not exceed expected_count (or the
-  // sanity cap when uninvited-count). Per-field caps leave the remainder.
-  const hardCap = guest.expected_count ?? COUNT_FALLBACK_CAP;
 
   // The action's input is the raw FormData (its answer_<q_key> names are
   // dynamic), so its field errors are read by name through the shared shape.
   const fieldErrors: NonNullable<ActionFormResult['validationErrors']>['fieldErrors'] | undefined =
     state.validationErrors?.fieldErrors;
   const statusErrors = fieldErrors?.status;
-  const adultsErrors = fieldErrors?.adults;
+  const headcountErrors = fieldErrors?.headcount;
   const mealErrors = fieldErrors?.meal_pref;
   const noteErrors = fieldErrors?.note;
 
@@ -260,25 +261,16 @@ export function RsvpForm({
 
           {attending ? (
             <div className="space-y-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2 duration-300 ease-k-out">
-              <div className="grid grid-cols-2 gap-4">
-                <Stepper
-                  label={t('r.form.adults', 'מבוגרים')}
-                  name="adults"
-                  value={adults}
-                  max={hardCap - kids}
-                  onChange={setAdults}
-                  describedBy={adultsErrors?.length ? 'adults-err' : undefined}
-                />
-                <Stepper
-                  label={t('r.form.kids', 'ילדים')}
-                  name="kids"
-                  value={kids}
-                  max={hardCap - adults}
-                  onChange={setKids}
-                  describedBy={adultsErrors?.length ? 'adults-err' : undefined}
-                />
-              </div>
-              <FieldError id="adults-err" errors={adultsErrors} />
+              <Stepper
+                label={t('r.form.headcount', 'כמה מגיעים?')}
+                name="headcount"
+                value={headcount}
+                min={1}
+                max={headcountCap}
+                onChange={setHeadcount}
+                describedBy={headcountErrors?.length ? 'headcount-err' : undefined}
+              />
+              <FieldError id="headcount-err" errors={headcountErrors} />
 
               {/* Owner toggle (events.show_meal_pref). `!== false` so a stale
                   payload missing the key (old DB, new code) fails OPEN — the
@@ -394,7 +386,7 @@ export function RsvpForm({
                 {attending ? (
                   <p className="mt-1 text-sm text-muted-foreground">
                     {t('r.form.success.summary', {
-                      count: adults + kids,
+                      count: headcount,
                       eventType: eventTypeLabels(t)[eventType],
                       defaultValue: 'נתראה ב{{eventType}} — נרשמו {{count}} משתתפים.',
                       defaultValue_one: 'נתראה ב{{eventType}} — נרשם אדם אחד.',

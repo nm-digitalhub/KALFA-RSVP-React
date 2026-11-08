@@ -151,8 +151,8 @@ export interface SupportGuestView {
   phone: string | null;
   status: string;
   statusLabel: string;
-  confirmedAdults: number | null;
-  confirmedKids: number | null;
+  /** How many are coming, as the guest answered (0 = no count given). */
+  confirmedCount: number;
   rsvpNote: string | null;
   mealPref: string | null;
 }
@@ -191,7 +191,7 @@ export async function listGuestsForSupportView(
   const { data, error } = await admin
     .from('guests')
     .select(
-      'id, full_name, phone, status, confirmed_adults, confirmed_kids, rsvp_note, meal_pref',
+      'id, full_name, phone, status, confirmed_headcount, confirmed_adults, confirmed_kids, rsvp_note, meal_pref',
     )
     .eq('event_id', eventId)
     .order('full_name', { ascending: true });
@@ -205,8 +205,12 @@ export async function listGuestsForSupportView(
     phone: g.phone,
     status: g.status,
     statusLabel: GUEST_STATUS_LABELS[g.status] ?? g.status,
-    confirmedAdults: g.confirmed_adults,
-    confirmedKids: g.confirmed_kids,
+    // The count the guest gave, else adults + kids from answers stored before the
+    // one-count question (guest_effective_attending order).
+    confirmedCount:
+      g.confirmed_headcount >= 1
+        ? g.confirmed_headcount
+        : Math.max(g.confirmed_adults ?? 0, 0) + Math.max(g.confirmed_kids ?? 0, 0),
     rsvpNote: g.rsvp_note,
     mealPref: g.meal_pref,
   }));

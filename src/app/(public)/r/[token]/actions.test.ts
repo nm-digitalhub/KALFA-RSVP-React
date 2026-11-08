@@ -10,16 +10,16 @@ vi.mock('@/i18n.server', () => ({
 }));
 vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers()) }));
 
-const { rateLimit, submitRsvp, mirrorEq } = vi.hoisted(() => ({
+const { rateLimit, submitRsvp, createAdminClient } = vi.hoisted(() => ({
   rateLimit: vi.fn(),
   submitRsvp: vi.fn(),
-  mirrorEq: vi.fn(),
+  createAdminClient: vi.fn(),
 }));
 vi.mock('@/lib/security/rate-limit', () => ({ getClientIp: () => '203.0.113.7', rateLimit }));
 vi.mock('@/lib/data/rsvp', () => ({ submitRsvp }));
-vi.mock('@/lib/supabase/admin', () => ({
-  createAdminClient: () => ({ from: () => ({ update: () => ({ eq: mirrorEq }) }) }),
-}));
+// The action must not write the guest row itself: the count is saved by submit_rsvp,
+// in one statement. A second write here once left attending guests with 0 people.
+vi.mock('@/lib/supabase/admin', () => ({ createAdminClient }));
 
 import { getT } from '@/lib/i18n';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
@@ -39,12 +39,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   rateLimit.mockResolvedValue({ allowed: true });
   submitRsvp.mockResolvedValue({ ok: true, status: 'attending', unchanged: false });
-  mirrorEq.mockResolvedValue({ error: null });
 });
 
 describe('submitRsvpAction', () => {
   it('records the answer for the bound token, with the custom answers kept flat (a q_key may hold "." or "[")', async () => {
-    const form = fd({ status: 'attending', adults: '2', kids: '1', meal_pref: ' צמחוני ', note: '', show_in_guest_list: 'on' });
+    const form = fd({ status: 'attending', headcount: '3', meal_pref: ' צמחוני ', note: '', show_in_guest_list: 'on' });
     form.set('answer_diet.pref', ' ללא גלוטן ');
     form.set('answer_seat[1]', 'ליד הבמה');
     form.set('answer_empty', '   ');
@@ -52,13 +51,19 @@ describe('submitRsvpAction', () => {
     expect(await submitRsvpAction(TOKEN, {}, form)).toEqual({ data: { notice: 'אישור ההגעה נשמר בהצלחה. תודה!' } });
     expect(submitRsvp).toHaveBeenCalledWith(TOKEN, {
       status: 'attending',
-      adults: 2,
-      kids: 1,
+      headcount: 3,
       meal_pref: 'צמחוני',
       answers: { 'diet.pref': 'ללא גלוטן', 'seat[1]': 'ליד הבמה' },
       show_in_guest_list: true,
     });
-    expect(mirrorEq).toHaveBeenCalledWith('rsvp_token', TOKEN);
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('a family of 15 reaches submit_rsvp as 15: nothing cuts the count at 10', async () => {
+    await submitRsvpAction(TOKEN, {}, fd({ status: 'attending', headcount: '15' }));
+
+    expect(submitRsvp).toHaveBeenCalledWith(TOKEN, expect.objectContaining({ status: 'attending', headcount: 15 }));
+    expect(createAdminClient).not.toHaveBeenCalled();
   });
 
   it('the rate-limit key is the fingerprint of THIS bound token — one bucket per guest link and IP', async () => {
@@ -77,7 +82,6 @@ describe('submitRsvpAction', () => {
     expect(await submitRsvpAction(TOKEN, {}, fd({ status: 'declined' }))).toEqual({
       data: { notice: 'התשובה שלך כבר נשמרה אצלנו. תודה!' },
     });
-    expect(mirrorEq).not.toHaveBeenCalled();
   });
 
   it('rate limited → its line, keyed on the fingerprint and never the raw token, before anything is parsed', async () => {
@@ -91,12 +95,12 @@ describe('submitRsvpAction', () => {
   });
 
   it('invalid fields → the form line plus exactly the field errors as before, nothing submitted', async () => {
-    const fields = { status: 'attending', adults: '0', kids: '0' };
+    const fields = { status: 'attending', headcount: '0' };
 
     const result = await submitRsvpAction(TOKEN, {}, fd(fields));
 
     expect(result).toEqual({
-      validationErrors: { formErrors: [CHECK_FIELDS], fieldErrors: { adults: ['נא לציין לפחות אורח אחד'] } },
+      validationErrors: { formErrors: [CHECK_FIELDS], fieldErrors: { headcount: ['נא לציין לפחות אורח אחד'] } },
     });
     expect(submitRsvp).not.toHaveBeenCalled();
   });
@@ -108,7 +112,7 @@ describe('submitRsvpAction', () => {
     const result = await submitRsvpAction(TOKEN, {}, form);
 
     const old = rsvpSubmitSchema(getT('public')).safeParse({
-      status: 'maybe', adults: 0, kids: 0, answers: { q1: 'א'.repeat(501) }, show_in_guest_list: false,
+      status: 'maybe', headcount: 0, answers: { q1: 'א'.repeat(501) }, show_in_guest_list: false,
     });
     expect(result).toEqual({
       validationErrors: { formErrors: [CHECK_FIELDS], fieldErrors: z.flattenError(old.error!).fieldErrors },
@@ -121,25 +125,16 @@ describe('submitRsvpAction', () => {
     ['closed', 'האירוע אינו פתוח כעת לאישורי הגעה.'],
     ['deadline_passed', 'המועד האחרון לאישור הגעה חלף.'],
     ['invalid_count', 'מספר האורחים אינו תקין.'],
-  ])('submit_rsvp reason %s → its line, no headcount mirror', async (reason, line) => {
+  ])('submit_rsvp reason %s → its line', async (reason, line) => {
     submitRsvp.mockResolvedValue({ ok: false, reason });
 
-    expect(await submitRsvpAction(TOKEN, {}, fd({ status: 'attending', adults: '1' }))).toEqual({ serverError: line });
-    expect(mirrorEq).not.toHaveBeenCalled();
-  });
-
-  it('a failed headcount mirror never fails a recorded RSVP', async () => {
-    mirrorEq.mockRejectedValue(new Error('mirror down'));
-
-    expect(await submitRsvpAction(TOKEN, {}, fd({ status: 'attending', adults: '1' }))).toEqual({
-      data: { notice: 'אישור ההגעה נשמר בהצלחה. תודה!' },
-    });
+    expect(await submitRsvpAction(TOKEN, {}, fd({ status: 'attending', headcount: '1' }))).toEqual({ serverError: line });
   });
 
   it('an empty bound token is refused after the rate limit, before submit_rsvp', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    expect(await submitRsvpAction('', {}, fd({ status: 'attending', adults: '1' }))).toEqual({
+    expect(await submitRsvpAction('', {}, fd({ status: 'attending', headcount: '1' }))).toEqual({
       serverError: 'הפעולה נכשלה. נסו שוב.',
     });
     expect(rateLimit).toHaveBeenCalledTimes(1);
@@ -157,8 +152,7 @@ describe('submitRsvpAction — a failed submit_rsvp', () => {
     );
     const form = new FormData();
     form.set('status', 'attending');
-    form.set('adults', '1');
-    form.set('kids', '0');
+    form.set('headcount', '1');
 
     const result = await submitRsvpAction(TOKEN, {}, form);
 

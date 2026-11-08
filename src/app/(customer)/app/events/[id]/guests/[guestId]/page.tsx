@@ -61,11 +61,15 @@ export default async function EditGuestPage({ params }: PageProps) {
   // request host (see getAppUrl). Always an absolute URL.
   const rsvpUrl = linkInfo ? await getAppUrl(`/r/${linkInfo.token}`) : '';
 
-  // The guest's own confirmed counts (the RSVP result) — not shown in the
+  // The guest's own confirmed count (the RSVP result) — not shown in the
   // owner edit form, which carries only the editable status.
-  const confirmedAdults = guest.confirmed_adults ?? 0;
-  const confirmedKids = guest.confirmed_kids ?? 0;
-  const hasResponse = confirmedAdults > 0 || confirmedKids > 0;
+  // How many are coming: the count the guest gave, else adults + kids from
+  // answers stored before the one-count question (guest_effective_attending order).
+  const confirmedCount =
+    guest.confirmed_headcount >= 1
+      ? guest.confirmed_headcount
+      : Math.max(guest.confirmed_adults ?? 0, 0) + Math.max(guest.confirmed_kids ?? 0, 0);
+  const hasResponse = confirmedCount > 0;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -96,7 +100,7 @@ export default async function EditGuestPage({ params }: PageProps) {
         <section className="rounded-lg border border-input p-4 text-sm">
           <h2 className="mb-1 font-semibold">אישור הגעה שהתקבל</h2>
           <p className="text-muted-foreground">
-            {confirmedAdults} מבוגרים, {confirmedKids} ילדים
+            מגיעים: {confirmedCount}
           </p>
           {guest.meal_pref ? (
             <p className="mt-1 text-muted-foreground">

@@ -487,10 +487,10 @@ async function processMessage(
     );
     if (guests.length === 1) {
       const guest = guests[0];
+      // A button carries no count: the "how many" question follows an attending press.
       const outcome = await submitRsvp(guest.rsvp_token, {
         status: rsvpStatus,
-        adults: rsvpStatus === 'attending' ? 1 : 0,
-        kids: 0,
+        headcount: null,
       });
       if (outcome.ok && !outcome.unchanged) {
         await recordRsvpFromWhatsapp(resolved.eventId, guest.id, rsvpStatus);

@@ -159,11 +159,10 @@
       "notFound": "This RSVP link is invalid or no longer active."
     },
     "form": {
-      "adults": "Adults",
       "attendance": {
         "legend": "Will you be attending?"
       },
-      "kids": "Children",
+      "headcount": "",
       "mealPref": {
         "label": "Meal preference (optional)"
       },

@@ -5,6 +5,7 @@ vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 vi.mock('@/lib/data/outreach-config', () => ({ getWhatsAppConfig: vi.fn() }));
 vi.mock('@/lib/whatsapp/client', () => ({ sendWhatsAppText: vi.fn() }));
 
+import { HEADCOUNT_MAX } from '@/lib/constants';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendWhatsAppText } from '@/lib/whatsapp/client';
@@ -49,7 +50,7 @@ describe('handleHeadcountReply', () => {
   const AWAITING = { data: [{ id: 'g1', headcount_attempts: 1 }], error: null };
   const PHONE = { data: { normalized_phone: '+972501111111' }, error: null };
 
-  it('saves 1-10, stamps answered_at, and sends the ack', async () => {
+  it('saves the count, stamps answered_at, and sends the ack', async () => {
     const { client, calls } = makeAdmin({ guests: [AWAITING, {}], contacts: [PHONE] });
     vi.mocked(createAdminClient).mockReturnValue(client as never);
     vi.mocked(getWhatsAppConfig).mockResolvedValue(CONFIG as never);
@@ -104,8 +105,20 @@ describe('handleHeadcountReply', () => {
     vi.mocked(createAdminClient).mockReturnValue(client as never);
 
     expect(await handleHeadcountReply('e1', 'c1', 'תודה רבה!')).toBe(false);
-    expect(await handleHeadcountReply('e1', 'c1', '11')).toBe(false);
+    expect(await handleHeadcountReply('e1', 'c1', String(HEADCOUNT_MAX + 1))).toBe(false);
+    expect(await handleHeadcountReply('e1', 'c1', '2.5')).toBe(false);
     expect(sendWhatsAppText).not.toHaveBeenCalled();
+  });
+
+  it('a family of 15 answers 15: there is no ceiling of 10', async () => {
+    const { client, calls } = makeAdmin({ guests: [AWAITING, {}], contacts: [PHONE] });
+    vi.mocked(createAdminClient).mockReturnValue(client as never);
+    vi.mocked(getWhatsAppConfig).mockResolvedValue(CONFIG as never);
+    vi.mocked(sendWhatsAppText).mockResolvedValue({ kind: 'accepted', providerId: 'w1' });
+
+    expect(await handleHeadcountReply('e1', 'c1', '15')).toBe(true);
+    const upd = calls.update.find(([t]) => t === 'guests')?.[1] as Record<string, unknown>;
+    expect(upd.confirmed_headcount).toBe(15);
   });
 
   it('ambiguous contact (two awaiting guests) is never guessed', async () => {
@@ -169,7 +182,7 @@ describe('headcountQuestionFor', () => {
   it('mentions the invited size when present — informational, never a cap', () => {
     const q = headcountQuestionFor(4);
     expect(q).toContain('כ־4 אנשים');
-    expect(q).toContain('(1–10)');
+    expect(q).not.toContain('(1–10)');
   });
 
   it('falls back to the base question without an invited size', () => {

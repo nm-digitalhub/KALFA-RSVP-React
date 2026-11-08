@@ -4,9 +4,14 @@ import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
 
 // Framework boundary only: the public RSVP server action reads request headers
-// (rate-limit key). Nothing in the RSVP / webhook logic is mocked.
+// (rate-limit key) and the request-scoped translations (@/i18n.server → next-i18next,
+// which needs the Next.js runtime; the same stand-in as the action's unit test).
+// Nothing in the RSVP / webhook logic is mocked.
 vi.mock('next/headers', () => ({
   headers: async () => new Headers({ 'x-forwarded-for': '127.0.0.1' }),
+}));
+vi.mock('@/i18n.server', () => ({
+  getT: async () => ({ t: (_key: string, defaultValue: string) => defaultValue }),
 }));
 
 import {
@@ -159,25 +164,25 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
     expect(a.rows[0].n).toBe(1);
   });
 
-  // FINDING #1 (reproduced). submitRsvp is called from the bot with only
-  // status/adults/kids; the RPC's last-write-wins projection then writes '' / false
+  // FINDING #1 (reproduced). submitRsvp is called from the bot with only the
+  // status (no count); the RPC's last-write-wins projection then writes '' / false
   // over everything the guest filled on the web page. Expected to FAIL until the
   // product decision + fix land; `it.fails` turns green-on-failure so the suite
   // stays runnable, and flips red the moment the behaviour is fixed (then drop `.fails`).
   it.fails('KNOWN BUG #1: a WhatsApp "attending" press keeps the meal, note and list opt-in the guest gave on the web page', async () => {
     const f = await fixture();
     const web = await submitRsvp(f.rsvpToken, {
-      status: 'attending', adults: 2, kids: 1, meal_pref: 'veg', note: 'allergic to nuts', answers: {}, show_in_guest_list: true,
+      status: 'attending', headcount: 3, meal_pref: 'veg', note: 'allergic to nuts', answers: {}, show_in_guest_list: true,
     });
     expect(web.ok).toBe(true);
     await processRow(await inbox(f, button(f, 'rsvp_attending')));
     expect(await guest(f)).toMatchObject({ meal_pref: 'veg', rsvp_note: 'allergic to nuts', show_in_guest_list: true });
   });
 
-  it('characterization of finding #1: the same press today wipes meal/note/opt-in and resets 2+1 to 1+0', async () => {
+  it('characterization of finding #1: the same press today wipes meal/note/opt-in and resets the count of 3 to 1+0', async () => {
     const f = await fixture();
     await submitRsvp(f.rsvpToken, {
-      status: 'attending', adults: 2, kids: 1, meal_pref: 'veg', note: 'allergic to nuts', answers: {}, show_in_guest_list: true,
+      status: 'attending', headcount: 3, meal_pref: 'veg', note: 'allergic to nuts', answers: {}, show_in_guest_list: true,
     });
     await processRow(await inbox(f, button(f, 'rsvp_attending')));
     expect(await guest(f)).toMatchObject({
@@ -187,9 +192,9 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
 
   // ── finding #1, extended: every entry point that can overwrite a web answer ──
   // The web answer is given through the REAL page server action (submitRsvpAction:
-  // rate limit → Zod → submit_rsvp → headcount mirror), the same code a browser runs.
+  // rate limit → Zod → submit_rsvp), the same code a browser runs.
   const WEB_ANSWER = {
-    status: 'attending', adults: '2', kids: '1', meal_pref: 'veg', note: 'allergic to nuts',
+    status: 'attending', headcount: '3', meal_pref: 'veg', note: 'allergic to nuts',
     show_in_guest_list: 'on',
   } as const;
   const webSubmit = async (f: Fixture, fields: Record<string, string> = WEB_ANSWER) => {
@@ -198,8 +203,9 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
     const res = await scope.track(submitRsvpAction(f.rsvpToken, {} as never, fd));
     expect(res, JSON.stringify(res)).toMatchObject({ data: { notice: expect.any(String) } });
   };
+  // One count: stored as the answer, and projected onto the old adults/kids pair as 3 + 0.
   const WEB_STATE = {
-    status: 'attending', confirmed_adults: 2, confirmed_kids: 1, meal_pref: 'veg', rsvp_note: 'allergic to nuts',
+    status: 'attending', confirmed_adults: 3, confirmed_kids: 0, meal_pref: 'veg', rsvp_note: 'allergic to nuts',
     show_in_guest_list: true, confirmed_headcount: 3,
   };
   const pressAt = (f: Fixture, payload: string, tsSeconds: number, messageId?: string) =>
@@ -207,7 +213,7 @@ describe.skipIf(!RUN)('processWebhookEvent (message) — real code, local DB', (
   const responses = async (f: Fixture) =>
     (await pool.query(`select count(*)::int n from public.rsvp_responses where guest_id = $1`, [f.guestId])).rows[0].n as number;
 
-  it('baseline: the real page action stores counts, meal, note, opt-in and mirrors the headcount', async () => {
+  it('baseline: the real page action stores the count as the answer, with meal, note and opt-in', async () => {
     const f = await fixture();
     await webSubmit(f);
     const g = await guest(f);

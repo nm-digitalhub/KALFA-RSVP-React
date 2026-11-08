@@ -66,8 +66,7 @@ export const submitRsvpAction = actionClient
     const schema = rsvpSubmitSchema(t);
     const parsed = schema.safeParse({
       status: formData.get('status'),
-      adults: Number(formData.get('adults') ?? 0),
-      kids: Number(formData.get('kids') ?? 0),
+      headcount: Number(formData.get('headcount') ?? 0),
       meal_pref: trimmedOrUndefined(formData.get('meal_pref')),
       note: trimmedOrUndefined(formData.get('note')),
       answers: Object.keys(answers).length > 0 ? answers : undefined,
@@ -83,29 +82,9 @@ export const submitRsvpAction = actionClient
       });
     }
 
+    // The count is the guest's answer: submit_rsvp stores it, with the answered
+    // stamp that stops the WhatsApp "how many" question, in the same statement.
     const outcome = await submitRsvp(token, parsed.data);
-
-    // Keep the WhatsApp headcount flow coherent with the web page: a submitted
-    // attending count IS the answer — mirror it so reports agree and the bot
-    // never asks someone who already told us on the page. Best-effort (the RSVP
-    // itself is already atomically recorded by the RPC).
-    if (outcome.ok && parsed.data.status === 'attending') {
-      try {
-        const { createAdminClient } = await import('@/lib/supabase/admin');
-        await createAdminClient()
-          .from('guests')
-          .update({
-            confirmed_headcount: Math.min(
-              10,
-              parsed.data.adults + parsed.data.kids,
-            ),
-            headcount_answered_at: new Date().toISOString(),
-          })
-          .eq('rsvp_token', token);
-      } catch {
-        /* sync only — never fail a recorded RSVP */
-      }
-    }
     if (!outcome.ok) {
       // Reason codes from submit_rsvp mapped to safe, user-facing Hebrew. These are
       // actionable (deadline/closed/count) without revealing token validity beyond

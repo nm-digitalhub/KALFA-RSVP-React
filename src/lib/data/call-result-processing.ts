@@ -143,11 +143,8 @@ export async function processCallResult(row: WebhookInboxRow): Promise<void> {
       const rsvpToken = await getGuestRsvpToken(attempt.guest_id);
       if (rsvpToken) {
         const status = body.rsvp_digit === '1' ? 'attending' : 'declined';
-        const outcome = await submitRsvp(rsvpToken, {
-          status,
-          adults: status === 'attending' ? 1 : 0,
-          kids: 0,
-        });
+        // A digit carries no count.
+        const outcome = await submitRsvp(rsvpToken, { status, headcount: null });
         // Best-effort marker only when the RSVP actually CHANGED — a retry that
         // re-confirms an already-set answer (unchanged:true) must not append a
         // duplicate activity_log row.
@@ -248,17 +245,17 @@ export async function processCallRsvp(
   if (!rsvpToken) return { status: 'rejected', reason: 'not_found' };
 
   // Canonical status (attending/declined/maybe — conversation-design §4.2).
-  // Counts are meaningful only for attending; declined/maybe carry none (same
-  // convention as the WhatsApp quick-reply path).
+  // Only attending carries a count; declined/maybe carry 0.
   const status = voxSaveRsvpStatus(body);
   const attending = status === 'attending';
   // submitRsvp throws only on an RPC transport error — that propagates and is
   // classified by the caller as retryable. A returned `ok:false` is the RPC's
   // considered business refusal, which no amount of retrying will change.
+  // The agent still reports adults and children (its tool contract changes in a
+  // separate step); the answer is one count, the total it read back to the guest.
   const outcome = await submitRsvp(rsvpToken, {
     status,
-    adults: attending ? body.adults : 0,
-    kids: attending ? body.children : 0, // submit_rsvp param is `kids`
+    headcount: attending ? body.adults + body.children : 0,
   });
   if (!outcome.ok) {
     // Record the refusal through the SAME event-scoped activity channel the

@@ -159,11 +159,10 @@
       "notFound": "Ce lien d’invitation n’est pas valide ou a été annulé."
     },
     "form": {
-      "adults": "Adultes",
       "attendance": {
         "legend": "Serez-vous là ?"
       },
-      "kids": "Enfants",
+      "headcount": "",
       "mealPref": {
         "label": "Préférence de menu (facultatif)"
       },
@@ -187,8 +186,8 @@
       },
       "submit": "Envoyer ma réponse",
       "success": {
-        "summary_many": "À bientôt ! {{eventType}} : {{count}} de personnes inscrites.",
         "summary_one": "À bientôt ! {{eventType}} : {{count}} personne inscrite.",
+        "summary_many": "À bientôt ! {{eventType}} : {{count}} de personnes inscrites.",
         "summary_other": "À bientôt ! {{eventType}} : {{count}} personnes inscrites.",
         "updateHint": "Vous pouvez modifier votre réponse à tout moment depuis ce même lien."
       }
@@ -1035,8 +1034,8 @@
             "name": "Famille Levi",
             "status": "Ont confirmé"
           },
-          "party_many": "{{count}} de personnes",
           "party_one": "{{count}} personne",
+          "party_many": "{{count}} de personnes",
           "party_other": "{{count}} personnes"
         },
         "invitedTotal": "340 invités",
