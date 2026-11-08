@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
-import { getCallContextByAccessToken } from '@/lib/data/call-attempts';
+import { getCallContextByAccessToken, TERMINAL_STATUSES } from '@/lib/data/call-attempts';
 import { formatIsraelSpokenDate, formatIsraelTime } from '@/lib/date';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
@@ -23,6 +23,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const CTX_RATE = { limit: 12, windowMs: 5 * 60 * 1000 } as const;
+
+// The ONE shared terminal set (incl. 'handed_off'), never a local copy: a copy here
+// once missed 'handed_off', so a handed-off call kept serving guest context.
+const TERMINAL: ReadonlySet<string> = new Set(TERMINAL_STATUSES);
 
 // Explicit no-store on EVERY response: the success body carries guest-facing data
 // behind a bearer token in the URL — `force-dynamic` only skips Next's own cache,
@@ -165,8 +169,7 @@ export async function GET(
 
   // The call must be for an ACTIVE event and an attempt that has not already
   // reached a terminal state (a ctx fetch on a finished call is anomalous).
-  const terminal = ['completed', 'failed', 'no_answer', 'no_response', 'cancelled'];
-  if (ctx.event.status !== 'active' || terminal.includes(ctx.attempt.status)) {
+  if (ctx.event.status !== 'active' || TERMINAL.has(ctx.attempt.status)) {
     return notFound();
   }
 
