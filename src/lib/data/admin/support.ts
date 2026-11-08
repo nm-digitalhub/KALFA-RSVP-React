@@ -25,8 +25,9 @@ import { GUEST_STATUS_LABELS } from '@/app/(customer)/app/events/[id]/guests/lab
 //     'manage_billing' surface. This module reads events + guests only.
 //   * NO .update()/.insert()/.delete() is ever issued against a CUSTOMER table
 //     (events/guests/profiles/contacts/...) from this module — the ONLY write
-//     is the append-only `support_access_log` audit insert below. This is a
-//     read-only surface end to end; there are no edit/toggle/delete affordances.
+//     is the append-only `support_access_log` audit row, always written through
+//     recordStaffAccess (access-log.ts). This is a read-only surface end to end;
+//     there are no edit/toggle/delete affordances.
 //   * Every view of an event requires a REQUIRED, non-trivial "break-glass"
 //     reason, which is both persisted (support_access_log) and echoed into the
 //     structured activity log + a Slack security alert (ids only, no PII).
@@ -101,16 +102,17 @@ export async function getEventForSupportView(
     admin.auth.admin.getUserById(event.owner_id),
   ]);
 
-  const { error: logError } = await admin.from('support_access_log').insert({
-    staff_id: staff.id,
-    event_id: event.id,
-    owner_id: event.owner_id,
+  // Audit through the single audited-read primitive, which fails closed (an
+  // unaudited support view is worse than a denied one) and records the authority
+  // and the subject, not only the event.
+  await recordStaffAccess({
+    staffId: staff.id,
+    permission: 'view_customer_data',
+    subjectType: 'event',
+    subjectId: event.id,
+    ownerId: event.owner_id,
     reason: safeReason,
   });
-  if (logError) {
-    // Fail closed: an unaudited support view is worse than a denied one.
-    throw new Error('רישום הביקורת נכשל — הצפייה בוטלה');
-  }
 
   await logActivity({
     eventId: event.id,
@@ -257,20 +259,18 @@ export async function findEventsForSupport(
   // Audit BEFORE returning: one row per surfaced event (each reveals a
   // customer's name), then a structured activity entry with counts only. A
   // zero-result search still records the probe (ids/counts, no raw contact).
-  if (candidates.length > 0) {
-    const { error: logError } = await admin.from('support_access_log').insert(
-      candidates.map((c) => ({
-        staff_id: staff.id,
-        event_id: c.id,
-        owner_id: c.ownerId,
-        reason: safeReason,
-      })),
-    );
-    if (logError) {
-      // Fail closed: an unaudited search that surfaced customer names is worse
-      // than a denied one.
-      throw new Error('רישום הביקורת נכשל — החיפוש בוטל');
-    }
+  // Each row goes through recordStaffAccess, which fails closed: an unaudited
+  // search that surfaced customer names is worse than a denied one. A failure
+  // part-way leaves extra audit rows and returns nothing, never the reverse.
+  for (const c of candidates) {
+    await recordStaffAccess({
+      staffId: staff.id,
+      permission: 'view_customer_data',
+      subjectType: 'event',
+      subjectId: c.id,
+      ownerId: c.ownerId,
+      reason: safeReason,
+    });
   }
 
   await logActivity({

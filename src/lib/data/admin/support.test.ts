@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { requirePlatformPermission } from '@/lib/auth/dal';
 import { logActivity } from '@/lib/data/activity';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { recordStaffAccess } from '@/lib/data/admin/access-log';
 import {
   findEventsForSupport,
   getEventForSupportView,
@@ -47,7 +48,6 @@ type Result = { data: unknown; error: { message: string } | null };
 function wireAdminClient(opts: {
   events?: Result;
   profiles?: Result;
-  logInsert?: Result;
   guests?: Result;
   authUser?: { data: unknown; error: unknown };
 }) {
@@ -55,7 +55,9 @@ function wireAdminClient(opts: {
   const profiles = createMockSupabase(
     opts.profiles ?? { data: { full_name: 'דנה כהן', phone: '0501234567' }, error: null },
   );
-  const logTable = createMockSupabase(opts.logInsert ?? { data: null, error: null });
+  // Routed only so a direct insert would be caught; every audit row must go
+  // through recordStaffAccess.
+  const logTable = createMockSupabase({ data: null, error: null });
   const guests = createMockSupabase(opts.guests ?? { data: [], error: null });
 
   const client = {
@@ -129,6 +131,7 @@ describe('required break-glass reason', () => {
     await expect(getEventForSupportView(EVENT_ID, '')).rejects.toThrow('סיבה');
 
     expect(events.client.from).not.toHaveBeenCalled();
+    expect(recordStaffAccess).not.toHaveBeenCalled();
     expect(logTable.builder.insert).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
     expect(sendSlackAlert).not.toHaveBeenCalled();
@@ -140,6 +143,7 @@ describe('required break-glass reason', () => {
     await expect(getEventForSupportView(EVENT_ID, 'קצר')).rejects.toThrow('סיבה');
 
     expect(events.client.from).not.toHaveBeenCalled();
+    expect(recordStaffAccess).not.toHaveBeenCalled();
     expect(logTable.builder.insert).not.toHaveBeenCalled();
   });
 });
@@ -158,15 +162,17 @@ describe('happy path', () => {
     expect(result.owner.fullName).toBe('דנה כהן');
     expect(result.owner.email).toBe('dana@example.com');
 
-    expect(logTable.builder.insert).toHaveBeenCalledTimes(1);
-    expect(logTable.builder.insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        staff_id: 'staff-1',
-        event_id: EVENT_ID,
-        owner_id: 'owner-1',
-        reason: 'פנייה בנושא הזמנה מספר 1234 — בירור סטטוס',
-      }),
-    );
+    // One audited-read row, carrying the authority and the subject.
+    expect(recordStaffAccess).toHaveBeenCalledTimes(1);
+    expect(recordStaffAccess).toHaveBeenCalledWith({
+      staffId: 'staff-1',
+      permission: 'view_customer_data',
+      subjectType: 'event',
+      subjectId: EVENT_ID,
+      ownerId: 'owner-1',
+      reason: 'פנייה בנושא הזמנה מספר 1234 — בירור סטטוס',
+    });
+    expect(logTable.builder.insert).not.toHaveBeenCalled();
 
     expect(logActivity).toHaveBeenCalledTimes(1);
     expect(logActivity).toHaveBeenCalledWith(
@@ -184,8 +190,9 @@ describe('happy path', () => {
     );
   });
 
-  it('fails closed if the audit insert errors — no data is returned', async () => {
-    wireAdminClient({ logInsert: { data: null, error: { message: 'insert failed' } } });
+  it('fails closed if the audit write fails — no data is returned', async () => {
+    wireAdminClient({});
+    vi.mocked(recordStaffAccess).mockRejectedValueOnce(new Error('רישום הביקורת נכשל — הגישה בוטלה'));
 
     await expect(
       getEventForSupportView(EVENT_ID, 'פנייה בנושא הזמנה מספר 1234'),
@@ -276,6 +283,7 @@ describe('findEventsForSupport — reason required + audited', () => {
     await expect(findEventsForSupport({ eventId: EVENT_ID }, '')).rejects.toThrow('סיבה');
 
     expect(events.client.from).not.toHaveBeenCalled();
+    expect(recordStaffAccess).not.toHaveBeenCalled();
     expect(logTable.builder.insert).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
     expect(sendSlackAlert).not.toHaveBeenCalled();
@@ -287,6 +295,7 @@ describe('findEventsForSupport — reason required + audited', () => {
     await expect(findEventsForSupport({ eventId: EVENT_ID }, 'קצר')).rejects.toThrow('סיבה');
 
     expect(events.client.from).not.toHaveBeenCalled();
+    expect(recordStaffAccess).not.toHaveBeenCalled();
     expect(logTable.builder.insert).not.toHaveBeenCalled();
   });
 
@@ -304,15 +313,16 @@ describe('findEventsForSupport — reason required + audited', () => {
     expect(results).toEqual([
       { id: EVENT_ID, name: 'האירוע', eventDate: '2026-09-01', ownerFullName: 'בעל האירוע' },
     ]);
-    expect(logTable.builder.insert).toHaveBeenCalledTimes(1);
-    expect(logTable.builder.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        staff_id: 'staff-1',
-        event_id: EVENT_ID,
-        owner_id: 'owner-1',
-        reason: VALID_REASON,
-      }),
-    ]);
+    expect(recordStaffAccess).toHaveBeenCalledTimes(1);
+    expect(recordStaffAccess).toHaveBeenCalledWith({
+      staffId: 'staff-1',
+      permission: 'view_customer_data',
+      subjectType: 'event',
+      subjectId: EVENT_ID,
+      ownerId: 'owner-1',
+      reason: VALID_REASON,
+    });
+    expect(logTable.builder.insert).not.toHaveBeenCalled();
     // Structured activity entry carries counts/ids only — never the raw contact.
     expect(logActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'admin.support.search' }),
@@ -325,19 +335,36 @@ describe('findEventsForSupport — reason required + audited', () => {
   });
 
   it('logs a zero-result probe (activity) but writes no audit row', async () => {
-    const { logTable } = wireAdminClient({
+    wireAdminClient({
       events: { data: null, error: null },
     });
 
     const results = await findEventsForSupport({ eventId: EVENT_ID }, VALID_REASON);
 
     expect(results).toEqual([]);
-    expect(logTable.builder.insert).not.toHaveBeenCalled();
+    expect(recordStaffAccess).not.toHaveBeenCalled();
     expect(logActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'admin.support.search',
         meta: expect.objectContaining({ resultCount: 0 }),
       }),
     );
+  });
+
+  it('fails closed if the audit write fails — no names are returned, nothing is logged as done', async () => {
+    wireAdminClient({
+      events: {
+        data: { id: EVENT_ID, name: 'האירוע', event_date: '2026-09-01', owner_id: 'owner-1' },
+        error: null,
+      },
+      profiles: { data: { full_name: 'בעל האירוע' }, error: null },
+    });
+    vi.mocked(recordStaffAccess).mockRejectedValueOnce(new Error('רישום הביקורת נכשל — הגישה בוטלה'));
+
+    await expect(findEventsForSupport({ eventId: EVENT_ID }, VALID_REASON)).rejects.toThrow(
+      'רישום הביקורת נכשל',
+    );
+    expect(logActivity).not.toHaveBeenCalled();
+    expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });
