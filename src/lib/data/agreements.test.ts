@@ -172,6 +172,16 @@ describe('recordPackageApproval — the customer approves the package terms (no 
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("another account's campaign is not-found BEFORE any status answer, so its state never leaks", async () => {
+    // A campaign that is no longer pending would answer with a status-specific message — but only to its owner.
+    const { rpc } = wire({ status: 'approved' });
+    vi.mocked(requireOwnedEvent).mockRejectedValue(new Error('NEXT_NOT_FOUND'));
+    await expect(recordPackageApproval(approvalInput)).rejects.toThrow('NEXT_NOT_FOUND');
+    expect(requireOwnedEvent).toHaveBeenCalledWith('e1');
+    expect(rpc).not.toHaveBeenCalled();
+    expect(renderAgreementPdf).not.toHaveBeenCalled();
+  });
+
   it('a past event, or one whose details are not confirmed, is refused before anything is rendered or stored', async () => {
     wire();
     vi.mocked(requireOwnedEvent).mockResolvedValue({ ...futureEvent, event_date: '2020-01-01T00:00:00+00:00' });

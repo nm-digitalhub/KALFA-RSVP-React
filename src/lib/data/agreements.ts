@@ -152,6 +152,10 @@ export async function recordPackageApproval(
     const { notFound } = await import('next/navigation');
     return notFound();
   }
+  // Ownership FIRST, before any answer that depends on the campaign's state: the row was read with the
+  // service-role client by a caller-supplied id, so another account's campaign must look exactly like a missing
+  // one (both end in notFound) and its status never reaches the caller.
+  const event = await requireOwnedEvent(campaign.event_id);
   if (campaign.status !== 'pending_approval') {
     return { ok: false, error: 'אין כרגע תנאים שממתינים לאישור.' };
   }
@@ -159,8 +163,7 @@ export async function recordPackageApproval(
     return { ok: false, error: 'תנאי החבילה חסרים' };
   }
 
-  // Ownership, then the early rejections (before anything is rendered or stored).
-  const event = await requireOwnedEvent(campaign.event_id);
+  // The early rejections (before anything is rendered or stored).
   if (isPastEventDay(event.event_date)) {
     return { ok: false, error: 'האירוע כבר חלף — לא ניתן לאשר תנאים לאירוע שמועדו עבר' };
   }
