@@ -6331,6 +6331,7 @@ export type Database = {
           event_id: string
           extras: Json
           guest_id: string
+          headcount: number | null
           id: string
           kids: number | null
           meal_pref: string | null
@@ -6343,6 +6344,7 @@ export type Database = {
           event_id: string
           extras?: Json
           guest_id: string
+          headcount?: number | null
           id?: string
           kids?: number | null
           meal_pref?: string | null
@@ -6355,6 +6357,7 @@ export type Database = {
           event_id?: string
           extras?: Json
           guest_id?: string
+          headcount?: number | null
           id?: string
           kids?: number | null
           meal_pref?: string | null
@@ -8315,11 +8318,12 @@ export type Database = {
       }
       submit_rsvp: {
         Args: {
-          _adults: number
+          _adults?: number
           _answers?: Json
-          _kids: number
-          _meal: string
-          _note: string
+          _headcount?: number
+          _kids?: number
+          _meal?: string
+          _note?: string
           _show_in_list?: boolean
           _status: string
           _token: string
