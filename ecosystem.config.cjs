@@ -123,7 +123,7 @@ module.exports = {
     //
     // ~/.supabase/bin is declared for exactly the same reason, added
     // 2026-07-29. The Tier-2 `main` role's only live-DB door is
-    // `supabase db query --linked`, and the CLI installs to ~/.supabase/bin —
+    // `supabase db query … --remote`, and the CLI installs to ~/.supabase/bin —
     // also outside the default path. Measured before this line existed:
     // `env -i PATH=<the four directories above> supabase --version` exits 127
     // (control: `jq --version` exits 0 in the same environment), so the door

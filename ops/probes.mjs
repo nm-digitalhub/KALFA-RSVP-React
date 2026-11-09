@@ -218,7 +218,7 @@ export async function probeDeploy(repoRoot) {
 
   // NOTE: localMigrationsCount is a FILE count only — it does not confirm the
   // linked Supabase project has applied all of them. That full cross-check
-  // already exists (`supabase migration list --linked`, run from
+  // already exists (`supabase migration list --remote`, run from
   // scripts/kalfa-preflight.sh) and is deliberately NOT duplicated here: it
   // needs the Supabase CLI + network + an access token reachable from this
   // sidecar, which is out of scope for a lightweight read-only probe.
