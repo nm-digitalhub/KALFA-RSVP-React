@@ -194,7 +194,10 @@ API: `postgrest-js/dist/index.d.mts:1477` (2.119.0).
 
 ## 6. באגים שנמצאו בדרך (לא קשורים להחלפה)
 
-1. **לוח השנה, אזור זמן של הדפדפן [I — מורכב מחלקים שנמדדו, לא הורץ בדפדפן]:** פורמט ה-datetime-local קורא getters של Date — בדפדפן שלא מכוון לשעון ישראל יוצא שעון הדפדפן (נמדד: אותו רגע 10:30 בשרת NY, 17:30 בישראל). תאי התצוגה השבועית הם TZDate בשעון ישראל (`time-grid.tsx:892,999`, `event-calendar-lib.tsx:30,35`), והשמירה מפרשת `new Date(local)` באזור הדפדפן (`calendar-client.tsx:337`, `event-edit-dialog.tsx:127`). תוצאה: אירוע שנוצר/נערך זז בהפרש האזורים. `wallClockToDate` (`event-date.ts:194`) לא בשימוש במסלולים האלה; `reschedule-form.tsx:9-13` מתעד אותה מגבלה.
+1. **[תוקן 09.11]** טופסי היצירה והעריכה בלוח, תאריך הסיום של סדרה וברירת המחדל בטופס התזמון מחדש של שיחה חוזרת
+   מציגים וקוראים עכשיו שעון ישראל דרך `ilDateTimeInputValue` ו-`wallClockToDate` (`src/lib/data/event-date.ts`), עם
+   בדיקות שרצות כשהמחשב מכוון לניו יורק. `fleet/fleet-goals.tsx` עדיין ממיר בשעון הדפדפן — ממתין להחלטת בעלים אם המסך נחוץ.
+   התיאור המקורי: **לוח השנה, אזור זמן של הדפדפן [I — מורכב מחלקים שנמדדו, לא הורץ בדפדפן]:** פורמט ה-datetime-local קורא getters של Date — בדפדפן שלא מכוון לשעון ישראל יוצא שעון הדפדפן (נמדד: אותו רגע 10:30 בשרת NY, 17:30 בישראל). תאי התצוגה השבועית הם TZDate בשעון ישראל (`time-grid.tsx:892,999`, `event-calendar-lib.tsx:30,35`), והשמירה מפרשת `new Date(local)` באזור הדפדפן (`calendar-client.tsx:337`, `event-edit-dialog.tsx:127`). תוצאה: אירוע שנוצר/נערך זז בהפרש האזורים. `wallClockToDate` (`event-date.ts:194`) לא בשימוש במסלולים האלה; `reschedule-form.tsx:9-13` מתעד אותה מגבלה.
 2. **אשף העברת השרת — הערה בסוף שורת `APP_ORIGIN` [M]:** `rewriteEnvContent` (`env-rewrite.ts:32-35`) משאיר את ההערה; הפרסר שלנו מחזיר `https://new.example # …`, בדיקת `steps.ts:484` נכשלת ו-`new URL` ב-`cli.ts:79` זורק `ERR_INVALID_URL`. ב-`.env.example` יש הערה כזו; ב-`.env.local` הנוכחי אין. עם `util.parseEnv` שתיהן עוברות.
 3. **`.env.local` — שורת `VOX_CI_CREDENTIALS` פגומה [M]:** שתי מחרוזות בגרשיים; כל קורא מקבל ערך אחר. היום אין השפעה (`VOXIMPLANT_CREDENTIALS_FILE` לא מוגדר, והחלופה `vox_ci_credentials.json` היא אותו קובץ).
 4. **רישום webhook ל-Meta ב-relocation [I]:** `relocation/external.ts:204` רושם עם `fields: "messages"` בלבד, בעוד `subscriptions.ts` דורש 6 (`WHATSAPP_WEBHOOK_FIELDS`). לא נבדק אם ה-POST מחליף את רשימת השדות אצל Meta.

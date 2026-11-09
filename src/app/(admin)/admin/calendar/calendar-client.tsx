@@ -29,8 +29,9 @@ import type {
   EventCalendarUpdateResult,
 } from '@/components/reui/event-calendar/event-calendar-types';
 import { actionErrorMessage } from '@/lib/action-result';
+import { ilDateTimeInputValue, wallClockToDate } from '@/lib/data/event-date';
 import type { CalendarEventDTO } from '@/lib/data/exchange-connections';
-import { formatIsraelDateTime } from '@/lib/date';
+import { ISRAEL_TIME_ZONE, formatIsraelDateTime } from '@/lib/date';
 
 import type { ExchangeCategory } from '@/lib/exchange-ews/types';
 
@@ -81,12 +82,6 @@ const EMPTY_CREATE_FORM: EventFormValue = {
   attendees: [],
   recurrence: null,
 };
-
-/** <input type="datetime-local"> speaks local wall time, not ISO instants. */
-function toLocalInputValue(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
 
 
 type UiError = { key: string; message: string };
@@ -291,8 +286,9 @@ export function AdminExchangeCalendar({
   const openCreate = useCallback((start: Date, end: Date, allDay: boolean) => {
     setCreateForm({
       ...EMPTY_CREATE_FORM,
-      startLocal: toLocalInputValue(start),
-      endLocal: toLocalInputValue(end),
+      // The form shows Israel wall time, like the calendar grid (timeZone below).
+      startLocal: ilDateTimeInputValue(start),
+      endLocal: ilDateTimeInputValue(end),
       allDay,
     });
     setCreateError(null);
@@ -334,9 +330,10 @@ export function AdminExchangeCalendar({
       createScrollRef.current?.scrollTo({ top: 0 });
       return;
     }
-    const start = new Date(createForm.startLocal);
-    const end = new Date(createForm.endLocal);
-    if (!(end.getTime() > start.getTime())) {
+    // The fields hold Israel wall time; read them in Israel, not in the browser's zone.
+    const start = wallClockToDate(createForm.startLocal, ISRAEL_TIME_ZONE);
+    const end = wallClockToDate(createForm.endLocal, ISRAEL_TIME_ZONE);
+    if (!start || !end || !(end.getTime() > start.getTime())) {
       setCreateError('שעת הסיום חייבת להיות אחרי שעת ההתחלה');
       createScrollRef.current?.scrollTo({ top: 0 });
       return;

@@ -5,6 +5,7 @@ import { createHostRunner, HOST_ZONES, type HostRunner } from '@/test/host-zone'
 import {
   defaultThankyouSendAt,
   ilDateInputValue,
+  ilDateTimeInputValue,
   ilTimeInputValue,
   ilWallTimeToIso,
   rsvpClosedReason,
@@ -456,14 +457,15 @@ describe('host zone matrix — the result does not depend on the zone of the mac
 
   beforeAll(() => {
     runner = createHostRunner(`
-      import { ilWallTimeToIso, wallClockToDate } from '@/lib/data/event-date';
-      const { cases, ilCases } = JSON.parse(process.argv[2]);
+      import { ilDateTimeInputValue, ilWallTimeToIso, wallClockToDate } from '@/lib/data/event-date';
+      const { cases, ilCases, inputCases } = JSON.parse(process.argv[2]);
       console.log(JSON.stringify({
         host: Intl.DateTimeFormat().resolvedOptions().timeZone,
         instants: cases.map(([wall, zone]) => wallClockToDate(wall, zone)?.toISOString() ?? null),
         il: ilCases.map(([date, time]) => {
           try { return ilWallTimeToIso(date, time); } catch (e) { return 'ERR:' + e.name; }
         }),
+        inputs: inputCases.map((iso) => ilDateTimeInputValue(Date.parse(iso))),
       }));
     `);
   }, 30_000);
@@ -511,11 +513,21 @@ describe('host zone matrix — the result does not depend on the zone of the mac
     ['2026-03-27', '', '2026-03-27'],
     ['not-a-date', '10:00', 'ERR:RangeError'],
   ];
+  // [instant, the Israel wall clock an <input type="datetime-local"> must show] — written out by hand.
+  const INPUT_CASES: Array<[instant: string, wall: string]> = [
+    ['2026-11-09T15:30:00.000Z', '2026-11-09T17:30'], // IST, UTC+2
+    ['2026-07-01T21:05:00.000Z', '2026-07-02T00:05'], // IDT, UTC+3 — already the next Israel day
+    ['2026-10-24T22:30:00.000Z', '2026-10-25T01:30'], // fall-back overlap, first 01:30 (IDT)
+    ['2026-10-24T23:30:00.000Z', '2026-10-25T01:30'], // fall-back overlap, second 01:30 (IST)
+    ['2026-03-27T00:30:00.000Z', '2026-03-27T03:30'], // just after the spring-forward gap
+    ['2026-03-29T00:30:00.000Z', '2026-03-29T03:30'], // inside Athens' / Helsinki's own gap as a host
+  ];
 
   it.each(HOST_ZONES)('host %s: every case gives the same instant', (host) => {
-    const out = runner.run<{ host: string; instants: Array<string | null>; il: string[] }>(host, {
+    const out = runner.run<{ host: string; instants: Array<string | null>; il: string[]; inputs: string[] }>(host, {
       cases: CASES.map(([wall, zone]) => [wall, zone]),
       ilCases: IL_CASES.map(([date, time]) => [date, time]),
+      inputCases: INPUT_CASES.map(([instant]) => instant),
     });
     // The switch took effect: the child really ran under the requested host zone.
     expect(out.host).toBe(host);
@@ -525,6 +537,9 @@ describe('host zone matrix — the result does not depend on the zone of the mac
     });
     IL_CASES.forEach(([date, time, text], i) => {
       if (out.il[i] !== text) mismatches.push(`ilWallTimeToIso(${date}, ${time}): got ${out.il[i]}, want ${text}`);
+    });
+    INPUT_CASES.forEach(([instant, wall], i) => {
+      if (out.inputs[i] !== wall) mismatches.push(`ilDateTimeInputValue(${instant}): got ${out.inputs[i]}, want ${wall}`);
     });
     expect(mismatches).toEqual([]);
   });
@@ -548,6 +563,33 @@ describe('ilDateInputValue', () => {
     expect(ilDateInputValue(null)).toBe('');
     expect(ilDateInputValue('')).toBe('');
     expect(ilDateInputValue('not-a-date')).toBe('');
+  });
+});
+
+describe('ilDateTimeInputValue', () => {
+  // Expected values written out by hand: Israel is UTC+2 in winter, UTC+3 in summer.
+  it('shows the Israel wall clock of the instant, for <input type="datetime-local">', () => {
+    expect(ilDateTimeInputValue(Date.parse('2026-11-09T15:30:00.000Z'))).toBe('2026-11-09T17:30');
+    expect(ilDateTimeInputValue(Date.parse('2026-07-15T06:30:00.000Z'))).toBe('2026-07-15T09:30');
+  });
+
+  it('takes a Date as well as epoch milliseconds', () => {
+    expect(ilDateTimeInputValue(new Date('2026-11-09T15:30:00.000Z'))).toBe('2026-11-09T17:30');
+  });
+
+  it('rolls over to the Israel calendar day, not the UTC one', () => {
+    expect(ilDateTimeInputValue(Date.parse('2026-07-01T21:05:00.000Z'))).toBe('2026-07-02T00:05');
+  });
+
+  it('is read back to the same instant by wallClockToDate (a whole minute, outside the overlap hour)', () => {
+    const instant = '2026-11-09T15:30:00.000Z';
+    const wall = ilDateTimeInputValue(Date.parse(instant));
+    expect(wallClockToDate(wall, 'Asia/Jerusalem')?.toISOString()).toBe(instant);
+  });
+
+  it('returns an empty value for an invalid instant', () => {
+    expect(ilDateTimeInputValue(Number.NaN)).toBe('');
+    expect(ilDateTimeInputValue(new Date('not a date'))).toBe('');
   });
 });
 

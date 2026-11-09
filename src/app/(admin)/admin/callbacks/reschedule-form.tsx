@@ -4,22 +4,21 @@ import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice } from '@/components/forms';
 import { actionFormError } from '@/lib/action-result';
+import { ilDateTimeInputValue } from '@/lib/data/event-date';
 import { rescheduleCallbackAction } from './actions';
 
 // <input type="datetime-local"> speaks wall time with no zone, not ISO instants.
 // What this field posts is read on the SERVER as Israel wall time and converted
 // to the real instant there (rescheduleCallbackSchema) — nothing here converts.
-// The default below is built from the browser's own clock, so it equals Israel
-// time only for a browser set to Israel's zone.
+// The default ("now + 1 hour") is read on the Israel clock too, so it is the
+// right time on any machine, not only on one set to Israel's zone.
 //
 // The field is CONTROLLED (value + onChange): React resets an uncontrolled field
 // to its default once a form action succeeds (react.dev, `<form>`), and the
 // default here is "now + 1 hour" — so after saving 07:53 the field jumped to
 // 08:54 and looked as if a different time had been scheduled.
 function nowPlusOneHourLocal(): string {
-  const d = new Date(Date.now() + 60 * 60_000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return ilDateTimeInputValue(Date.now() + 60 * 60_000);
 }
 
 // The caller answered and either asked for a different time than they

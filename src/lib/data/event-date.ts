@@ -196,6 +196,19 @@ export function wallClockToDate(wall: string, zone: string): Date | null {
   return resolved ? new Date(resolved.epochMilliseconds) : null;
 }
 
+// The inverse for the input itself: an instant as the Israel wall clock 'YYYY-MM-DDTHH:mm' that an
+// <input type="datetime-local"> shows. Formatting with the Date getters would show the BROWSER's clock
+// instead — another time for anyone whose machine is not on Israel time, while the admin calendar shows
+// Israel time. '' for an invalid instant, like the sibling input helpers below.
+export function ilDateTimeInputValue(instant: Date | number): string {
+  const ms = typeof instant === 'number' ? instant : instant.getTime();
+  if (!Number.isFinite(ms)) return '';
+  return Temporal.Instant.fromEpochMilliseconds(ms)
+    .toZonedDateTimeISO(ISRAEL_TZ)
+    .toPlainDateTime()
+    .toString({ smallestUnit: 'minute' });
+}
+
 // The IL wall-clock HH:mm of a stored event instant, for <input type="time">
 // defaults. A legacy date-only value (stored midnight UTC) returns '' so the
 // form doesn't show a misleading 03:00/02:00.

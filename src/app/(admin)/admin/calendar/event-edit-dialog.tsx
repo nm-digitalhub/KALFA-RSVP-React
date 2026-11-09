@@ -28,6 +28,7 @@ import type {
   CalendarEventDetailDTO,
   LinkedCallbackDTO,
 } from '@/lib/data/exchange-connections';
+import { ilDateTimeInputValue, wallClockToDate } from '@/lib/data/event-date';
 import {
   callAnalysisSuccessfulLabel,
   salesDispatchStatusLabel,
@@ -42,6 +43,7 @@ import {
   type EventFormValue,
 } from './event-form-fields';
 import {
+  ISRAEL_TIME_ZONE,
   formatIsraelDate,
   formatIsraelDateTime,
   formatIsraelTime,
@@ -115,17 +117,6 @@ function whenParts(startIso: string, endIso: string, allDay: boolean): {
     if (h === 1 && m === 0) duration = 'שעה';
   }
   return { day, time, duration };
-}
-
-/** <input type="datetime-local"> speaks local wall time, not ISO instants. */
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromLocalInput(value: string): Date {
-  return new Date(value);
 }
 
 function formatSalesSeconds(secs: number | null): string {
@@ -450,8 +441,9 @@ export function EventEditDialog({
           setDetail(loaded);
           setForm({
             subject: loaded.title,
-            startLocal: toLocalInput(loaded.startIso),
-            endLocal: toLocalInput(loaded.endIso),
+            // Israel wall time, like the calendar grid it was opened from.
+            startLocal: ilDateTimeInputValue(Date.parse(loaded.startIso)),
+            endLocal: ilDateTimeInputValue(Date.parse(loaded.endIso)),
             allDay: loaded.allDay,
             location: loaded.location,
             body: loaded.body,
@@ -479,14 +471,15 @@ export function EventEditDialog({
 
   const save = useCallback(async () => {
     if (!appointmentId) return;
-    const start = fromLocalInput(form.startLocal);
-    const end = fromLocalInput(form.endLocal);
+    // The fields hold Israel wall time; read them in Israel, not in the browser's zone.
+    const start = wallClockToDate(form.startLocal, ISRAEL_TIME_ZONE);
+    const end = wallClockToDate(form.endLocal, ISRAEL_TIME_ZONE);
     if (!form.subject.trim()) {
       setError('נא להזין כותרת לאירוע');
       scrollRef.current?.scrollTo({ top: 0 });
       return;
     }
-    if (!(end.getTime() > start.getTime())) {
+    if (!start || !end || !(end.getTime() > start.getTime())) {
       setError('שעת הסיום חייבת להיות אחרי שעת ההתחלה');
       scrollRef.current?.scrollTo({ top: 0 });
       return;

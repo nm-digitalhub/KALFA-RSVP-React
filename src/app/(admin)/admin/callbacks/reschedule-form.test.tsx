@@ -35,6 +35,22 @@ describe('RescheduleForm', () => {
     expect((screen.getByLabelText(LABEL) as HTMLInputElement).value).toBe('2026-10-07T07:33');
   });
 
+  // The admin calendar runs on Israel time whatever the machine's own zone is, and so
+  // must this default: on a machine set to New York the browser's own clock reads
+  // 23:33 the day before, and "now + 1 hour" built from it showed 00:33 instead of 07:33.
+  it('starts one hour from now on the Israel clock, on a machine set to another zone', () => {
+    const pinned = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      // The switch took effect: this machine's own clock now reads 23:33 the day before.
+      expect(new Date().getHours()).toBe(23);
+      render(<RescheduleForm id={ID} />);
+      expect((screen.getByLabelText(LABEL) as HTMLInputElement).value).toBe('2026-10-07T07:33');
+    } finally {
+      process.env.TZ = pinned;
+    }
+  });
+
   it('keeps the time the admin chose after a successful save', async () => {
     const user = userEvent.setup();
     render(<RescheduleForm id={ID} />);

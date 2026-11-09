@@ -7,6 +7,8 @@ import { ChevronDown, Plus, Repeat, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
+import { ilDateInputValue, wallClockToDate } from '@/lib/data/event-date';
+import { ISRAEL_TIME_ZONE } from '@/lib/date';
 import { categoryColorHex } from '@/lib/exchange-ews/category-colors';
 import type { ExchangeCategory } from '@/lib/exchange-ews/types';
 
@@ -513,13 +515,14 @@ export function EventFormFields({
                   <input
                     id="ef-rec-end"
                     type="date"
-                    value={recurrence.endDateIso ? recurrence.endDateIso.slice(0, 10) : ''}
+                    value={ilDateInputValue(recurrence.endDateIso ?? null)}
                     disabled={disabled}
                     onChange={(e) =>
                       set('recurrence', {
                         ...recurrence,
+                        // The last day of the series, read as an Israel calendar day.
                         endDateIso: e.target.value
-                          ? new Date(`${e.target.value}T23:59`).toISOString()
+                          ? wallClockToDate(`${e.target.value}T23:59`, ISRAEL_TIME_ZONE)?.toISOString()
                           : undefined,
                       })
                     }
