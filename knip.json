@@ -123,7 +123,6 @@
     // CLIs and MCP servers run by people or agents.
     "@agiflowai/scaffold-mcp", // mcp-config.yaml, loaded by the one-mcp server in .mcp.json
     "@playwright/cli", // `playwright-cli` (.claude/skills/playwright-cli)
-    "@pnp/cli-microsoft365", // `m365`
     "typescript-language-server" // Claude Code typescript-lsp plugin; no global copy on this host
   ],
 

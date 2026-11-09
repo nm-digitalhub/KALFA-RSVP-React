@@ -128,13 +128,12 @@
     "@pg-boss/dashboard": "^1.12.0",
     "@phosphor-icons/core": "^2.1.1",
     "@playwright/cli": "^0.1.22",
-    "@pnp/cli-microsoft365": "^11.10.0",
     "@react-pdf/renderer": "^4.9.0",
     "@react-pdf/tailwind": "^0.2.0",
     "@slack/types": "^3.2.0",
     "@slack/web-api": "^8.2.0",
     "@statelyai/graph": "^2.6.0",
-    "@statelyai/mcp": "^0.21.0",
+    "@statelyai/mcp": "^0.21.2",
     "@stepperize/react": "^8.0.0",
     "@supabase/mcp-server-supabase": "0.13.0",
     "@supabase/realtime-js": "^2.118.0",
@@ -153,6 +152,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "@uiw/react-json-view": "^2.0.0-alpha.43",
+    "@voximplant/apiclient-nodejs": "^5.2.0",
     "@voximplant/voxengine-ci": "^37.0.0",
     "@voximplant/websdk": "5.3.0",
     "@xstate/react": "^6.1.0",
@@ -215,8 +215,6 @@
     "resend": "^6.33.0",
     "server-only": "^0.0.1",
     "skills": "1.7.1",
-    "sumit-api": "^0.4.1",
-    "sumit-react": "^0.2.1",
     "survey-creator-react": "^3.2.1",
     "survey-react-ui": "^3.2.1",
     "temporal-polyfill": "^1.0.6",
@@ -302,11 +300,6 @@
     },
     "@voximplant/voxengine-ci": {
       "yaml": "1.10.3"
-    },
-    "@pnp/cli-microsoft365": {
-      "csv-parse": "^7.0.2",
-      "fast-xml-parser": "^5.11.1",
-      "uuid": "^14.0.2"
     }
   },
   "patchedDependencies": {
