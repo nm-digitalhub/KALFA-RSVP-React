@@ -8,6 +8,7 @@ import {
   callbackIntakeSchema,
   contactMessageSchema,
   callbackRequestSchema,
+  toInquiryTopic,
 } from './inquiries';
 
 const t = getT('public');
@@ -142,5 +143,19 @@ describe('messages', () => {
     expect(
       fieldErrors(callbackIntakeSchema(i18n.getFixedT('en', 'public')).safeParse({ full_name: 'א', topic: 'מכירות' })),
     ).toEqual({ full_name: ['Please enter a name'] });
+  });
+});
+
+describe('toInquiryTopic', () => {
+  it('keeps a known topic and reads anything else as אחר', () => {
+    for (const topic of INQUIRY_TOPICS) expect(toInquiryTopic(topic)).toBe(topic);
+    expect(toInquiryTopic(null)).toBe('אחר');
+    expect(toInquiryTopic('')).toBe('אחר');
+    expect(toInquiryTopic('נושא שהוסר')).toBe('אחר');
+  });
+
+  it('callbackIntakeSchema drops a submitted phone and keeps the other answers', () => {
+    const parsed = callbackIntakeSchema(t).parse({ full_name: 'דנה לוי', topic: 'מכירות', phone: '0501234567' });
+    expect(parsed).toEqual({ full_name: 'דנה לוי', topic: 'מכירות', preference: 'asap' });
   });
 });

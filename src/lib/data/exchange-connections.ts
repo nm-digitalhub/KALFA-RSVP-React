@@ -114,7 +114,7 @@ export async function getExchangeConnectionMode(): Promise<'per_user' | 'per_org
 // Mode-aware: 'per_user' self-scopes to the caller's user_id.
 // 'per_org' means "shared with every admin who has manage_settings" — so this
 // drops the user_id filter entirely and returns every row, mirroring what
-// loadBusinessConnection (callback-scheduling.ts, the automated scheduler)
+// loadBusinessExchangeConnection (exchange-business-connection.ts, the automated scheduler)
 // does: a bare `.eq('status','verified')` with no user_id/org_id filter at
 // all. Not org_id-scoped either: `organization_members` is the CUSTOMER
 // multi-tenant layer (per-event orgs), unrelated to this business-admin,
@@ -203,7 +203,7 @@ export async function createExchangeConnection(input: {
   // EVERY admin's rows for this mailbox, not just the caller's own. Getting
   // this wrong is not merely a visibility gap here — it is a correctness bug:
   // if two admins could each end up with their own 'verified' row for the
-  // same shared mailbox, loadBusinessConnection (the automated scheduler,
+  // same shared mailbox, loadBusinessExchangeConnection (the automated scheduler,
   // callback-scheduling.ts) would find 2 verified rows and refuse with
   // 'ambiguous_connection', silently halting every calendar-driven callback
   // in the system.

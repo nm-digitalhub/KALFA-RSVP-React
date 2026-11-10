@@ -127,6 +127,30 @@ async function updateLegacyTemplate(
   if (error) throw new Error('עדכון התבנית נכשל', { cause: error });
 }
 
+// The opening every per-template event shares: validate the payload, drop an event a newer one of its kind has
+// superseded, and resolve the two rows it concerns (the Meta mirror and the legacy template row). Null when there
+// is nothing to apply — a malformed/unexpected payload, or a superseded event.
+async function loadTemplateEvent<
+  T extends { message_template_id: string; message_template_name: string; message_template_language: string },
+>(
+  row: WebhookInboxRow,
+  schema: { safeParse(payload: unknown): { success: true; data: T } | { success: false } },
+): Promise<{
+  v: T;
+  admin: ReturnType<typeof createAdminClient>;
+  target: MirrorTarget | null;
+  template: Awaited<ReturnType<typeof findTemplateRowId>>;
+} | null> {
+  const parsed = schema.safeParse(row.payload);
+  if (!parsed.success) return null;
+  const v = parsed.data;
+  const admin = createAdminClient();
+  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return null;
+  const target = await findMirrorTemplate(admin, v.message_template_id);
+  const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
+  return { v, admin, target, template };
+}
+
 // What an alert names: the step(s) sending the template, else the legacy row's.
 function alertLabel(target: MirrorTarget | null, legacy: { message_key: string } | null): string | null {
   if (target && target.messageKeys.length > 0) return target.messageKeys.join(', ');
@@ -134,13 +158,9 @@ function alertLabel(target: MirrorTarget | null, legacy: { message_key: string }
 }
 
 export async function processTemplateStatusRow(row: WebhookInboxRow): Promise<void> {
-  const parsed = templateStatusUpdateSchema.safeParse(row.payload);
-  if (!parsed.success) return; // malformed/unexpected payload — nothing to apply
-  const v = parsed.data;
-  const admin = createAdminClient();
-  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return;
-  const target = await findMirrorTemplate(admin, v.message_template_id);
-  const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
+  const loaded = await loadTemplateEvent(row, templateStatusUpdateSchema);
+  if (!loaded) return;
+  const { v, admin, target, template } = loaded;
   await updateMirror(admin, target, {
     status: v.event,
     rejected_reason: v.rejection_info?.reason ?? v.reason ?? null,
@@ -175,13 +195,9 @@ export async function processTemplateStatusRow(row: WebhookInboxRow): Promise<vo
 }
 
 export async function processTemplateCategoryRow(row: WebhookInboxRow): Promise<void> {
-  const parsed = templateCategoryUpdateSchema.safeParse(row.payload);
-  if (!parsed.success) return;
-  const v = parsed.data;
-  const admin = createAdminClient();
-  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return;
-  const target = await findMirrorTemplate(admin, v.message_template_id);
-  const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
+  const loaded = await loadTemplateEvent(row, templateCategoryUpdateSchema);
+  if (!loaded) return;
+  const { v, admin, target, template } = loaded;
   await updateMirror(
     admin,
     target,
@@ -251,13 +267,9 @@ export async function processTemplateCategoryRow(row: WebhookInboxRow): Promise<
 }
 
 export async function processTemplateCategoryMisuseRow(row: WebhookInboxRow): Promise<void> {
-  const parsed = templateCategoryMisuseSchema.safeParse(row.payload);
-  if (!parsed.success) return;
-  const v = parsed.data;
-  const admin = createAdminClient();
-  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return;
-  const target = await findMirrorTemplate(admin, v.message_template_id);
-  const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
+  const loaded = await loadTemplateEvent(row, templateCategoryMisuseSchema);
+  if (!loaded) return;
+  const { v, admin, target, template } = loaded;
   await updateMirror(admin, target, { correct_category: v.correct_category });
   const label = alertLabel(target, template);
   if (!label) return; // neither sent by any step nor a legacy base row — nothing to alert on
@@ -287,13 +299,9 @@ export async function processTemplateCategoryMisuseRow(row: WebhookInboxRow): Pr
 }
 
 export async function processTemplateQualityRow(row: WebhookInboxRow): Promise<void> {
-  const parsed = templateQualityUpdateSchema.safeParse(row.payload);
-  if (!parsed.success) return;
-  const v = parsed.data;
-  const admin = createAdminClient();
-  if (await isSupersededByNewerEvent(admin, row, v.message_template_id)) return;
-  const target = await findMirrorTemplate(admin, v.message_template_id);
-  const template = await findTemplateRowId(admin, v.message_template_name, v.message_template_language);
+  const loaded = await loadTemplateEvent(row, templateQualityUpdateSchema);
+  if (!loaded) return;
+  const { v, admin, target, template } = loaded;
   await updateMirror(admin, target, {
     quality_score: { score: v.new_quality_score, date: Math.floor(Date.now() / 1000) },
   });

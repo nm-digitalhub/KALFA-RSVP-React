@@ -64,9 +64,9 @@ export type TargetValidation =
   | { ok: true; origin: string; host: string }
   | { ok: false; reason: string };
 
-/** Same shape of rules as src/lib/url.ts originFromEnv (which is server-only
- * and unavailable to the CLI), plus target-specific ones: https only, and it
- * must differ from the current origin. */
+/** Same shape of rules as originFromEnv (src/lib/http/trusted-origin.ts, the
+ * APP_ORIGIN parser src/lib/url.ts uses), plus target-specific ones: https
+ * only, and it must differ from the current origin. */
 export function validateTargetOrigin(raw: string, currentOrigin: string): TargetValidation {
   const trimmed = raw.trim();
   if (!trimmed) return { ok: false, reason: "empty target" };

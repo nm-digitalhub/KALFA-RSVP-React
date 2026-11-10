@@ -121,7 +121,7 @@ beforeEach(() => vi.clearAllMocks());
 describe('scheduleCallbackAppointment — empty-body guard', () => {
   it('refuses to create an appointment whose description came out blank', async () => {
     mockAdmin(
-      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [CONNECTION], error: null }, // loadBusinessExchangeConnection
       { data: [], error: null }, // countScheduledPerDay
     );
     vi.mocked(calendarProvider.getAvailability).mockResolvedValue({ ok: true, data: [] });
@@ -151,7 +151,7 @@ describe('scheduleCallbackAppointment — empty-body guard', () => {
 describe('scheduleCallbackAppointment — success path', () => {
   it('books the slot and marks the row scheduled', async () => {
     const builder = mockAdmin(
-      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [CONNECTION], error: null }, // loadBusinessExchangeConnection
       { data: [], error: null }, // countScheduledPerDay
       { data: null, error: null }, // the link-write update
     );
@@ -181,7 +181,7 @@ describe('repairBlankCallbackBodies', () => {
   it('fills in a blank description with exactly what a fresh create would write', async () => {
     mockAdmin(
       { data: [REQUEST], error: null }, // candidate rows
-      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [CONNECTION], error: null }, // loadBusinessExchangeConnection
     );
     vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
     vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
@@ -328,7 +328,7 @@ function calItem(overrides: Partial<ExchangeAppointment> = {}): ExchangeAppointm
 describe('countOrphanedCalendarAppointments', () => {
   it('counts a callback-subject calendar item with no matching DB row', async () => {
     mockAdmin(
-      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [CONNECTION], error: null }, // loadBusinessExchangeConnection
       { data: [{ calendar_item_id: 'known-1' }], error: null }, // known ids
     );
     vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
@@ -402,7 +402,7 @@ describe('reconcileCallbacksWithCalendar — moved (not deleted) appointments', 
     const newStart = new Date(START.getTime() + 2 * 60 * 60 * 1000); // +2h
     mockAdmin(
       { data: [MOVED_ROW], error: null }, // rows with a calendar_item_id
-      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [CONNECTION], error: null }, // loadBusinessExchangeConnection
       { data: null, error: null }, // scheduled_at correction UPDATE
     );
     vi.mocked(calendarProvider.listAppointments).mockResolvedValue({
@@ -502,7 +502,7 @@ describe('closeCallbackAppointment', () => {
   it('archives the appointment in place (never deletes) and clears the link', async () => {
     mockAdmin(
       { data: { calendar_item_id: 'item-1' }, error: null }, // row lookup
-      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [CONNECTION], error: null }, // loadBusinessExchangeConnection
       { data: null, error: null }, // clearing update
     );
     vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
@@ -608,7 +608,7 @@ describe('rescheduleCallbackRequest', () => {
     const builder = mockAdmin(
       { data: { calendar_item_id: 'item-1' }, error: null }, // reschedule's own row lookup
       { data: { calendar_item_id: 'item-1' }, error: null }, // closeCallbackAppointment's row lookup
-      { data: [CONNECTION], error: null }, // closeCallbackAppointment's loadBusinessConnection
+      { data: [CONNECTION], error: null }, // closeCallbackAppointment's loadBusinessExchangeConnection
       { data: null, error: null }, // closeCallbackAppointment's clearing update
       { data: null, error: null }, // reschedule's own final update
     );
@@ -707,7 +707,7 @@ describe('applyCallOutcome', () => {
     const builder = mockAdmin(
       { data: outcomeRow(), error: null }, // row read
       { data: { id: 'req-1' }, error: null }, // CAS claim succeeds
-      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [CONNECTION], error: null }, // loadBusinessExchangeConnection
     );
     vi.mocked(calendarProvider.getAppointment).mockResolvedValue({ ok: true, data: appointment('') });
     vi.mocked(calendarProvider.updateAppointment).mockResolvedValue({ ok: true, data: undefined });
@@ -734,7 +734,7 @@ describe('applyCallOutcome', () => {
     const builder = mockAdmin(
       { data: outcomeRow({ consecutive_no_answer_count: 2 }), error: null }, // row read
       { data: { id: 'req-1' }, error: null }, // CAS claim succeeds
-      { data: [CONNECTION], error: null }, // loadBusinessConnection
+      { data: [CONNECTION], error: null }, // loadBusinessExchangeConnection
       { data: { id: 'req-1' }, error: null }, // SMS send-claim succeeds
       { data: null, error: null }, // SMS success write (sent_at + provider_id)
     );

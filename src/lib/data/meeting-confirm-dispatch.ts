@@ -5,7 +5,6 @@ import { randomBytes } from 'node:crypto';
 import type { PgBoss } from 'pg-boss';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendSlackAlert } from '@/lib/alerts/slack';
 import { normalizePhone } from '@/lib/phone';
 import { QUEUES, CALL_RETRY } from '@/lib/queue/queues';
 import { deterministicJobId } from '@/lib/queue/deterministic-id';
@@ -26,14 +25,13 @@ import {
   countRecentCallbackAuditedAttempts,
   DISPATCH_PRE_TERMINAL,
 } from '@/lib/data/callback-request-attempts';
-import { countActiveCallsAllSurfaces } from '@/lib/data/voximplant-concurrency';
 import {
-  getAccountInfo,
-  VoximplantApiError,
-  VoximplantNetworkError,
-  type VoximplantConfig,
-} from '@/lib/voximplant/core';
-import { startScenarios } from '@/lib/voximplant/mutations';
+  buildCallbackDialCustomData,
+  checkDialCapacity,
+  dispatchAlerter,
+  startDispatchedCall,
+  type CallbackDialDispatchConfig,
+} from '@/lib/data/callback-dial-dispatch';
 
 // The outbound confirmation-call dispatcher for callback_requests rows
 // (meeting-booking plan, SS2/SS11a) — NOT dispatchOutreachCall, which is
@@ -58,25 +56,15 @@ const CONFIRM_TOKEN_TTL_SEC = 2 * 60 * 60; // 2h, matching outreach-calls.ts's C
 // dial below) — if a future batching/queueing layer ever mints tokens ahead
 // of the actual dial, this value must be revisited; it is not a general
 // "how long is a confirmation call worth" constant.
-const BALANCE_TIMEOUT_MS = 10_000;
-const START_TIMEOUT_MS = 25_000;
 
-export type MeetingConfirmDispatchConfig = {
-  auth: VoximplantConfig;
-  ruleId: string;
-  callerId: string;
-  minCallReserve: number;
-  lowBalanceThreshold: number;
-  maxConcurrentCalls: number;
-  // The AI-calling-specific kill switch, resolved by the caller. Deliberately
-  // NOT read from getOutreachEnabled()/app_settings here — that flag gates
-  // the RSVP campaign dispatcher, and the owner must be able to stop this
-  // channel independently of RSVP outreach. The caller resolves it from
-  // app_settings.voximplant_meeting_confirm_enabled
-  // (getMeetingConfirmDispatchConfig) — taking it as a plain boolean
-  // parameter keeps this function unit-testable.
-  callsEnabled: boolean;
-};
+// callsEnabled is the AI-calling-specific kill switch, resolved by the caller.
+// Deliberately NOT read from getOutreachEnabled()/app_settings here — that flag
+// gates the RSVP campaign dispatcher, and the owner must be able to stop this
+// channel independently of RSVP outreach. The caller resolves it from
+// app_settings.voximplant_meeting_confirm_enabled
+// (getMeetingConfirmDispatchConfig) — taking it as a plain boolean parameter
+// keeps this function unit-testable.
+export type MeetingConfirmDispatchConfig = CallbackDialDispatchConfig;
 
 export type MeetingConfirmDispatchResult =
   | { kind: 'skipped'; reason: 'not_scheduled' | 'attempt_cap' | 'already_past' | DialTargetFailureReason }
@@ -90,28 +78,11 @@ export type MeetingConfirmDispatchResult =
   | { kind: 'failed_to_start'; attemptId: string; code: number | null }
   | { kind: 'start_unknown'; attemptId: string };
 
-async function alert(
-  level: 'warn' | 'error',
-  title: string,
-  fields: Record<string, string | number>,
-): Promise<void> {
-  await sendSlackAlert({ level, title, source: 'meeting-confirm-dispatch', category: 'send_health', fields });
-}
+const alert = dispatchAlerter('meeting-confirm-dispatch');
 
-// Single source of truth for the scenario payload (Branch B, same shape as
-// outreach-calls.ts's buildScriptCustomData). Deliberately narrower: no `ca`/
-// `dh` DTMF-handoff keys — this persona has no live-takeover mechanism in v1
-// (both plans put escalation at console_queues for MVP, not a conference
-// bridge), so a scenario built against this payload should never expect them.
-export function buildMeetingConfirmCustomData(args: {
-  to: string;
-  from: string;
-  tok: string;
-  u: string;
-}): { payload: string; bytes: number } {
-  const payload = JSON.stringify({ to: args.to, from: args.from, tok: args.tok, u: args.u });
-  return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
-}
+// The scenario payload — the shape both callback_requests personas share
+// (buildCallbackDialCustomData).
+export const buildMeetingConfirmCustomData = buildCallbackDialCustomData;
 
 export type MeetingConfirmDispatchJob = { callbackRequestId: string };
 
@@ -241,35 +212,12 @@ export async function dispatchMeetingConfirmCall(
   });
   if (!shared.ok) return { kind: 'skipped', reason: shared.reason };
 
-  // 5. Concurrency cap — the COMBINED cross-table count (voximplant-
-  //    concurrency.ts), never call_attempts or callback_request_attempts
-  //    counted alone: both tables share one Voximplant account/balance.
-  const active = await countActiveCallsAllSurfaces();
-  if (active >= config.maxConcurrentCalls) {
-    await alert('warn', 'Voximplant max concurrency reached — meeting-confirm call skipped', {
-      callbackRequestId, active, cap: config.maxConcurrentCalls,
-    });
-    return { kind: 'max_concurrency' };
-  }
-
-  // 6. Balance precheck BEFORE any attempt row is created (so no orphaned row).
-  let balance: number;
-  try {
-    const info = await getAccountInfo(config.auth, BALANCE_TIMEOUT_MS);
-    balance = info.result.balance;
-  } catch {
-    return { kind: 'transient_error', reason: 'balance_check_failed' };
-  }
-  if (balance < config.minCallReserve) {
-    await alert('error', 'Voximplant balance below reserve — meeting-confirm call blocked', {
-      callbackRequestId, balance, minReserve: config.minCallReserve,
-    });
-    return { kind: 'blocked', reason: 'balance_below_reserve' };
-  }
-  if (balance < config.lowBalanceThreshold) {
-    await alert('warn', 'Voximplant balance low', { callbackRequestId, balance, lowThreshold: config.lowBalanceThreshold });
-    // proceed — warn only.
-  }
+  // 5-6. Concurrency cap (the COMBINED cross-table count, never call_attempts
+  //      or callback_request_attempts counted alone), then the balance
+  //      precheck BEFORE any attempt row is created (so no orphaned row).
+  const dispatched = { config, callbackRequestId, callLabel: 'meeting-confirm', alert };
+  const refused = await checkDialCapacity(dispatched);
+  if (refused) return refused;
 
   // 6.5. OUTCOME-AWARE slot dedup (incident 2026-08-23): the technical axis
   //      ("a call happened and ended") must never suppress a retry on its own
@@ -350,29 +298,14 @@ export async function dispatchMeetingConfirmCall(
 
   // 10. StartScenarios — definite vs ambiguous classification, identical
   //     discipline to dispatchOutreachCall.
-  try {
-    const res = await startScenarios(config.auth, { rule_id: config.ruleId, script_custom_data: payload }, START_TIMEOUT_MS);
-    if (res.result === 1 && res.call_session_history_id != null) {
-      await recordCallbackDialConfirmed(attemptId, res.call_session_history_id);
-      return { kind: 'dialed', attemptId, callSessionHistoryId: res.call_session_history_id };
-    }
-    await markCallbackDispatchUnknown(attemptId, 'ambiguous_start_response');
-    return { kind: 'start_unknown', attemptId };
-  } catch (e) {
-    if (e instanceof VoximplantApiError) {
-      await markCallbackDispatchFailed(attemptId, e.message);
-      await alert('warn', 'Voximplant StartScenarios rejected meeting-confirm call (failed_to_start)', {
-        callbackRequestId, attemptId, code: e.code ?? 0,
-      });
-      return { kind: 'failed_to_start', attemptId, code: e.code };
-    }
-    if (e instanceof VoximplantNetworkError) {
-      await markCallbackDispatchUnknown(attemptId, 'network_error_during_start');
-      await alert('warn', 'Voximplant StartScenarios ambiguous for meeting-confirm call (start_unknown)', {
-        callbackRequestId, attemptId,
-      });
-      return { kind: 'start_unknown', attemptId };
-    }
-    throw e; // truly unexpected — let the caller's own catch alert + rethrow
-  }
+  return startDispatchedCall({
+    ...dispatched,
+    attemptId,
+    payload,
+    attempts: {
+      recordDialConfirmed: recordCallbackDialConfirmed,
+      markUnknown: markCallbackDispatchUnknown,
+      markFailed: markCallbackDispatchFailed,
+    },
+  });
 }

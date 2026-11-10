@@ -48,13 +48,12 @@ import {
 import { enqueueSalesCallDispatch, salesCallDispatchJobId } from '@/lib/data/sales-call-dispatch';
 import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 import { QUEUES } from '@/lib/queue/queues';
-import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
-import type {
-  AvailabilityWindow,
-  ExchangeAppointment,
-  ExchangeConnectionConfig,
-} from '@/lib/exchange-ews/types';
+import type { AvailabilityWindow, ExchangeAppointment } from '@/lib/exchange-ews/types';
+import {
+  loadBusinessExchangeConnection,
+  type LoadedBusinessConnection,
+} from '@/lib/data/exchange-business-connection';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { TablesInsert } from '@/lib/supabase/types';
 import { formatIsraelDate, formatIsraelTime } from '@/lib/date';
@@ -73,58 +72,6 @@ const DAY_MS = 86_400_000;
  * kept failing. In every one of those the lead still gets a call.
  */
 const TRIAGE_GRACE_MS = 15 * 60_000;
-
-// ── The business connection ─────────────────────────────────────────────────
-
-type LoadedConnection = { id: string; config: ExchangeConnectionConfig };
-
-/**
- * The single verified connection the scheduler writes through.
- *
- * Unattended code must not guess between mailboxes, so this refuses rather than
- * picks when the answer is ambiguous: exactly one verified connection, or
- * nothing happens. If per-org mode ever puts several verified rows in the
- * table, this is the function that has to learn which one is "the business".
- */
-async function loadBusinessConnection(
-  admin: AdminClient,
-): Promise<{ ok: true; connection: LoadedConnection } | { ok: false; reason: string }> {
-  const { data, error } = await admin
-    .from('exchange_connections')
-    .select(
-      'id, user_id, mailbox_email, auth_method, status, credential_ciphertext, credential_iv, credential_auth_tag, encryption_key_version',
-    )
-    .eq('status', 'verified')
-    .limit(2);
-
-  if (error) return { ok: false, reason: 'connection_lookup_failed' };
-  if (!data || data.length === 0) return { ok: false, reason: 'no_verified_connection' };
-  if (data.length > 1) return { ok: false, reason: 'ambiguous_connection' };
-
-  const row = data[0];
-  let password: string;
-  try {
-    password = resolveMailboxPassword();
-  } catch {
-    // Fail closed, exactly as the request-bound loader does.
-    return { ok: false, reason: 'decrypt_failed' };
-  }
-
-  return {
-    ok: true,
-    connection: {
-      id: row.id,
-      config: {
-        mailboxEmail: row.mailbox_email,
-        password,
-        // Narrowed, not cast: the column is plain text, and an unexpected value
-        // must not reach the provider. The value is inert: graph-impl.ts
-        // ignores authMethod.
-        authMethod: row.auth_method === 'basic' ? 'basic' : 'ntlm',
-      },
-    },
-  };
-}
 
 // ── Inputs to the slot search ───────────────────────────────────────────────
 
@@ -246,7 +193,7 @@ export async function scheduleCallbackAppointment(
   const policy = opts.policy ?? DEFAULT_CALLBACK_POLICY;
   const admin = createAdminClient();
 
-  const loaded = await loadBusinessConnection(admin);
+  const loaded = await loadBusinessExchangeConnection(admin);
   if (!loaded.ok) return { ok: false, reason: loaded.reason };
 
   // Where to start looking: the caller's stated preference, else now + notice.
@@ -394,7 +341,7 @@ export type CallClosureReason = 'completed' | 'cancelled';
  * clearing the id itself.
  */
 async function archiveInCalendar(
-  connection: LoadedConnection,
+  connection: LoadedBusinessConnection,
   calendarItemId: string,
   reason: CallClosureReason,
 ): Promise<boolean> {
@@ -429,7 +376,7 @@ export async function closeCallbackAppointment(
     .maybeSingle();
   if (!row?.calendar_item_id) return { archived: false };
 
-  const loaded = await loadBusinessConnection(admin);
+  const loaded = await loadBusinessExchangeConnection(admin);
   if (!loaded.ok) return { archived: false };
 
   const ok = await archiveInCalendar(loaded.connection, row.calendar_item_id, reason);
@@ -647,7 +594,7 @@ export async function applyCallOutcome(
   // thing this claim exists to prevent.
   let archived = false;
   if (row.calendar_item_id) {
-    const loaded = await loadBusinessConnection(admin);
+    const loaded = await loadBusinessExchangeConnection(admin);
     if (loaded.ok) archived = await archiveInCalendar(loaded.connection, row.calendar_item_id, 'completed');
   }
 
@@ -795,7 +742,7 @@ export async function reconcileCallbacksWithCalendar(
 
   if (!rows || rows.length === 0) return { released: 0, moved: 0 };
 
-  const loaded = await loadBusinessConnection(admin);
+  const loaded = await loadBusinessExchangeConnection(admin);
   // Cannot see the calendar → assume nothing. Releasing rows on a failed read
   // would double-book every one of them on the next sweep.
   if (!loaded.ok) return { released: 0, moved: 0 };
@@ -1011,7 +958,7 @@ export async function countOrphanedCalendarAppointments(
   const policy = opts.policy ?? DEFAULT_CALLBACK_POLICY;
   const admin = createAdminClient();
 
-  const loaded = await loadBusinessConnection(admin);
+  const loaded = await loadBusinessExchangeConnection(admin);
   // Cannot see the calendar → cannot claim an orphan exists there.
   if (!loaded.ok) return 0;
 
@@ -1080,7 +1027,7 @@ export async function repairBlankCallbackBodies(
 
   if (!rows || rows.length === 0) return { repaired: 0 };
 
-  const loaded = await loadBusinessConnection(admin);
+  const loaded = await loadBusinessExchangeConnection(admin);
   if (!loaded.ok) return { repaired: 0 };
 
   let repaired = 0;

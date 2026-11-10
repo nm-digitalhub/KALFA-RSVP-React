@@ -10,6 +10,7 @@ import {
 } from '@/lib/owner-agent/range';
 
 import { upTo, type CoreWindow } from './window';
+import { countOf } from './count';
 
 // Request-free CORE for the events pipeline (owner-agent tool 5,
 // events_pipeline; plan §5). Takes a service-role client and returns numbers
@@ -46,11 +47,6 @@ type EventType = Enums<'event_type'>;
 
 function head(client: AdminClient) {
   return client.from('events').select('id', { count: 'exact', head: true });
-}
-
-function countOf(result: { count: number | null; error: unknown }, code: string): number {
-  if (result.error) throw new Error(code);
-  return result.count ?? 0;
 }
 
 export interface EventsPipelineSummary {

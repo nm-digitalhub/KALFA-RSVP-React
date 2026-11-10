@@ -211,11 +211,13 @@ export interface SetUserInfoResponse {
   result?: number;
   error?: { code: number; msg: string };
 }
-export function setVoximplantUserPassword(
+// The one SetUserInfo call both wrappers below go through: the user is named by
+// (application_id, user_name) and exactly ONE of the two permitted fields is sent.
+function setUserInfoField(
   config: VoximplantConfig,
   applicationId: number,
   userName: string,
-  newPassword: string,
+  field: { user_password: string } | { user_active: boolean },
   timeoutMs?: number,
 ): Promise<SetUserInfoResponse> {
   if (!VOX_USER_NAME_PATTERN.test(userName)) {
@@ -229,10 +231,19 @@ export function setVoximplantUserPassword(
     {
       application_id: applicationId,
       user_name: userName,
-      user_password: newPassword,
+      ...field,
     },
     timeoutMs,
   );
+}
+export function setVoximplantUserPassword(
+  config: VoximplantConfig,
+  applicationId: number,
+  userName: string,
+  newPassword: string,
+  timeoutMs?: number,
+): Promise<SetUserInfoResponse> {
+  return setUserInfoField(config, applicationId, userName, { user_password: newPassword }, timeoutMs);
 }
 
 // SetUserInfo — RESTRICTED here to the `user_active` field: blocking/
@@ -250,21 +261,7 @@ export function setVoximplantUserActive(
   active: boolean,
   timeoutMs?: number,
 ): Promise<SetUserInfoResponse> {
-  if (!VOX_USER_NAME_PATTERN.test(userName)) {
-    return Promise.reject(
-      new Error(`שם משתמש Voximplant אינו תקין: ${userName}`),
-    );
-  }
-  return voxRequest<SetUserInfoResponse>(
-    config,
-    'SetUserInfo',
-    {
-      application_id: applicationId,
-      user_name: userName,
-      user_active: active,
-    },
-    timeoutMs,
-  );
+  return setUserInfoField(config, applicationId, userName, { user_active: active }, timeoutMs);
 }
 
 // Params verified against the live method tree (voximplant.com/api/v2/getDoc

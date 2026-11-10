@@ -449,29 +449,18 @@ export async function removeConsoleAgent(
 // success). These are the thin, owner-gated, audited wrappers the admin UI
 // calls.
 export async function blockConsoleAgent(userId: string): Promise<SetActiveOutcome> {
-  const actor = await requirePlatformOwner();
-  const outcome = await setConsoleAgentVoxActive(userId, false);
-  await logActivity({
-    action: 'admin.console_agent.blocked',
-    meta: { targetUserId: userId, ok: outcome.ok, ...(outcome.ok ? {} : { reason: outcome.reason }) },
-  });
-  if (outcome.ok) {
-    void sendSlackAlert({
-      level: 'warn',
-      category: 'security',
-      source: 'admin-platform-roles',
-      title: 'נציג מוקד נחסם',
-      fields: { actorUserId: actor.id, targetUserId: userId },
-    });
-  }
-  return outcome;
+  return setConsoleAgentBlocked(userId, true);
 }
 
 export async function unblockConsoleAgent(userId: string): Promise<SetActiveOutcome> {
+  return setConsoleAgentBlocked(userId, false);
+}
+
+async function setConsoleAgentBlocked(userId: string, blocked: boolean): Promise<SetActiveOutcome> {
   const actor = await requirePlatformOwner();
-  const outcome = await setConsoleAgentVoxActive(userId, true);
+  const outcome = await setConsoleAgentVoxActive(userId, !blocked);
   await logActivity({
-    action: 'admin.console_agent.unblocked',
+    action: blocked ? 'admin.console_agent.blocked' : 'admin.console_agent.unblocked',
     meta: { targetUserId: userId, ok: outcome.ok, ...(outcome.ok ? {} : { reason: outcome.reason }) },
   });
   if (outcome.ok) {
@@ -479,7 +468,7 @@ export async function unblockConsoleAgent(userId: string): Promise<SetActiveOutc
       level: 'warn',
       category: 'security',
       source: 'admin-platform-roles',
-      title: 'חסימת נציג מוקד בוטלה',
+      title: blocked ? 'נציג מוקד נחסם' : 'חסימת נציג מוקד בוטלה',
       fields: { actorUserId: actor.id, targetUserId: userId },
     });
   }

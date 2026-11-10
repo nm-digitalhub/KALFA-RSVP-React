@@ -18,10 +18,8 @@ import type { Json } from '@/lib/supabase/types';
 
 export const MAIN_HANDOFF_TARGET = 'main';
 
-// fleet.json's `roles` object → name → enabled. `$`-prefixed keys are inline
-// comments, not roles. Throws on a shape that is not fleet.json — callers
-// treat that as fail-closed (no validation source, no insert).
-export function parseFleetRoles(raw: unknown): Map<string, boolean> {
+// fleet.json's `roles` object as it is written, or a throw on a shape that is not fleet.json.
+function fleetRolesObject(raw: unknown): object {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('fleet config is not an object');
   }
@@ -29,6 +27,14 @@ export function parseFleetRoles(raw: unknown): Map<string, boolean> {
   if (!roles || typeof roles !== 'object' || Array.isArray(roles)) {
     throw new Error('fleet config has no roles object');
   }
+  return roles;
+}
+
+// fleet.json's `roles` object → name → enabled. `$`-prefixed keys are inline
+// comments, not roles. Throws on a shape that is not fleet.json — callers
+// treat that as fail-closed (no validation source, no insert).
+export function parseFleetRoles(raw: unknown): Map<string, boolean> {
+  const roles = fleetRolesObject(raw);
   const map = new Map<string, boolean>();
   for (const [name, config] of Object.entries(roles)) {
     if (name.startsWith('$')) continue;
@@ -72,13 +78,7 @@ function parseReactive(raw: unknown): string[] {
 }
 
 export function parseFleetRoleRegistry(raw: unknown): FleetRoleInfo[] {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('fleet config is not an object');
-  }
-  const roles = (raw as { roles?: unknown }).roles;
-  if (!roles || typeof roles !== 'object' || Array.isArray(roles)) {
-    throw new Error('fleet config has no roles object');
-  }
+  const roles = fleetRolesObject(raw);
   const out: FleetRoleInfo[] = [];
   for (const [name, config] of Object.entries(roles)) {
     // `$`-prefixed keys are inline comments in fleet.json, not roles.

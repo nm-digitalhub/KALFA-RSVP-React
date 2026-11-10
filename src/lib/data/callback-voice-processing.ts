@@ -7,7 +7,7 @@ import {
 } from '@/lib/data/callback-request-attempts';
 import { rescheduleCallbackRequest } from '@/lib/data/callback-scheduling';
 import { insertContactMessage } from '@/lib/data/inquiry-intake';
-import { INQUIRY_TOPICS } from '@/lib/validation/inquiries';
+import { toInquiryTopic } from '@/lib/validation/inquiries';
 import type { Tables } from '@/lib/supabase/types';
 import type {
   VoxMeetingEscalate,
@@ -122,9 +122,7 @@ export async function processMeetingEscalate(
   const ref = await getCallbackRequestForAttempt(attemptId);
   if (!ref) return { ok: false };
 
-  const topic = (INQUIRY_TOPICS as readonly string[]).includes(ref.topic ?? '')
-    ? (ref.topic as (typeof INQUIRY_TOPICS)[number])
-    : 'אחר';
+  const topic = toInquiryTopic(ref.topic);
 
   const reasonHe = ESCALATION_REASON_HE[body.reason];
   const message = body.note_he ? `${reasonHe} — ${body.note_he}` : `${reasonHe} (מהסוכן הקולי לקביעת פגישות)`;

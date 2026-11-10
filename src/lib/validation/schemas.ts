@@ -512,6 +512,24 @@ export const calendarRangeSchema = z.object({
   endIso: isoInstant,
 });
 
+// The optional detail fields the create and the edit form share.
+const calendarEventDetailFields = {
+  location: z.string().trim().max(255, { error: 'המיקום ארוך מדי' }).optional(),
+  body: z.string().max(5000, { error: 'התיאור ארוך מדי' }).optional(),
+  // 0 = no reminder; capped at a week so a typo cannot create an absurd alarm.
+  reminderMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(10080, { error: 'זמן התזכורת ארוך מדי' })
+    .optional(),
+  showAs: showAsEnum.optional(),
+  sensitivity: sensitivityEnum.optional(),
+  category: z.string().trim().max(64, { error: 'שם הקטגוריה ארוך מדי' }).optional(),
+  // Non-empty ⇒ Exchange dispatches real invitations by email.
+  attendees: z.array(attendeeSchema).max(50, { error: 'יותר מדי משתתפים' }).optional(),
+};
+
 export const calendarCreateEventSchema = z.object({
   connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
   subject: z
@@ -524,19 +542,7 @@ export const calendarCreateEventSchema = z.object({
   allDay: z.boolean(),
   // Same optional-rich fields as the edit form, so an event can be created
   // complete instead of created-then-edited.
-  location: z.string().trim().max(255, { error: 'המיקום ארוך מדי' }).optional(),
-  body: z.string().max(5000, { error: 'התיאור ארוך מדי' }).optional(),
-  reminderMinutes: z
-    .number()
-    .int()
-    .min(0)
-    .max(10080, { error: 'זמן התזכורת ארוך מדי' })
-    .optional(),
-  showAs: showAsEnum.optional(),
-  sensitivity: sensitivityEnum.optional(),
-  category: z.string().trim().max(64, { error: 'שם הקטגוריה ארוך מדי' }).optional(),
-  // Non-empty ⇒ Exchange dispatches real invitations by email.
-  attendees: z.array(attendeeSchema).max(50, { error: 'יותר מדי משתתפים' }).optional(),
+  ...calendarEventDetailFields,
   // Recurrence is settable at creation only (editing a series is out of
   // scope — series items are read-only, matching the calendar UI).
   recurrence: recurrenceSchema.optional(),
@@ -570,20 +576,8 @@ export const calendarUpdateEventSchema = z.object({
     .min(1, { error: 'נא להזין כותרת לאירוע' })
     .max(255, { error: 'הכותרת ארוכה מדי' })
     .optional(),
-  location: z.string().trim().max(255, { error: 'המיקום ארוך מדי' }).optional(),
-  body: z.string().max(5000, { error: 'התיאור ארוך מדי' }).optional(),
   allDay: z.boolean().optional(),
-  // 0 = no reminder; capped at a week so a typo cannot create an absurd alarm.
-  reminderMinutes: z
-    .number()
-    .int()
-    .min(0)
-    .max(10080, { error: 'זמן התזכורת ארוך מדי' })
-    .optional(),
-  showAs: showAsEnum.optional(),
-  sensitivity: sensitivityEnum.optional(),
-  category: z.string().trim().max(64, { error: 'שם הקטגוריה ארוך מדי' }).optional(),
-  attendees: z.array(attendeeSchema).max(50, { error: 'יותר מדי משתתפים' }).optional(),
+  ...calendarEventDetailFields,
 });
 
 /** The connection alone — for reads that are about the mailbox, not an item. */
@@ -596,10 +590,7 @@ export const calendarEventIdSchema = z.object({
   appointmentId: z.string().trim().min(1).max(1024, { error: 'מזהה פגישה לא תקין' }),
 });
 
-export const calendarDeleteEventSchema = z.object({
-  connectionId: z.uuid({ error: 'מזהה חיבור לא תקין' }),
-  appointmentId: z.string().trim().min(1).max(1024, { error: 'מזהה פגישה לא תקין' }),
-});
+export const calendarDeleteEventSchema = calendarEventIdSchema;
 
 // Organizations & members (multi-tenant layer). role_id is a uuid into
 // public.org_roles — the actual role/permission set is validated server-side

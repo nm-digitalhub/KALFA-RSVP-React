@@ -24,6 +24,7 @@ import {
   type ReportPeriod,
 } from './planner';
 import type { ReportAuditInput, ReportEntryRow, ReportRunRow, ReportStore, ReportSubscriptionRow } from './store';
+import { quietly } from '@/lib/owner-agent/quietly';
 
 // One job of QUEUES.ownerAgentReport (or, for a report with instructions, of
 // QUEUES.ownerAgentReply — see ONE MODEL RUN below): send ONE planned report run
@@ -579,12 +580,4 @@ async function audit(
       fields: { run: ctx.run.id, outcome: row.outcome },
     }),
   );
-}
-
-async function quietly<T>(fn: () => Promise<T>): Promise<T | undefined> {
-  try {
-    return await fn();
-  } catch {
-    return undefined;
-  }
 }

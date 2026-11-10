@@ -1,14 +1,13 @@
 import 'server-only';
 
-import { ClientCertificateCredential } from '@azure/identity';
 import { TZDate } from '@date-fns/tz';
-import { Client } from '@microsoft/microsoft-graph-client';
-import { TokenCredentialAuthenticationProvider } from '@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials';
+import type { Client } from '@microsoft/microsoft-graph-client';
 import { format } from 'date-fns';
 import { findIana } from 'windows-iana';
 
 import { wallClockToDate } from '@/lib/data/event-date';
 import { ISRAEL_TIME_ZONE } from '@/lib/date';
+import { graphClient } from '@/lib/microsoft/graph-client';
 
 
 import type { ExchangeCalendarProvider, ExchangeErrorCode, ExchangeResult } from './provider';
@@ -40,44 +39,15 @@ import type {
 //    with a certificate, and `cfg.mailboxEmail` only names WHICH mailbox to
 //    act on. `cfg.password`/`cfg.authMethod` are ignored here — deliberately,
 //    so the shared interface keeps working while the credential model changes
-//    underneath it. The credential is a module-level singleton: MSAL caches
-//    and refreshes tokens per credential instance, so rebuilding one per call
-//    would defeat that cache.
+//    underneath it. The client comes from graphClient() (microsoft/graph-client.ts),
+//    a module-level singleton: MSAL caches and refreshes tokens per credential
+//    instance, so rebuilding one per call would defeat that cache.
 //
 // 2. Graph is JSON, so no value here may be XML-escaped: doing so
 //    double-escapes it (`&` becomes `&amp;` in the stored subject). The EWS
 //    path needed that escaping only because its library wrote values into
 //    SOAP unescaped. Only HTML BODIES still need escaping, and that is the
 //    caller's job exactly as before.
-
-// Read LAZILY, never at module scope. The worker loads .env.local from its own
-// module body (worker/main.ts loadEnv()), and imports are evaluated BEFORE that
-// body runs — so a module-level `process.env.X` here captures '' and every call
-// afterwards fails with graph_config_missing, mapped to auth_failed. That is
-// exactly what happened: the calendar sync failed silently in the worker every
-// 10 minutes while working perfectly under `node --env-file=`.
-function env(name: string): string {
-  return process.env[name] ?? '';
-}
-
-let cachedClient: Client | null = null;
-
-function graphClient(): Client {
-  if (cachedClient) return cachedClient;
-  const tenantId = env('MS_GRAPH_TENANT_ID');
-  const clientId = env('MS_GRAPH_CLIENT_ID');
-  const certPath = env('MS_GRAPH_CERT_PATH');
-  if (!tenantId || !clientId || !certPath) {
-    throw new Error('graph_config_missing');
-  }
-  const credential = new ClientCertificateCredential(tenantId, clientId, certPath);
-  cachedClient = Client.initWithMiddleware({
-    authProvider: new TokenCredentialAuthenticationProvider(credential, {
-      scopes: ['https://graph.microsoft.com/.default'],
-    }),
-  });
-  return cachedClient;
-}
 
 // --- error mapping ---------------------------------------------------------
 

@@ -235,6 +235,32 @@ async function claimBenefit(assignmentId: string, userId: string): Promise<boole
 }
 
 /**
+ * The account's benefits usable for `packageId` on this campaign, best first (D18): unexpired, not bound
+ * to another campaign, carrying an option for the package.
+ */
+function rankBenefitCandidates(
+  benefits: EligibleBenefit[],
+  campaignId: string,
+  packageId: string,
+): { benefit: EligibleBenefit; option: BenefitOption }[] {
+  const now = Date.now();
+  return (
+    benefits
+      .filter((b) => Date.parse(b.expiresAt) > now)
+      // Bound to another campaign = not available (the bind function refuses it too).
+      .filter((b) => b.state !== 'bound' || b.boundCampaignId === campaignId)
+      .map((b) => ({ benefit: b, option: b.options.find((o) => o.packageId === packageId) }))
+      .filter((c): c is { benefit: EligibleBenefit; option: BenefitOption } => c.option !== undefined)
+      // Lowest final price first; ties go to the benefit that expires sooner (use it before it dies).
+      .sort(
+        (a, b) =>
+          a.option.finalPrice - b.option.finalPrice ||
+          Date.parse(a.benefit.expiresAt) - Date.parse(b.benefit.expiresAt),
+      )
+  );
+}
+
+/**
  * The acceptance flow (task 5.5, ש5/D21/D22): the owner of a benefit whose campaign already has
  * APPROVED, UNPAID terms accepts the benefit — the locked round is superseded (reason
  * `benefit_accepted`) by a fresh round carrying the benefit's frozen option prices, and the
@@ -257,18 +283,7 @@ export async function acceptBenefitForCampaign({
   packageId: string;
   user: SessionUser;
 }): Promise<'accepted' | 'none'> {
-  const now = Date.now();
-  const benefits = await listEligibleBenefits(user);
-  const candidates = benefits
-    .filter((b) => Date.parse(b.expiresAt) > now)
-    .filter((b) => b.state !== 'bound' || b.boundCampaignId === campaignId)
-    .map((b) => ({ benefit: b, option: b.options.find((o) => o.packageId === packageId) }))
-    .filter((c): c is { benefit: EligibleBenefit; option: BenefitOption } => c.option !== undefined)
-    .sort(
-      (a, b) =>
-        a.option.finalPrice - b.option.finalPrice ||
-        Date.parse(a.benefit.expiresAt) - Date.parse(b.benefit.expiresAt),
-    );
+  const candidates = rankBenefitCandidates(await listEligibleBenefits(user), campaignId, packageId);
 
   const admin = createAdminClient();
   for (const { benefit, option } of candidates) {
@@ -426,21 +441,7 @@ export async function bindBestBenefit({
   packageId: string;
   user: SessionUser;
 }): Promise<'bound' | 'none'> {
-  const now = Date.now();
-  const benefits = await listEligibleBenefits(user);
-
-  const candidates = benefits
-    .filter((b) => Date.parse(b.expiresAt) > now)
-    // Bound to another campaign = not available (the bind function refuses it too).
-    .filter((b) => b.state !== 'bound' || b.boundCampaignId === campaignId)
-    .map((b) => ({ benefit: b, option: b.options.find((o) => o.packageId === packageId) }))
-    .filter((c): c is { benefit: EligibleBenefit; option: BenefitOption } => c.option !== undefined)
-    // Lowest final price first; ties go to the benefit that expires sooner (use it before it dies).
-    .sort(
-      (a, b) =>
-        a.option.finalPrice - b.option.finalPrice ||
-        Date.parse(a.benefit.expiresAt) - Date.parse(b.benefit.expiresAt),
-    );
+  const candidates = rankBenefitCandidates(await listEligibleBenefits(user), campaignId, packageId);
 
   const admin = createAdminClient();
   for (const { benefit } of candidates) {

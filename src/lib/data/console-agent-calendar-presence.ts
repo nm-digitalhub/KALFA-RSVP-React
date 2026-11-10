@@ -43,7 +43,7 @@ import {
 // REQUEST-FREE by design (service-role only, no requireUser/cookies) so the
 // worker bundle can import it — same reasoning as
 // callback-scheduling.ts:1-18, which this module deliberately mirrors for
-// its credential-loading shape. UNLIKE that module's loadBusinessConnection
+// its credential-loading shape. UNLIKE that module's loadBusinessExchangeConnection
 // (exactly ONE verified connection, system-wide — refuses on ambiguity),
 // this is genuinely PER-AGENT: user_id is the join key between
 // console_agents and exchange_connections, so each agent's own mailbox
@@ -113,7 +113,7 @@ async function listAgentsWithVerifiedExchangeConnection(
     agentId: row.user_id,
     connectionId: row.id,
     mailboxEmail: row.mailbox_email,
-    // Narrowed, not cast — same rule as loadBusinessConnection: the column
+    // Narrowed, not cast — same rule as loadBusinessExchangeConnection: the column
     // is plain text, and an unexpected value must not reach the provider.
     authMethod: row.auth_method === 'basic' ? 'basic' : 'ntlm',
     credentialCiphertext: row.credential_ciphertext,

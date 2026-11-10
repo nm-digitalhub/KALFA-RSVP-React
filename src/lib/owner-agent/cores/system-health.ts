@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/supabase/admin';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
+import { countOf } from './count';
 
 // Request-free CORE for webhook-intake health (owner-agent tool 9,
 // system_health; plan §5). Takes a service-role client and returns numbers
@@ -38,11 +39,6 @@ const MINUTE_MS = 60_000;
 
 function head(client: AdminClient) {
   return client.from('webhook_inbox').select('id', { count: 'exact', head: true });
-}
-
-function countOf(result: { count: number | null; error: unknown }, code: string): number {
-  if (result.error) throw new Error(code);
-  return result.count ?? 0;
 }
 
 // --- The three numbers of the /admin/webhooks header strip -----------------

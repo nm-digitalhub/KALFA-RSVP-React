@@ -9,6 +9,11 @@ import { isValidPhone } from '@/lib/phone';
 // displayed today, so no label map is needed.
 export const INQUIRY_TOPICS = ['מכירות', 'תמיכה', 'חיוב ותשלום', 'אחר'] as const;
 
+// A stored topic as one of INQUIRY_TOPICS; anything else (null, a retired value) reads as 'אחר'.
+export function toInquiryTopic(topic: string | null): (typeof INQUIRY_TOPICS)[number] {
+  return INQUIRY_TOPICS.find((known) => known === topic) ?? 'אחר';
+}
+
 // Each schema is built with the caller's `t`, so its messages follow the language of the request. A Server Action passes
 // the `t` of getT('public') from @/i18n.server: `public` is the only namespace next-i18next serves (src/i18n.config.ts).
 // Code with no request passes the fixed getT('public') from @/lib/i18n, which stays Hebrew. The messages are
@@ -84,12 +89,7 @@ export function callbackRequestSchema(t: TFunction<'public'>) {
 // a number of their choosing. The action re-reads the phone from the row; the
 // submitter never supplies it.
 export function callbackIntakeSchema(t: TFunction<'public'>) {
-  return z.object({
-    full_name: nameSchema(t),
-    topic: z.enum(INQUIRY_TOPICS, { error: () => t('validation.inquiry.topic.required', 'נא לבחור נושא') }),
-    note: z.string().trim().max(500, { error: () => t('validation.note.tooLong', 'ההערה ארוכה מדי') }).optional(),
-    preference: z.enum(CALLBACK_TIME_PREFERENCES).default('asap'),
-  });
+  return callbackRequestSchema(t).omit({ phone: true });
 }
 
 export type CallbackIntakeInput = z.infer<ReturnType<typeof callbackIntakeSchema>>;

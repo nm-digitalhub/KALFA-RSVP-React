@@ -65,6 +65,21 @@ export async function setInteractionBillingOutcome(input: {
   if (error) throw new Error('עדכון תוצאת החיוב נכשל', { cause: error });
 }
 
+// The (event, campaign, contact) an outbound interaction row targeted, or null
+// when the row is missing or carries no full target (fail-closed → no billing).
+function toInteractionTarget(
+  data: Pick<Tables<'contact_interactions'>, 'event_id' | 'campaign_id' | 'contact_id'> | null,
+): { eventId: string; campaignId: string; contactId: string } | null {
+  if (!data || !data.event_id || !data.campaign_id || !data.contact_id) {
+    return null;
+  }
+  return {
+    eventId: data.event_id,
+    campaignId: data.campaign_id,
+    contactId: data.contact_id,
+  };
+}
+
 // Resolve an inbound message (sender phone) to the (event, campaign, contact) it
 // belongs to, via the most-recent PRIOR OUTBOUND interaction for that contact's
 // normalized phone. contacts is unique on (event_id, phone) — a global phone is
@@ -93,14 +108,7 @@ export async function resolveInboundContact(
     .limit(1)
     .maybeSingle();
   if (error) throw new Error('טעינת האינטראקציה נכשלה', { cause: error });
-  if (!data || !data.event_id || !data.campaign_id || !data.contact_id) {
-    return null;
-  }
-  return {
-    eventId: data.event_id,
-    campaignId: data.campaign_id,
-    contactId: data.contact_id,
-  };
+  return toInteractionTarget(data);
 }
 
 // Resolve an inbound reply to its (event, campaign, contact) via the OUTBOUND
@@ -122,14 +130,7 @@ export async function resolveByContextId(
     .limit(1)
     .maybeSingle();
   if (error) throw new Error('טעינת האינטראקציה לפי הקשר נכשלה', { cause: error });
-  if (!data || !data.event_id || !data.campaign_id || !data.contact_id) {
-    return null;
-  }
-  return {
-    eventId: data.event_id,
-    campaignId: data.campaign_id,
-    contactId: data.contact_id,
-  };
+  return toInteractionTarget(data);
 }
 
 // Record the latest delivery state (sent/delivered/read/failed) + raw Meta error

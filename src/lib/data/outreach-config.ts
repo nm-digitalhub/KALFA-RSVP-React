@@ -1,12 +1,12 @@
 import 'server-only';
 
-import { createAdminClient } from '@/lib/supabase/admin';
 import { resolveNumberForRoleStrict } from '@/lib/data/provider-numbers-resolve';
 import {
   DEFAULT_SEND_POLICY,
   parseSendPolicy,
   type SendPolicy,
 } from '@/lib/outreach/send-policy';
+import { readAppSettingsRow } from '@/lib/data/app-settings-row';
 
 // Server-side readers of the admin-managed outreach config (app_settings, a
 // singleton with ADMIN-ONLY RLS). Fail-safe: `select('*')` reads each column
@@ -25,14 +25,8 @@ export type WhatsAppConfig = {
 // Master switch for all outreach (WhatsApp + future channels). False unless on.
 export async function getOutreachEnabled(): Promise<boolean> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return false;
-    return (data as Record<string, unknown>).outreach_enabled === true;
+    const row = await readAppSettingsRow();
+    return row?.outreach_enabled === true;
   } catch {
     return false;
   }
@@ -44,13 +38,7 @@ export async function getOutreachEnabled(): Promise<boolean> {
 // NARROW the window (parseSendPolicy enforces the ceilings).
 export async function getSendPolicy(): Promise<SendPolicy> {
   try {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    const raw = (data as Record<string, unknown> | null)?.whatsapp_send_policy;
+    const raw = (await readAppSettingsRow())?.whatsapp_send_policy;
     if (raw == null) return DEFAULT_SEND_POLICY;
     return parseSendPolicy(raw);
   } catch {
@@ -62,14 +50,8 @@ export async function getSendPolicy(): Promise<SendPolicy> {
 // access token are present (the minimum to send). Read server-side only.
 export async function getWhatsAppConfig(): Promise<WhatsAppConfig | null> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return null;
-    const row = data as Record<string, unknown>;
+    const row = await readAppSettingsRow();
+    if (!row) return null;
     const phoneNumberId =
       typeof row.whatsapp_phone_number_id === 'string'
         ? row.whatsapp_phone_number_id

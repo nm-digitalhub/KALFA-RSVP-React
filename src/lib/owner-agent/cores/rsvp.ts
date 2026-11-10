@@ -4,6 +4,7 @@ import type { createAdminClient } from '@/lib/supabase/admin';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 
 import { upTo, type CoreWindow } from './window';
+import { countOf } from './count';
 
 // Request-free CORE for RSVP totals across ACTIVE events (owner-agent tool 6,
 // rsvp_totals; plan §5). Takes a service-role client and returns numbers only.
@@ -44,11 +45,6 @@ function activeGuests(client: AdminClient) {
     .from('guests')
     .select('id, events!inner(status)', { count: 'exact', head: true })
     .eq('events.status', 'active');
-}
-
-function countOf(result: { count: number | null; error: unknown }, code: string): number {
-  if (result.error) throw new Error(code);
-  return result.count ?? 0;
 }
 
 // Exactly one row of two non-negative integers, or a bare code — never a

@@ -3,6 +3,7 @@ import 'server-only';
 import { getCompanyLegal } from '@/lib/data/company';
 import { renderConsentWording, type ConsentWording } from '@/lib/marketing/consent-wording';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { readAppSettingsRow } from '@/lib/data/app-settings-row';
 
 // Customer consent to KALFA marketing email (openspec change marketing-email-consent, spec marketing-consent).
 //
@@ -27,10 +28,8 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 // shows a consent box with wording nobody approved.
 export async function isMarketingConsentEnabled(): Promise<boolean> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin.from('app_settings').select('*').eq('id', true).maybeSingle();
-    if (error || !data) return false;
-    return (data as Record<string, unknown>).marketing_consent_enabled === true;
+    const row = await readAppSettingsRow();
+    return row?.marketing_consent_enabled === true;
   } catch {
     return false;
   }

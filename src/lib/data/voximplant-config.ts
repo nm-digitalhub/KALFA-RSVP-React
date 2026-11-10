@@ -1,7 +1,7 @@
 import 'server-only';
 
-import { createAdminClient } from '@/lib/supabase/admin';
 import type { VoximplantConfig } from '@/lib/voximplant/client';
+import { readAppSettingsRow } from '@/lib/data/app-settings-row';
 
 // Server-side reader of the admin-managed Voximplant config (app_settings, a
 // singleton with ADMIN-ONLY RLS). Fail-safe: `select('*')` simply omits any
@@ -78,14 +78,8 @@ function parseServiceAccount(raw: string): VoximplantConfig | null {
 // present (the minimum StartScenarios needs). Read server-side only.
 export async function getVoximplantConfig(): Promise<VoximplantServerConfig | null> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return null;
-    const row = data as Record<string, unknown>;
+    const row = await readAppSettingsRow();
+    if (!row) return null;
 
     const auth = parseServiceAccount(str(row, 'voximplant_service_account_json'));
     const ruleId = str(row, 'voximplant_rule_id');
@@ -150,14 +144,8 @@ async function getPersonaDispatchConfig(
   ruleIdColumn: string,
 ): Promise<PersonaDispatchConfig | null> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return null;
-    const row = data as Record<string, unknown>;
+    const row = await readAppSettingsRow();
+    if (!row) return null;
 
     const auth = parseServiceAccount(str(row, 'voximplant_service_account_json'));
     const callerId = str(row, 'voximplant_caller_id');
@@ -209,14 +197,8 @@ export type VoximplantBalancePullConfig = {
 
 export async function getVoximplantBalancePullConfig(): Promise<VoximplantBalancePullConfig | null> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('*')
-      .eq('id', true)
-      .maybeSingle();
-    if (error || !data) return null;
-    const row = data as Record<string, unknown>;
+    const row = await readAppSettingsRow();
+    if (!row) return null;
     const auth = parseServiceAccount(str(row, 'voximplant_service_account_json'));
     if (!auth) return null;
     return {

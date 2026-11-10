@@ -217,6 +217,34 @@ export type RotateOutcome =
   | { ok: true; voxUsername: string }
   | { ok: false; reason: 'not_provisioned' | 'not_configured' | 'api_failed' | 'store_failed' };
 
+// The agent's Voximplant identity and the account/application to act on it with:
+// what every SetUserInfo call below needs before it may touch the platform.
+async function loadAgentVoxTarget(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<
+  | {
+      ok: true;
+      agent: { vox_username: string };
+      cfg: NonNullable<Awaited<ReturnType<typeof getVoximplantConfig>>>;
+      applicationId: NonNullable<Awaited<ReturnType<typeof readApplicationId>>>;
+    }
+  | { ok: false; reason: 'not_provisioned' | 'not_configured' }
+> {
+  const { data: agent } = await admin
+    .from('console_agents')
+    .select('vox_username')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (!agent?.vox_username) return { ok: false, reason: 'not_provisioned' };
+
+  const cfg = await getVoximplantConfig();
+  const applicationId = await readApplicationId(admin);
+  if (!cfg || !applicationId) return { ok: false, reason: 'not_configured' };
+
+  return { ok: true, agent: { vox_username: agent.vox_username }, cfg, applicationId };
+}
+
 /**
  * Rotate the platform password of an ALREADY-provisioned console agent and
  * store the fresh secret. Recovery for the state live login exposed
@@ -232,16 +260,9 @@ export type RotateOutcome =
 export async function rotateConsoleAgentVoxSecret(userId: string): Promise<RotateOutcome> {
   const admin = createAdminClient();
 
-  const { data: agent } = await admin
-    .from('console_agents')
-    .select('vox_username')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (!agent?.vox_username) return { ok: false, reason: 'not_provisioned' };
-
-  const cfg = await getVoximplantConfig();
-  const applicationId = await readApplicationId(admin);
-  if (!cfg || !applicationId) return { ok: false, reason: 'not_configured' };
+  const target = await loadAgentVoxTarget(admin, userId);
+  if (!target.ok) return target;
+  const { agent, cfg, applicationId } = target;
 
   const password = generateVoxPassword();
   try {
@@ -369,16 +390,9 @@ export async function setConsoleAgentVoxActive(
 ): Promise<SetActiveOutcome> {
   const admin = createAdminClient();
 
-  const { data: agent } = await admin
-    .from('console_agents')
-    .select('vox_username')
-    .eq('user_id', userId)
-    .maybeSingle();
-  if (!agent?.vox_username) return { ok: false, reason: 'not_provisioned' };
-
-  const cfg = await getVoximplantConfig();
-  const applicationId = await readApplicationId(admin);
-  if (!cfg || !applicationId) return { ok: false, reason: 'not_configured' };
+  const target = await loadAgentVoxTarget(admin, userId);
+  if (!target.ok) return target;
+  const { agent, cfg, applicationId } = target;
 
   try {
     const res = await setVoximplantUserActive(cfg.auth, applicationId, agent.vox_username, active);

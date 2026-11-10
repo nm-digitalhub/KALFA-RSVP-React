@@ -1,9 +1,7 @@
 import 'server-only';
 
-import { constants } from 'node:fs';
-import { access } from 'node:fs/promises';
-
 import type { Ga4ConfigIssue } from './ga4-types';
+import { googleCredentialsIssue } from './google-credentials';
 
 // Safe config validation (v2 plan §2.2). Presence is NOT enough: the property
 // id must be digits-only and the ADC credentials file must actually be
@@ -16,14 +14,8 @@ export async function getGa4ConfigStatus(): Promise<
   if (!propertyId) return { ok: false, issue: 'missing_property_id' };
   if (!/^\d+$/.test(propertyId)) return { ok: false, issue: 'invalid_property_id' };
 
-  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
-  if (!credentialsPath) return { ok: false, issue: 'missing_credentials_path' };
-  try {
-    await access(credentialsPath, constants.R_OK);
-  } catch {
-    return { ok: false, issue: 'credentials_unreadable' };
-  }
-  return { ok: true };
+  const issue = await googleCredentialsIssue();
+  return issue ? { ok: false, issue } : { ok: true };
 }
 
 // Call only after getGa4ConfigStatus() returned ok.

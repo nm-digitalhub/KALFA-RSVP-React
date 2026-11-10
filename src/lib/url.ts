@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { originFromEnv } from '@/lib/http/trusted-origin';
+
 // Absolute, shareable app URLs (RSVP links, org-invite links, email links, and
 // auth links such as password-reset / magic-link).
 //
@@ -13,29 +15,6 @@ import 'server-only';
 // link (password reset, magic link) or any absolute URL from them enables
 // host-header injection. In production a missing APP_ORIGIN is therefore a hard
 // error — never a silent Host fallback.
-
-function originFromEnv(): string | null {
-  const configured = process.env.APP_ORIGIN?.trim();
-  if (!configured) return null;
-  // Parse and validate: APP_ORIGIN must be a bare http(s) origin — no credentials,
-  // path, query or fragment — so we only ever hand back a trusted `url.origin`.
-  let url: URL;
-  try {
-    url = new URL(configured);
-  } catch {
-    throw new Error('APP_ORIGIN is not a valid absolute URL.');
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('APP_ORIGIN must use http:// or https://.');
-  }
-  if (url.username !== '' || url.password !== '') {
-    throw new Error('APP_ORIGIN must not include credentials.');
-  }
-  if ((url.pathname !== '' && url.pathname !== '/') || url.search !== '' || url.hash !== '') {
-    throw new Error('APP_ORIGIN must not include a path, query, or fragment.');
-  }
-  return url.origin;
-}
 
 /**
  * The absolute origin (scheme + host, no trailing slash) for building links.

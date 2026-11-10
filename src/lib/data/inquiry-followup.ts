@@ -61,18 +61,23 @@ export async function getInquiryFollowupEnabled(): Promise<boolean> {
   }
 }
 
-export async function listDueForReminder(
-  admin: AdminClient,
-  nowMs: number = Date.now(),
-): Promise<DueRow[]> {
-  const cutoff = new Date(nowMs - REMINDER_AFTER_MS).toISOString();
-  const { data } = await admin
+// In-progress inquiries with an e-mail address whose admin reply is at least as old as `cutoffMs` —
+// the base every stage of the sweep narrows by its own sent/closed markers.
+function quietSinceReply(admin: AdminClient, cutoffMs: number) {
+  return admin
     .from('contact_messages')
     .select('id, email, name, ref_code, replied_at')
     .eq('status', 'in_progress')
     .not('email', 'is', null)
     .not('replied_at', 'is', null)
-    .lte('replied_at', cutoff)
+    .lte('replied_at', new Date(cutoffMs).toISOString());
+}
+
+export async function listDueForReminder(
+  admin: AdminClient,
+  nowMs: number = Date.now(),
+): Promise<DueRow[]> {
+  const { data } = await quietSinceReply(admin, nowMs - REMINDER_AFTER_MS)
     .is('reminder_sent_at', null);
   return (data ?? []) as DueRow[];
 }
@@ -81,14 +86,7 @@ export async function listDueForWarning(
   admin: AdminClient,
   nowMs: number = Date.now(),
 ): Promise<DueRow[]> {
-  const cutoff = new Date(nowMs - WARNING_AFTER_MS).toISOString();
-  const { data } = await admin
-    .from('contact_messages')
-    .select('id, email, name, ref_code, replied_at')
-    .eq('status', 'in_progress')
-    .not('email', 'is', null)
-    .not('replied_at', 'is', null)
-    .lte('replied_at', cutoff)
+  const { data } = await quietSinceReply(admin, nowMs - WARNING_AFTER_MS)
     .not('reminder_sent_at', 'is', null)
     .is('closing_warning_sent_at', null);
   return (data ?? []) as DueRow[];
@@ -98,14 +96,7 @@ export async function listDueForAutoClose(
   admin: AdminClient,
   nowMs: number = Date.now(),
 ): Promise<DueRow[]> {
-  const cutoff = new Date(nowMs - AUTO_CLOSE_AFTER_MS).toISOString();
-  const { data } = await admin
-    .from('contact_messages')
-    .select('id, email, name, ref_code, replied_at')
-    .eq('status', 'in_progress')
-    .not('email', 'is', null)
-    .not('replied_at', 'is', null)
-    .lte('replied_at', cutoff)
+  const { data } = await quietSinceReply(admin, nowMs - AUTO_CLOSE_AFTER_MS)
     .not('closing_warning_sent_at', 'is', null)
     .is('auto_closed_at', null);
   return (data ?? []) as DueRow[];

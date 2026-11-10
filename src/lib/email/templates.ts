@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { Html, Body, Heading, Text, Link, Hr, Img, render, toPlainText } from 'react-email';
 // Pure Hebrew (RTL) React Email templates. Inline styles for email-client
 // compatibility. No I/O — unit-testable.
@@ -49,24 +49,11 @@ const PLAIN_TEXT_OPTIONS: PlainTextOptions = {
 function emailText(html: string): string {
   return toPlainText(html, PLAIN_TEXT_OPTIONS).trim();
 }
-// Email notifying the customer their agreement is signed (or, for `kind:
-// 'approved'`, that the package terms were approved), with a SECURE LINK to
-// view/download the PDF (not an attachment — avoids recipient attachment
-// scanners flagging it). Satisfies §14ג(ב): the document is provided + saveable.
-// Returns a plain-text alternative too (multipart improves inbox placement), derived from the HTML (emailText).
-export async function agreementEmail(input: {
-  signerName: string;
-  eventName: string;
-  companyName: string;
-  downloadUrl: string;
-}): Promise<{
-  subject: string;
-  html: string;
-  text: string;
-}> {
-  const company = input.companyName.trim() || 'KALFA';
-  // The package terms are approved by ticking the box, never signed: the mail does not say "signed".
-  const subject = `תנאי החבילה אושרו — ${input.eventName}`;
+type EmailContent = { subject: string; html: string; text: string };
+
+// The branded RTL shell every template shares: <html>/<body> (lang+dir on both, see the note at the top) around one
+// white card. Renders the card's content and derives the plain-text part from the same HTML.
+async function renderEmail(subject: string, ...content: ReactNode[]): Promise<EmailContent> {
   const html = await render(
     createElement(
       Html,
@@ -98,81 +85,148 @@ export async function agreementEmail(input: {
               border: '1px solid #e3e3e8',
             },
           },
-          createElement(
-            Heading,
-            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
-            'תנאי החבילה אושרו בהצלחה ✓',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'שלום ' + input.signerName + ',',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'התנאים שאישרת עבור האירוע ',
-            createElement('strong', {}, input.eventName),
-            ' מוכנים.',
-          ),
-          createElement(
-            Text,
-            {
-              style: { fontSize: '16px', lineHeight: '1.7', margin: '20px 0' },
-            },
-            createElement(
-              Link,
-              {
-                href: input.downloadUrl,
-                style: {
-                  display: 'inline-block',
-                  background: '#4338ca',
-                  color: '#ffffff',
-                  padding: '11px 20px',
-                  borderRadius: '8px',
-                  textDecoration: 'none',
-                  fontWeight: '600',
-                },
-              },
-              'צפייה והורדת התנאים שאושרו',
-            ),
-          ),
-          createElement(
-            Text,
-            {
-              style: {
-                fontSize: '13px',
-                lineHeight: '1.7',
-                margin: '8px 0',
-                color: '#555',
-              },
-            },
-            'הקישור מאובטח ודורש התחברות לחשבון. אנא שמרו עותק לרשומותיכם.',
-          ),
-          createElement(Hr, {
-            style: {
-              border: 'none',
-              borderTop: '1px solid #eee',
-              margin: '18px 0',
-            },
-          }),
-          createElement(
-            Text,
-            {
-              style: {
-                fontSize: '12px',
-                lineHeight: '1.7',
-                margin: '0',
-                color: '#888',
-              },
-            },
-            company,
-          ),
+          ...content,
         ),
       ),
     ),
   );
   return { subject, html, text: emailText(html) };
+}
+
+function title(...content: ReactNode[]): ReactNode {
+  return createElement(Heading, { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } }, ...content);
+}
+
+function paragraph(...content: ReactNode[]): ReactNode {
+  return createElement(Text, { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } }, ...content);
+}
+
+function recipientNameOrDefault(recipientName: string): string {
+  return recipientName.trim() || 'לקוח יקר';
+}
+
+// A staff- or drafter-written body: escaped first, then the two narrow markdown conversions (inlineMarkdownToHtml),
+// with its line breaks kept.
+function writtenBody(body: string, origin: string): ReactNode {
+  return createElement('div', {
+    style: { margin: '12px 0', whiteSpace: 'pre-line' },
+    dangerouslySetInnerHTML: {
+      __html: inlineMarkdownToHtml(esc(body), esc(origin)),
+    },
+  });
+}
+
+// The sign-off under the rule: "בברכה," and the signature image, served from the caller-resolved origin.
+function signatureFooter(origin: string): ReactNode[] {
+  return [
+    createElement(Hr, {
+      style: {
+        border: 'none',
+        borderTop: '1px solid #eee',
+        margin: '18px 0 14px',
+      },
+    }),
+    createElement(
+      Text,
+      {
+        style: {
+          fontSize: '12px',
+          lineHeight: '1.7',
+          margin: '0 0 6px',
+          color: '#888',
+        },
+      },
+      'בברכה,',
+    ),
+    createElement(Img, {
+      src: origin + '/brand/kalfa-signature.png',
+      width: '200',
+      height: '63',
+      alt: 'נתנאל ק׳ — KALFA',
+      style: {
+        display: 'block',
+        width: '200px',
+        height: '63px',
+        border: '0',
+        outline: 'none',
+        maxWidth: '100%',
+      },
+    }),
+  ];
+}
+// Email notifying the customer their agreement is signed (or, for `kind:
+// 'approved'`, that the package terms were approved), with a SECURE LINK to
+// view/download the PDF (not an attachment — avoids recipient attachment
+// scanners flagging it). Satisfies §14ג(ב): the document is provided + saveable.
+// Returns a plain-text alternative too (multipart improves inbox placement), derived from the HTML (emailText).
+export async function agreementEmail(input: {
+  signerName: string;
+  eventName: string;
+  companyName: string;
+  downloadUrl: string;
+}): Promise<EmailContent> {
+  const company = input.companyName.trim() || 'KALFA';
+  // The package terms are approved by ticking the box, never signed: the mail does not say "signed".
+  const subject = `תנאי החבילה אושרו — ${input.eventName}`;
+  return renderEmail(
+    subject,
+    title('תנאי החבילה אושרו בהצלחה ✓'),
+    paragraph('שלום ' + input.signerName + ','),
+    paragraph('התנאים שאישרת עבור האירוע ', createElement('strong', {}, input.eventName), ' מוכנים.'),
+    createElement(
+      Text,
+      {
+        style: { fontSize: '16px', lineHeight: '1.7', margin: '20px 0' },
+      },
+      createElement(
+        Link,
+        {
+          href: input.downloadUrl,
+          style: {
+            display: 'inline-block',
+            background: '#4338ca',
+            color: '#ffffff',
+            padding: '11px 20px',
+            borderRadius: '8px',
+            textDecoration: 'none',
+            fontWeight: '600',
+          },
+        },
+        'צפייה והורדת התנאים שאושרו',
+      ),
+    ),
+    createElement(
+      Text,
+      {
+        style: {
+          fontSize: '13px',
+          lineHeight: '1.7',
+          margin: '8px 0',
+          color: '#555',
+        },
+      },
+      'הקישור מאובטח ודורש התחברות לחשבון. אנא שמרו עותק לרשומותיכם.',
+    ),
+    createElement(Hr, {
+      style: {
+        border: 'none',
+        borderTop: '1px solid #eee',
+        margin: '18px 0',
+      },
+    }),
+    createElement(
+      Text,
+      {
+        style: {
+          fontSize: '12px',
+          lineHeight: '1.7',
+          margin: '0',
+          color: '#888',
+        },
+      },
+      company,
+    ),
+  );
 }
 // A human (admin) reply to a customer inquiry submitted via /contact. The reply
 // body is authored by staff; we only wrap it in the branded RTL shell and
@@ -267,99 +321,15 @@ export async function inquiryReplyEmail(input: {
    * reply sent before the customer has replied even once.
    */
   isFirst: boolean;
-}): Promise<{
-  subject: string;
-  html: string;
-  text: string;
-}> {
-  const name = input.recipientName.trim() || 'לקוח יקר';
+}): Promise<EmailContent> {
   const subject = threadSubject(input.refCode, input.isFirst);
-  const body = stripDuplicateFraming(input.replyText);
-  const html = await render(
-    createElement(
-      Html,
-      { lang: 'he', dir: 'rtl' },
-      createElement(
-        Body,
-        {
-          lang: 'he',
-          dir: 'rtl',
-          style: {
-            fontFamily: 'Arial,Helvetica,sans-serif',
-            direction: 'rtl',
-            color: '#1a1a1a',
-            lineHeight: '1.7',
-            margin: '0',
-            padding: '24px',
-            background: '#f5f5f7',
-          },
-        },
-        createElement(
-          'div',
-          {
-            style: {
-              maxWidth: '560px',
-              margin: '0 auto',
-              background: '#ffffff',
-              borderRadius: '10px',
-              padding: '24px',
-              border: '1px solid #e3e3e8',
-            },
-          },
-          createElement(
-            Heading,
-            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
-            'תודה שפנית אלינו',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'שלום ' + name + ',',
-          ),
-          createElement('div', {
-            style: { margin: '12px 0', whiteSpace: 'pre-line' },
-            dangerouslySetInnerHTML: {
-              __html: inlineMarkdownToHtml(esc(body), esc(input.origin)),
-            },
-          }),
-          createElement(Hr, {
-            style: {
-              border: 'none',
-              borderTop: '1px solid #eee',
-              margin: '18px 0 14px',
-            },
-          }),
-          createElement(
-            Text,
-            {
-              style: {
-                fontSize: '12px',
-                lineHeight: '1.7',
-                margin: '0 0 6px',
-                color: '#888',
-              },
-            },
-            'בברכה,',
-          ),
-          createElement(Img, {
-            src: input.origin + '/brand/kalfa-signature.png',
-            width: '200',
-            height: '63',
-            alt: 'נתנאל ק׳ — KALFA',
-            style: {
-              display: 'block',
-              width: '200px',
-              height: '63px',
-              border: '0',
-              outline: 'none',
-              maxWidth: '100%',
-            },
-          }),
-        ),
-      ),
-    ),
+  return renderEmail(
+    subject,
+    title('תודה שפנית אלינו'),
+    paragraph('שלום ' + recipientNameOrDefault(input.recipientName) + ','),
+    writtenBody(stripDuplicateFraming(input.replyText), input.origin),
+    ...signatureFooter(input.origin),
   );
-  return { subject, html, text: emailText(html) };
 }
 // `refunded` is money that was ALREADY returned to the customer's card when the e-mail is built (a fixed-price package:
 // resolveCancellationRequest sends this e-mail only after the refund is confirmed). Without it the wording is the one
@@ -402,109 +372,20 @@ export async function cancellationRequestResponseEmail(input: {
   refundedAmount?: number;
   resolutionNote: string;
   origin: string;
-}): Promise<{
-  subject: string;
-  html: string;
-  text: string;
-}> {
-  const name = input.recipientName.trim() || 'לקוח יקר';
+}): Promise<EmailContent> {
   const copy = CANCELLATION_RESOLUTION_COPY[input.resolution](
     input.resolutionAmount,
     input.refundedAmount,
   );
   const subject = `בקשת ביטול ${cancellationReference(input.requestCode)} — ${copy.subjectSuffix}`;
-  const note = stripDuplicateFraming(input.resolutionNote);
-  const html = await render(
-    createElement(
-      Html,
-      { lang: 'he', dir: 'rtl' },
-      createElement(
-        Body,
-        {
-          lang: 'he',
-          dir: 'rtl',
-          style: {
-            fontFamily: 'Arial,Helvetica,sans-serif',
-            direction: 'rtl',
-            color: '#1a1a1a',
-            lineHeight: '1.7',
-            margin: '0',
-            padding: '24px',
-            background: '#f5f5f7',
-          },
-        },
-        createElement(
-          'div',
-          {
-            style: {
-              maxWidth: '560px',
-              margin: '0 auto',
-              background: '#ffffff',
-              borderRadius: '10px',
-              padding: '24px',
-              border: '1px solid #e3e3e8',
-            },
-          },
-          createElement(
-            Heading,
-            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
-            'בקשת ביטול ',
-            createElement('bdi', {}, cancellationReference(input.requestCode)),
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'שלום ' + name + ',',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            copy.opening,
-          ),
-          createElement('div', {
-            style: { margin: '12px 0', whiteSpace: 'pre-line' },
-            dangerouslySetInnerHTML: {
-              __html: inlineMarkdownToHtml(esc(note), esc(input.origin)),
-            },
-          }),
-          createElement(Hr, {
-            style: {
-              border: 'none',
-              borderTop: '1px solid #eee',
-              margin: '18px 0 14px',
-            },
-          }),
-          createElement(
-            Text,
-            {
-              style: {
-                fontSize: '12px',
-                lineHeight: '1.7',
-                margin: '0 0 6px',
-                color: '#888',
-              },
-            },
-            'בברכה,',
-          ),
-          createElement(Img, {
-            src: input.origin + '/brand/kalfa-signature.png',
-            width: '200',
-            height: '63',
-            alt: 'נתנאל ק׳ — KALFA',
-            style: {
-              display: 'block',
-              width: '200px',
-              height: '63px',
-              border: '0',
-              outline: 'none',
-              maxWidth: '100%',
-            },
-          }),
-        ),
-      ),
-    ),
+  return renderEmail(
+    subject,
+    title('בקשת ביטול ', createElement('bdi', {}, cancellationReference(input.requestCode))),
+    paragraph('שלום ' + recipientNameOrDefault(input.recipientName) + ','),
+    paragraph(copy.opening),
+    writtenBody(stripDuplicateFraming(input.resolutionNote), input.origin),
+    ...signatureFooter(input.origin),
   );
-  return { subject, html, text: emailText(html) };
 }
 // Two-stage silence follow-up on an inquiry the admin already replied to and
 // the customer went quiet on (inquiry-followup.ts's sweep). Both are
@@ -517,205 +398,33 @@ export async function inquiryReminderEmail(input: {
   recipientName: string;
   origin: string;
   refCode: string;
-}): Promise<{
-  subject: string;
-  html: string;
-  text: string;
-}> {
-  const name = input.recipientName.trim() || 'לקוח יקר';
+}): Promise<EmailContent> {
   // Always a reply on an existing thread by definition — never the first
   // message (§2.2).
   const subject = threadSubject(input.refCode, /* isFirst */ false);
-  const html = await render(
-    createElement(
-      Html,
-      { lang: 'he', dir: 'rtl' },
-      createElement(
-        Body,
-        {
-          lang: 'he',
-          dir: 'rtl',
-          style: {
-            fontFamily: 'Arial,Helvetica,sans-serif',
-            direction: 'rtl',
-            color: '#1a1a1a',
-            lineHeight: '1.7',
-            margin: '0',
-            padding: '24px',
-            background: '#f5f5f7',
-          },
-        },
-        createElement(
-          'div',
-          {
-            style: {
-              maxWidth: '560px',
-              margin: '0 auto',
-              background: '#ffffff',
-              borderRadius: '10px',
-              padding: '24px',
-              border: '1px solid #e3e3e8',
-            },
-          },
-          createElement(
-            Heading,
-            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
-            'עדיין צריך עזרה?',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'שלום ' + name + ',',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'לפני כמה ימים ענינו לפנייה שלך. רצינו לוודא שהכול הסתדר.',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'אם עדיין צריך עזרה — פשוט השיבו למייל הזה. אם הכול טופל, אין צורך לעשות דבר.',
-          ),
-          createElement(Hr, {
-            style: {
-              border: 'none',
-              borderTop: '1px solid #eee',
-              margin: '18px 0 14px',
-            },
-          }),
-          createElement(
-            Text,
-            {
-              style: {
-                fontSize: '12px',
-                lineHeight: '1.7',
-                margin: '0 0 6px',
-                color: '#888',
-              },
-            },
-            'בברכה,',
-          ),
-          createElement(Img, {
-            src: input.origin + '/brand/kalfa-signature.png',
-            width: '200',
-            height: '63',
-            alt: 'נתנאל ק׳ — KALFA',
-            style: {
-              display: 'block',
-              width: '200px',
-              height: '63px',
-              border: '0',
-              outline: 'none',
-              maxWidth: '100%',
-            },
-          }),
-        ),
-      ),
-    ),
+  return renderEmail(
+    subject,
+    title('עדיין צריך עזרה?'),
+    paragraph('שלום ' + recipientNameOrDefault(input.recipientName) + ','),
+    paragraph('לפני כמה ימים ענינו לפנייה שלך. רצינו לוודא שהכול הסתדר.'),
+    paragraph('אם עדיין צריך עזרה — פשוט השיבו למייל הזה. אם הכול טופל, אין צורך לעשות דבר.'),
+    ...signatureFooter(input.origin),
   );
-  return { subject, html, text: emailText(html) };
 }
 export async function inquiryClosingWarningEmail(input: {
   recipientName: string;
   origin: string;
   refCode: string;
-}): Promise<{
-  subject: string;
-  html: string;
-  text: string;
-}> {
-  const name = input.recipientName.trim() || 'לקוח יקר';
+}): Promise<EmailContent> {
   const subject = threadSubject(input.refCode, /* isFirst */ false);
-  const html = await render(
-    createElement(
-      Html,
-      { lang: 'he', dir: 'rtl' },
-      createElement(
-        Body,
-        {
-          lang: 'he',
-          dir: 'rtl',
-          style: {
-            fontFamily: 'Arial,Helvetica,sans-serif',
-            direction: 'rtl',
-            color: '#1a1a1a',
-            lineHeight: '1.7',
-            margin: '0',
-            padding: '24px',
-            background: '#f5f5f7',
-          },
-        },
-        createElement(
-          'div',
-          {
-            style: {
-              maxWidth: '560px',
-              margin: '0 auto',
-              background: '#ffffff',
-              borderRadius: '10px',
-              padding: '24px',
-              border: '1px solid #e3e3e8',
-            },
-          },
-          createElement(
-            Heading,
-            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
-            'הפנייה שלך תיסגר בקרוב',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'שלום ' + name + ',',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'לא שמענו ממך זמן רב לגבי הפנייה שענינו לה. פניות שלא נענות זמן רב מסומנות אצלנו כטופלות.',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'אם עדיין צריך עזרה — פשוט השיבו למייל הזה, ונחזור לטפל בזה.',
-          ),
-          createElement(Hr, {
-            style: {
-              border: 'none',
-              borderTop: '1px solid #eee',
-              margin: '18px 0 14px',
-            },
-          }),
-          createElement(
-            Text,
-            {
-              style: {
-                fontSize: '12px',
-                lineHeight: '1.7',
-                margin: '0 0 6px',
-                color: '#888',
-              },
-            },
-            'בברכה,',
-          ),
-          createElement(Img, {
-            src: input.origin + '/brand/kalfa-signature.png',
-            width: '200',
-            height: '63',
-            alt: 'נתנאל ק׳ — KALFA',
-            style: {
-              display: 'block',
-              width: '200px',
-              height: '63px',
-              border: '0',
-              outline: 'none',
-              maxWidth: '100%',
-            },
-          }),
-        ),
-      ),
-    ),
+  return renderEmail(
+    subject,
+    title('הפנייה שלך תיסגר בקרוב'),
+    paragraph('שלום ' + recipientNameOrDefault(input.recipientName) + ','),
+    paragraph('לא שמענו ממך זמן רב לגבי הפנייה שענינו לה. פניות שלא נענות זמן רב מסומנות אצלנו כטופלות.'),
+    paragraph('אם עדיין צריך עזרה — פשוט השיבו למייל הזה, ונחזור לטפל בזה.'),
+    ...signatureFooter(input.origin),
   );
-  return { subject, html, text: emailText(html) };
 }
 // CSAT request sent once the followup sweep auto-closes an inquiry on
 // sustained silence (inquiry-followup.ts). Three emoji LINKS, not buttons —
@@ -732,210 +441,62 @@ export async function inquiryRatingRequestEmail(input: {
   ratingToken: string;
   origin: string;
   refCode: string;
-}): Promise<{
-  subject: string;
-  html: string;
-  text: string;
-}> {
-  const name = input.recipientName.trim() || 'לקוח יקר';
+}): Promise<EmailContent> {
   const subject = threadSubject(input.refCode, /* isFirst */ false);
-  const rateUrl = (score: 1 | 2 | 3) =>
-    `${input.origin}/rate/${encodeURIComponent(input.ratingToken)}?score=${score}`;
-  const html = await render(
+  const ratingChoice = (score: 1 | 2 | 3, emoji: string, label: string): ReactNode =>
     createElement(
-      Html,
-      { lang: 'he', dir: 'rtl' },
+      'td',
+      { style: { padding: '0 8px', textAlign: 'center' } },
       createElement(
-        Body,
+        Link,
         {
-          lang: 'he',
-          dir: 'rtl',
+          href: `${input.origin}/rate/${encodeURIComponent(input.ratingToken)}?score=${score}`,
           style: {
-            fontFamily: 'Arial,Helvetica,sans-serif',
-            direction: 'rtl',
-            color: '#1a1a1a',
-            lineHeight: '1.7',
-            margin: '0',
-            padding: '24px',
-            background: '#f5f5f7',
+            display: 'block',
+            width: '52px',
+            height: '52px',
+            lineHeight: '52px',
+            borderRadius: '14px',
+            border: '2px solid #e3e3e8',
+            background: '#f8f8fb',
+            fontSize: '26px',
+            textDecoration: 'none',
           },
         },
-        createElement(
-          'div',
-          {
-            style: {
-              maxWidth: '560px',
-              margin: '0 auto',
-              background: '#ffffff',
-              borderRadius: '10px',
-              padding: '24px',
-              border: '1px solid #e3e3e8',
-            },
+        emoji,
+      ),
+      createElement(
+        'span',
+        {
+          style: {
+            display: 'block',
+            marginTop: '6px',
+            fontSize: '11px',
+            color: '#4b4b55',
           },
-          createElement(
-            Heading,
-            { as: 'h1', style: { fontSize: '20px', margin: '0 0 12px' } },
-            'תודה שפנית אלינו 🙂',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'שלום ' + name + ',',
-          ),
-          createElement(
-            Text,
-            { style: { fontSize: '16px', lineHeight: '1.7', margin: '8px 0' } },
-            'הפנייה שלך סומנה כטופלה. נשמח לדעת איך היה — לחיצה אחת מספיקה:',
-          ),
-          createElement(
-            'table',
-            {
-              role: 'presentation',
-              style: { margin: '20px auto 6px', borderCollapse: 'collapse' },
-            },
-            createElement(
-              'tr',
-              {},
-              createElement(
-                'td',
-                { style: { padding: '0 8px', textAlign: 'center' } },
-                createElement(
-                  Link,
-                  {
-                    href: rateUrl(1),
-                    style: {
-                      display: 'block',
-                      width: '52px',
-                      height: '52px',
-                      lineHeight: '52px',
-                      borderRadius: '14px',
-                      border: '2px solid #e3e3e8',
-                      background: '#f8f8fb',
-                      fontSize: '26px',
-                      textDecoration: 'none',
-                    },
-                  },
-                  '😕',
-                ),
-                createElement(
-                  'span',
-                  {
-                    style: {
-                      display: 'block',
-                      marginTop: '6px',
-                      fontSize: '11px',
-                      color: '#4b4b55',
-                    },
-                  },
-                  'לא היה טוב',
-                ),
-              ),
-              createElement(
-                'td',
-                { style: { padding: '0 8px', textAlign: 'center' } },
-                createElement(
-                  Link,
-                  {
-                    href: rateUrl(2),
-                    style: {
-                      display: 'block',
-                      width: '52px',
-                      height: '52px',
-                      lineHeight: '52px',
-                      borderRadius: '14px',
-                      border: '2px solid #e3e3e8',
-                      background: '#f8f8fb',
-                      fontSize: '26px',
-                      textDecoration: 'none',
-                    },
-                  },
-                  '😐',
-                ),
-                createElement(
-                  'span',
-                  {
-                    style: {
-                      display: 'block',
-                      marginTop: '6px',
-                      fontSize: '11px',
-                      color: '#4b4b55',
-                    },
-                  },
-                  'בסדר',
-                ),
-              ),
-              createElement(
-                'td',
-                { style: { padding: '0 8px', textAlign: 'center' } },
-                createElement(
-                  Link,
-                  {
-                    href: rateUrl(3),
-                    style: {
-                      display: 'block',
-                      width: '52px',
-                      height: '52px',
-                      lineHeight: '52px',
-                      borderRadius: '14px',
-                      border: '2px solid #e3e3e8',
-                      background: '#f8f8fb',
-                      fontSize: '26px',
-                      textDecoration: 'none',
-                    },
-                  },
-                  '😊',
-                ),
-                createElement(
-                  'span',
-                  {
-                    style: {
-                      display: 'block',
-                      marginTop: '6px',
-                      fontSize: '11px',
-                      color: '#4b4b55',
-                    },
-                  },
-                  'מצוין',
-                ),
-              ),
-            ),
-          ),
-          createElement(Hr, {
-            style: {
-              border: 'none',
-              borderTop: '1px solid #eee',
-              margin: '18px 0 14px',
-            },
-          }),
-          createElement(
-            Text,
-            {
-              style: {
-                fontSize: '12px',
-                lineHeight: '1.7',
-                margin: '0 0 6px',
-                color: '#888',
-              },
-            },
-            'בברכה,',
-          ),
-          createElement(Img, {
-            src: input.origin + '/brand/kalfa-signature.png',
-            width: '200',
-            height: '63',
-            alt: 'נתנאל ק׳ — KALFA',
-            style: {
-              display: 'block',
-              width: '200px',
-              height: '63px',
-              border: '0',
-              outline: 'none',
-              maxWidth: '100%',
-            },
-          }),
-        ),
+        },
+        label,
+      ),
+    );
+  return renderEmail(
+    subject,
+    title('תודה שפנית אלינו 🙂'),
+    paragraph('שלום ' + recipientNameOrDefault(input.recipientName) + ','),
+    paragraph('הפנייה שלך סומנה כטופלה. נשמח לדעת איך היה — לחיצה אחת מספיקה:'),
+    createElement(
+      'table',
+      {
+        role: 'presentation',
+        style: { margin: '20px auto 6px', borderCollapse: 'collapse' },
+      },
+      createElement(
+        'tr',
+        {},
+        ratingChoice(1, '😕', 'לא היה טוב'),
+        ratingChoice(2, '😐', 'בסדר'),
+        ratingChoice(3, '😊', 'מצוין'),
       ),
     ),
+    ...signatureFooter(input.origin),
   );
-  return { subject, html, text: emailText(html) };
 }

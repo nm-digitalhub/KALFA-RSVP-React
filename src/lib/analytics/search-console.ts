@@ -1,11 +1,9 @@
 import 'server-only';
 
-import { constants } from 'node:fs';
-import { access } from 'node:fs/promises';
-
 import { GoogleAuth } from 'google-auth-library';
 
 import type { AnalyticsRange } from './ga4-types';
+import { googleCredentialsIssue } from './google-credentials';
 
 // Google Search Console reader — the ORGANIC half of the analytics picture.
 //
@@ -59,14 +57,8 @@ export async function getSearchConsoleConfigStatus(): Promise<
   // Same credential check the GA4 config gate performs, and for the same
   // reason: presence of the env var is not proof the file can be read, and the
   // path itself must never appear in a log, an error or the UI.
-  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
-  if (!credentialsPath) return { ok: false, issue: 'missing_credentials_path' };
-  try {
-    await access(credentialsPath, constants.R_OK);
-  } catch {
-    return { ok: false, issue: 'credentials_unreadable' };
-  }
-  return { ok: true };
+  const issue = await googleCredentialsIssue();
+  return issue ? { ok: false, issue } : { ok: true };
 }
 
 // One shared auth object: GoogleAuth caches the signed token internally, so a

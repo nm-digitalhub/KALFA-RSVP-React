@@ -40,6 +40,7 @@ import {
 } from './reply-text';
 import type { SessionMemory } from './sessions';
 import type { AuditInput, IntakeRow, ReplyStore } from './store';
+import { quietly } from '@/lib/owner-agent/quietly';
 
 // One job of QUEUES.ownerAgentReply: answer ONE diverted, gate-passing staff
 // turn (plans/owner-whatsapp-agent-plan.md §3.1, §8 stage 6b;
@@ -927,14 +928,4 @@ async function audit(
       fields: { intake: intake.id, outcome: row.outcome },
     }),
   );
-}
-
-// For the steps whose failure must not change what already happened (a
-// message sent, a session remembered): the error is dropped, the flow goes on.
-async function quietly<T>(fn: () => Promise<T>): Promise<T | undefined> {
-  try {
-    return await fn();
-  } catch {
-    return undefined;
-  }
 }

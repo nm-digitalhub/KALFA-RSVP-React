@@ -16,11 +16,9 @@ import 'server-only';
 // the wrong tool here — it is scoped to the CALLING user's OWN connection,
 // and the calling user at the trigger point (the event owner publishing/
 // closing their event) is never the admin who connected the mailbox. The
-// connection loader below mirrors loadBusinessConnection in
-// callback-scheduling.ts (same "single verified connection, refuse rather
-// than guess" rule) — kept as its own small copy per this feature's own
-// scope rather than extracting a shared helper out of already-shipped,
-// tested code.
+// connection comes from loadBusinessExchangeConnection, the loader the
+// callback scheduler uses too ("single verified connection, refuse rather
+// than guess").
 
 import { logActivity } from '@/lib/data/activity';
 import {
@@ -30,9 +28,8 @@ import {
 } from '@/lib/data/event-exchange-calendar-item';
 import { ilWallTimeToIso } from '@/lib/data/event-date';
 import { addCalendarDays } from '@/lib/date';
-import { resolveMailboxPassword } from '@/lib/exchange-ews/mailbox-credential';
 import { calendarProvider } from '@/lib/exchange-ews/calendar-provider';
-import type { ExchangeConnectionConfig } from '@/lib/exchange-ews/types';
+import { loadBusinessExchangeConnection } from '@/lib/data/exchange-business-connection';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { Enums, Tables } from '@/lib/supabase/types';
 import { getAppUrl } from '@/lib/url';
@@ -49,54 +46,6 @@ function rsvpDeadlineMidnights(rsvpDeadline: string): { startIsoMidnight: string
   if (nextDate === null) throw new RangeError(`rsvp_deadline is not a calendar date: "${rsvpDeadline}"`);
   const endIsoMidnight = ilWallTimeToIso(nextDate, '00:00');
   return { startIsoMidnight, endIsoMidnight };
-}
-
-// ── The business connection ─────────────────────────────────────────────────
-
-type LoadedConnection = { id: string; config: ExchangeConnectionConfig };
-
-/**
- * The single verified connection this sync writes through.
- *
- * Unattended/service-role code must not guess between mailboxes, so this
- * refuses rather than picks when the answer is ambiguous: exactly one
- * verified connection, or nothing happens. Mirrors loadBusinessConnection in
- * callback-scheduling.ts.
- */
-async function loadBusinessExchangeConnection(
-  admin: AdminClient,
-): Promise<{ ok: true; connection: LoadedConnection } | { ok: false; reason: string }> {
-  const { data, error } = await admin
-    .from('exchange_connections')
-    .select(
-      'id, user_id, mailbox_email, auth_method, status, credential_ciphertext, credential_iv, credential_auth_tag, encryption_key_version',
-    )
-    .eq('status', 'verified')
-    .limit(2);
-
-  if (error) return { ok: false, reason: 'connection_lookup_failed' };
-  if (!data || data.length === 0) return { ok: false, reason: 'no_verified_connection' };
-  if (data.length > 1) return { ok: false, reason: 'ambiguous_connection' };
-
-  const row = data[0];
-  let password: string;
-  try {
-    password = resolveMailboxPassword();
-  } catch {
-    return { ok: false, reason: 'decrypt_failed' };
-  }
-
-  return {
-    ok: true,
-    connection: {
-      id: row.id,
-      config: {
-        mailboxEmail: row.mailbox_email,
-        password,
-        authMethod: row.auth_method === 'basic' ? 'basic' : 'ntlm',
-      },
-    },
-  };
 }
 
 // ── The event ────────────────────────────────────────────────────────────
@@ -119,6 +68,28 @@ async function loadEventForSync(admin: AdminClient, eventId: string): Promise<Ev
     .maybeSingle();
   if (error || !data) return null;
   return data;
+}
+
+// The event's calendar item, as both the create and the reschedule path write it, with the heading fields the
+// RSVP-deadline marker shares.
+async function buildEventItem(eventId: string, event: EventForSync, eventDateIso: string) {
+  // The staff page, not /app/events/{id}: this appointment lives in the
+  // BUSINESS mailbox and only staff open it, and /app/events/{id}
+  // authorizes on ownership alone — it 404s for every staff member, the
+  // platform owner included. /admin/events/{id} gates on 'view_events'.
+  const detailUrl = await getAppUrl(`/admin/events/${eventId}`);
+  const headingInput = {
+    eventType: event.event_type,
+    celebrants: event.celebrants,
+    eventName: event.name,
+  };
+  const draft = buildEventAppointmentDraft({
+    ...headingInput,
+    eventDateIso,
+    notes: event.notes,
+    detailUrl,
+  });
+  return { headingInput, draft };
 }
 
 // A structured, non-PII log line for a path logActivity cannot cover (no
@@ -174,23 +145,7 @@ export async function syncEventToExchange(eventId: string): Promise<void> {
       return;
     }
 
-    // The staff page, not /app/events/{id}: this appointment lives in the
-    // BUSINESS mailbox and only staff open it, and /app/events/{id}
-    // authorizes on ownership alone — it 404s for every staff member, the
-    // platform owner included. /admin/events/{id} gates on 'view_events'.
-    const detailUrl = await getAppUrl(`/admin/events/${eventId}`);
-    const headingInput = {
-      eventType: event.event_type,
-      celebrants: event.celebrants,
-      eventName: event.name,
-    };
-
-    const draft = buildEventAppointmentDraft({
-      ...headingInput,
-      eventDateIso: event.event_date,
-      notes: event.notes,
-      detailUrl,
-    });
+    const { headingInput, draft } = await buildEventItem(eventId, event, event.event_date);
     const created = await calendarProvider.createAppointment(connection.connection.config, draft);
     if (!created.ok) {
       logSync('create_failed', { eventId, error: created.error });
@@ -309,26 +264,10 @@ export async function rescheduleEventExchangeAppointment(eventId: string): Promi
       return;
     }
 
-    // The staff page, not /app/events/{id}: this appointment lives in the
-    // BUSINESS mailbox and only staff open it, and /app/events/{id}
-    // authorizes on ownership alone — it 404s for every staff member, the
-    // platform owner included. /admin/events/{id} gates on 'view_events'.
-    const detailUrl = await getAppUrl(`/admin/events/${eventId}`);
-    const headingInput = {
-      eventType: event.event_type,
-      celebrants: event.celebrants,
-      eventName: event.name,
-    };
-
     // The same builder the create path uses, so a moved item is byte-identical
     // to one created fresh at the new date — subject, body and duration
     // included, not just the start time.
-    const draft = buildEventAppointmentDraft({
-      ...headingInput,
-      eventDateIso: event.event_date,
-      notes: event.notes,
-      detailUrl,
-    });
+    const { headingInput, draft } = await buildEventItem(eventId, event, event.event_date);
 
     const moved = await calendarProvider.updateAppointment(
       connection.connection.config,

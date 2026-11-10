@@ -137,7 +137,7 @@ describe('createExchangeConnection', () => {
 // drops the user_id filter — and guard the correctness-critical duplicate
 // check in createExchangeConnection (two admins each getting their own
 // 'verified' row for the same shared mailbox would make the automated
-// scheduler's loadBusinessConnection refuse with 'ambiguous_connection' and
+// scheduler's loadBusinessExchangeConnection refuse with 'ambiguous_connection' and
 // silently halt every calendar-driven callback in the system).
 describe('exchange_connection_mode = per_org — the 2026-08-23 visibility bug', () => {
   it('getExchangeConnectionMode reads the configured mode', async () => {

@@ -5,7 +5,6 @@ import { randomBytes } from 'node:crypto';
 import type { PgBoss } from 'pg-boss';
 
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendSlackAlert } from '@/lib/alerts/slack';
 import { normalizePhone } from '@/lib/phone';
 import { QUEUES, CALL_RETRY } from '@/lib/queue/queues';
 import { deterministicJobId } from '@/lib/queue/deterministic-id';
@@ -26,14 +25,13 @@ import {
   countRecentSalesAuditedAttempts,
   DISPATCH_PRE_TERMINAL,
 } from '@/lib/data/sales-call-attempts';
-import { countActiveCallsAllSurfaces } from '@/lib/data/voximplant-concurrency';
 import {
-  getAccountInfo,
-  VoximplantApiError,
-  VoximplantNetworkError,
-  type VoximplantConfig,
-} from '@/lib/voximplant/core';
-import { startScenarios } from '@/lib/voximplant/mutations';
+  buildCallbackDialCustomData,
+  checkDialCapacity,
+  dispatchAlerter,
+  startDispatchedCall,
+  type CallbackDialDispatchConfig,
+} from '@/lib/data/callback-dial-dispatch';
 
 // The outbound dispatcher for the sales-closing agent's call on a
 // callback_requests row (topic = 'מכירות'; sales-closing plan §5.2) —
@@ -102,23 +100,13 @@ import { startScenarios } from '@/lib/voximplant/mutations';
 // status 'scheduled').
 
 const SALES_TOKEN_TTL_SEC = 2 * 60 * 60; // 2h — see meeting-confirm-dispatch.ts's identical constant for why this value is only valid because mint and dial happen in the same tick.
-const BALANCE_TIMEOUT_MS = 10_000;
-const START_TIMEOUT_MS = 25_000;
 
-export type SalesCallDispatchConfig = {
-  auth: VoximplantConfig;
-  ruleId: string;
-  callerId: string;
-  minCallReserve: number;
-  lowBalanceThreshold: number;
-  maxConcurrentCalls: number;
-  // The AI-calling-specific kill switch for this persona, resolved by the
-  // caller (getSalesCallDispatchConfig, from
-  // app_settings.voximplant_sales_calls_enabled) — see
-  // meeting-confirm-dispatch.ts's identical field for why this is a plain
-  // parameter rather than read from app_settings here.
-  callsEnabled: boolean;
-};
+// callsEnabled is the AI-calling-specific kill switch for this persona,
+// resolved by the caller (getSalesCallDispatchConfig, from
+// app_settings.voximplant_sales_calls_enabled) — see
+// meeting-confirm-dispatch.ts's note on the same field for why this is a plain
+// parameter rather than read from app_settings here.
+export type SalesCallDispatchConfig = CallbackDialDispatchConfig;
 
 export type SalesCallDispatchResult =
   | {
@@ -135,28 +123,11 @@ export type SalesCallDispatchResult =
   | { kind: 'failed_to_start'; attemptId: string; code: number | null }
   | { kind: 'start_unknown'; attemptId: string };
 
-async function alert(
-  level: 'warn' | 'error',
-  title: string,
-  fields: Record<string, string | number>,
-): Promise<void> {
-  await sendSlackAlert({ level, title, source: 'sales-call-dispatch', category: 'send_health', fields });
-}
+const alert = dispatchAlerter('sales-call-dispatch');
 
-// Single source of truth for the scenario payload (Branch B, same shape as
-// outreach-calls.ts's buildScriptCustomData and meeting-confirm-dispatch.ts's
-// buildMeetingConfirmCustomData). No `ca`/`dh` DTMF-handoff keys — same
-// reasoning as the meeting-confirm payload: no live-takeover mechanism wired
-// for this token surface in v1.
-export function buildSalesCallCustomData(args: {
-  to: string;
-  from: string;
-  tok: string;
-  u: string;
-}): { payload: string; bytes: number } {
-  const payload = JSON.stringify({ to: args.to, from: args.from, tok: args.tok, u: args.u });
-  return { payload, bytes: Buffer.byteLength(payload, 'utf8') };
-}
+// The scenario payload — the shape both callback_requests personas share
+// (buildCallbackDialCustomData).
+export const buildSalesCallCustomData = buildCallbackDialCustomData;
 
 export type SalesCallDispatchJob = { callbackRequestId: string };
 
@@ -261,34 +232,12 @@ export async function dispatchSalesCall(
   });
   if (!shared.ok) return { kind: 'skipped', reason: shared.reason };
 
-  // 5. Concurrency cap — the COMBINED cross-table count across ALL THREE
-  //    Voximplant dispatch surfaces (voximplant-concurrency.ts).
-  const active = await countActiveCallsAllSurfaces();
-  if (active >= config.maxConcurrentCalls) {
-    await alert('warn', 'Voximplant max concurrency reached — sales-closing call skipped', {
-      callbackRequestId, active, cap: config.maxConcurrentCalls,
-    });
-    return { kind: 'max_concurrency' };
-  }
-
-  // 6. Balance precheck BEFORE any attempt row is created (so no orphaned row).
-  let balance: number;
-  try {
-    const info = await getAccountInfo(config.auth, BALANCE_TIMEOUT_MS);
-    balance = info.result.balance;
-  } catch {
-    return { kind: 'transient_error', reason: 'balance_check_failed' };
-  }
-  if (balance < config.minCallReserve) {
-    await alert('error', 'Voximplant balance below reserve — sales-closing call blocked', {
-      callbackRequestId, balance, minReserve: config.minCallReserve,
-    });
-    return { kind: 'blocked', reason: 'balance_below_reserve' };
-  }
-  if (balance < config.lowBalanceThreshold) {
-    await alert('warn', 'Voximplant balance low', { callbackRequestId, balance, lowThreshold: config.lowBalanceThreshold });
-    // proceed — warn only.
-  }
+  // 5-6. Concurrency cap (the COMBINED cross-table count across ALL THREE
+  //      Voximplant dispatch surfaces), then the balance precheck BEFORE any
+  //      attempt row is created (so no orphaned row).
+  const dispatched = { config, callbackRequestId, callLabel: 'sales-closing', alert };
+  const refused = await checkDialCapacity(dispatched);
+  if (refused) return refused;
 
   // 7. ATOMIC create — sales_call_attempts_request_slot_uidx is a PLAIN
   //    (non-partial) unique index, so upsert()+ignoreDuplicates is the
@@ -333,29 +282,14 @@ export async function dispatchSalesCall(
 
   // 10. StartScenarios — definite vs ambiguous classification, identical
   //     discipline to dispatchOutreachCall / meeting-confirm-dispatch.ts.
-  try {
-    const res = await startScenarios(config.auth, { rule_id: config.ruleId, script_custom_data: payload }, START_TIMEOUT_MS);
-    if (res.result === 1 && res.call_session_history_id != null) {
-      await recordSalesDialConfirmed(attemptId, res.call_session_history_id);
-      return { kind: 'dialed', attemptId, callSessionHistoryId: res.call_session_history_id };
-    }
-    await markSalesDispatchUnknown(attemptId, 'ambiguous_start_response');
-    return { kind: 'start_unknown', attemptId };
-  } catch (e) {
-    if (e instanceof VoximplantApiError) {
-      await markSalesDispatchFailed(attemptId, e.message);
-      await alert('warn', 'Voximplant StartScenarios rejected sales-closing call (failed_to_start)', {
-        callbackRequestId, attemptId, code: e.code ?? 0,
-      });
-      return { kind: 'failed_to_start', attemptId, code: e.code };
-    }
-    if (e instanceof VoximplantNetworkError) {
-      await markSalesDispatchUnknown(attemptId, 'network_error_during_start');
-      await alert('warn', 'Voximplant StartScenarios ambiguous for sales-closing call (start_unknown)', {
-        callbackRequestId, attemptId,
-      });
-      return { kind: 'start_unknown', attemptId };
-    }
-    throw e; // truly unexpected — let the caller's own catch alert + rethrow
-  }
+  return startDispatchedCall({
+    ...dispatched,
+    attemptId,
+    payload,
+    attempts: {
+      recordDialConfirmed: recordSalesDialConfirmed,
+      markUnknown: markSalesDispatchUnknown,
+      markFailed: markSalesDispatchFailed,
+    },
+  });
 }

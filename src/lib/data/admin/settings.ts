@@ -73,24 +73,7 @@ export async function getAppSettings(): Promise<AppSettings> {
   };
 }
 
-export type UpdateAppSettingsInput = {
-  payments_enabled: boolean;
-  inquiry_followup_enabled: boolean;
-  agreement_archive_enabled: boolean;
-  signup_reminder_enabled: boolean;
-  unconfirmed_cleanup_enabled: boolean;
-  billing_exposure_gate: boolean;
-  monitor_enabled: boolean;
-  inbound_calls_enabled: boolean;
-  handoff_enabled: boolean;
-  console_softphone_enabled: boolean;
-  console_widget_enabled: boolean;
-  console_manual_dial_enabled: boolean;
-  console_wake_enabled: boolean;
-  console_call_me_now_enabled: boolean;
-  console_consult_conference_enabled: boolean;
-  console_dtmf_handoff_enabled: boolean;
-};
+export type UpdateAppSettingsInput = Omit<AppSettings, 'updated_at'>;
 
 export async function updateAppSettings(
   input: UpdateAppSettingsInput,

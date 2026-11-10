@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getSalesRequestForAttempt } from '@/lib/data/sales-call-attempts';
 import { rescheduleCallbackRequest } from '@/lib/data/callback-scheduling';
 import { insertContactMessage } from '@/lib/data/inquiry-intake';
-import { INQUIRY_TOPICS } from '@/lib/validation/inquiries';
+import { toInquiryTopic } from '@/lib/validation/inquiries';
 import type { Tables } from '@/lib/supabase/types';
 import type {
   VoxNotifyOwner,
@@ -60,9 +60,7 @@ export async function processSalesNotifyOwner(
   const ref = await getSalesRequestForAttempt(attemptId);
   if (!ref) return { ok: false };
 
-  const topic = (INQUIRY_TOPICS as readonly string[]).includes(ref.topic ?? '')
-    ? (ref.topic as (typeof INQUIRY_TOPICS)[number])
-    : 'אחר';
+  const topic = toInquiryTopic(ref.topic);
 
   return insertContactMessage(
     { name: ref.fullName, phone: ref.phone, topic, message: body.text },
@@ -81,9 +79,7 @@ export async function processSalesEscalate(
   const ref = await getSalesRequestForAttempt(attemptId);
   if (!ref) return { ok: false };
 
-  const topic = (INQUIRY_TOPICS as readonly string[]).includes(ref.topic ?? '')
-    ? (ref.topic as (typeof INQUIRY_TOPICS)[number])
-    : 'אחר';
+  const topic = toInquiryTopic(ref.topic);
 
   return insertContactMessage(
     { name: ref.fullName, phone: ref.phone, topic, message: `בקשה לנציג אנושי בשיחת מכירה — ${body.reason}` },

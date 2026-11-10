@@ -2,7 +2,18 @@ import 'server-only';
 
 import type { QueryData, SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
+import {
+  countActiveDispatchAttempts,
+  DISPATCH_PRE_TERMINAL,
+  getAttemptByAccessToken,
+  getAttemptVoiceRowByAccessToken,
+  getCallbackRequestContactForAttempt,
+  recordAttemptDialConfirmed,
+  recordAttemptDispatchConcluded,
+  recordAttemptDispatchOutcome,
+  setAttemptElConversationId,
+} from '@/lib/data/dispatch-attempt-store';
+import { countRecentAuditedCallbackDials, recordSystemCallbackDialAudit } from '@/lib/data/callback-dial-audit';
 import type { CallbackPolicy } from '@/lib/callbacks/schedule-policy';
 import type { Database, TablesInsert, TablesUpdate } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for sales_call_attempts — the Voximplant
@@ -32,9 +43,12 @@ const selectAllAttempts = (client: SupabaseClient<Database>) => client.from('sal
 type AttemptRow = QueryData<ReturnType<typeof selectAllAttempts>>[number];
 type AttemptInsert = TablesInsert<'sales_call_attempts'>;
 
-// Mirrors call_attempts' own PRE_TERMINAL and callback_request_attempts'
-// DISPATCH_PRE_TERMINAL exactly.
-export const DISPATCH_PRE_TERMINAL = ['queued', 'dialing', 'in_progress'] as const;
+// The queries this table shares with callback_request_attempts (the
+// dispatch-status writers, the concurrency count, the token lookups) live in
+// dispatch-attempt-store.ts; the functions below name the table and its wording.
+const TABLE = 'sales_call_attempts';
+
+export { DISPATCH_PRE_TERMINAL };
 
 export type CreateSalesDispatchAttemptInput = {
   callbackRequestId: string;
@@ -106,40 +120,7 @@ export async function recordSalesDialConfirmed(
   id: string,
   callSessionHistoryId: number,
 ): Promise<{ applied: boolean }> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('sales_call_attempts')
-    .update({
-      vox_call_session_history_id: String(callSessionHistoryId),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('רישום אימות החיוג נכשל', { cause: error });
-  return { applied: data !== null };
-}
-
-async function recordDispatchOutcome(
-  id: string,
-  status: 'failed_to_start' | 'start_unknown',
-  reason: string,
-): Promise<{ applied: boolean }> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('sales_call_attempts')
-    .update({
-      dispatch_status: status,
-      finish_reason: reason,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('רישום תוצאת השיגור נכשל', { cause: error });
-  return { applied: data !== null };
+  return recordAttemptDialConfirmed(TABLE, id, callSessionHistoryId);
 }
 
 // Definite provider rejection (VoximplantApiError). Non-retryable — see
@@ -152,7 +133,7 @@ export async function markSalesDispatchFailed(
   id: string,
   reason: string,
 ): Promise<{ applied: boolean }> {
-  return recordDispatchOutcome(id, 'failed_to_start', reason);
+  return recordAttemptDispatchOutcome(TABLE, id, 'failed_to_start', reason);
 }
 
 // Ambiguous StartScenarios outcome. NEVER triggers a redial.
@@ -160,7 +141,7 @@ export async function markSalesDispatchUnknown(
   id: string,
   reason: string,
 ): Promise<{ applied: boolean }> {
-  return recordDispatchOutcome(id, 'start_unknown', reason);
+  return recordAttemptDispatchOutcome(TABLE, id, 'start_unknown', reason);
 }
 
 // Cross-slot guard: does this callback_request_id have a PRIOR dispatched
@@ -231,13 +212,7 @@ export async function getSalesAttemptIdByConversationId(
 // cross-table count. Never call this alone to enforce a concurrency cap; see
 // voximplant-concurrency.ts.
 export async function countActiveSalesDispatches(): Promise<number> {
-  const admin = createAdminClient();
-  const { count, error } = await admin
-    .from('sales_call_attempts')
-    .select('id', { count: 'exact', head: true })
-    .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[]);
-  if (error) throw new Error('count_active_sales_dispatches_failed');
-  return count ?? 0;
+  return countActiveDispatchAttempts(TABLE, 'count_active_sales_dispatches_failed');
 }
 
 // Same attempt cap / same audit-action shape as callback-request-attempts.ts's
@@ -254,37 +229,16 @@ export async function countRecentSalesAuditedAttempts(
   nowMs: number,
   policy: CallbackPolicy,
 ): Promise<number> {
-  const admin = createAdminClient();
-  const sinceIso = new Date(nowMs - policy.attemptWindowMs).toISOString();
-  const { count, error } = await admin
-    .from('activity_log')
-    .select('id', { count: 'exact', head: true })
-    .eq('action', CONSOLE_DIAL_AUDIT_ACTION)
-    .eq('meta->>callback_request_id', callbackRequestId)
-    .gte('created_at', sinceIso);
-  if (error) return policy.maxAttempts; // unreadable ⇒ treat as capped (fail-closed)
-  return count ?? 0;
+  return countRecentAuditedCallbackDials(callbackRequestId, nowMs, policy);
 }
 
 // Write the SAME audit action a human console dial writes, so a
 // sales-closing AI dial is visible to the same budget a
 // meeting-confirmation AI dial (and any human dial that writes it) already
-// shares for this callback_request_id.
+// shares for this callback_request_id. Best-effort: a lost write only degrades
+// the attempt cap's visibility for future dials, never this dial.
 export async function recordSalesDialAudit(callbackRequestId: string): Promise<void> {
-  try {
-    const admin = createAdminClient();
-    type ActivityLogInsert = TablesInsert<'activity_log'>;
-    const row: ActivityLogInsert = {
-      event_id: null,
-      user_id: null,
-      action: CONSOLE_DIAL_AUDIT_ACTION,
-      meta: { callback_request_id: callbackRequestId } as ActivityLogInsert['meta'],
-    };
-    await admin.from('activity_log').insert(row);
-  } catch {
-    // Deliberately swallowed — best-effort: a lost write only degrades the
-    // attempt cap's visibility for future dials, never this dial.
-  }
+  await recordSystemCallbackDialAudit(callbackRequestId);
 }
 
 // --- sls/ctx|cb|tool voice-token surface — mirrors callback-request-attempts.ts's
@@ -304,9 +258,6 @@ export type SalesVoiceContext = {
   };
 };
 
-const SALES_VOICE_CTX_SELECT =
-  'id, callback_request_id, token_expires_at, scheduled_at_snapshot, el_conversation_id';
-
 // Branch B (ctx endpoint). Freshness re-verification (status/scheduled_at vs
 // snapshot) is deliberately left to the ROUTE, same discipline as
 // getCallbackVoiceContextByAccessToken's own comment — a DAL null must not
@@ -314,16 +265,10 @@ const SALES_VOICE_CTX_SELECT =
 export async function getSalesVoiceContextByAccessToken(
   accessToken: string,
 ): Promise<SalesVoiceContext | null> {
-  const admin = createAdminClient();
-  const { data: attempt, error } = await admin
-    .from('sales_call_attempts')
-    .select(SALES_VOICE_CTX_SELECT)
-    .eq('access_token', accessToken)
-    .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה', { cause: error });
+  const attempt = await getAttemptVoiceRowByAccessToken(TABLE, accessToken, 'טעינת ניסיון שיחת המכירה נכשלה');
   if (!attempt) return null;
 
-  const { data: request, error: reqErr } = await admin
+  const { data: request, error: reqErr } = await createAdminClient()
     .from('callback_requests')
     .select('full_name, note, topic, status, scheduled_at')
     .eq('id', attempt.callback_request_id)
@@ -340,14 +285,7 @@ export async function getSalesVoiceContextByAccessToken(
 export async function getSalesAttemptByAccessToken(
   accessToken: string,
 ): Promise<{ id: string; callback_request_id: string; token_expires_at: string } | null> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('sales_call_attempts')
-    .select('id, callback_request_id, token_expires_at')
-    .eq('access_token', accessToken)
-    .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה', { cause: error });
-  return data ?? null;
+  return getAttemptByAccessToken(TABLE, accessToken, 'טעינת ניסיון שיחת המכירה נכשלה');
 }
 
 // Resolve the parent callback_requests row's contact fields for a tool-call
@@ -360,29 +298,7 @@ export async function getSalesRequestForAttempt(attemptId: string): Promise<{
   phone: string;
   topic: string | null;
 } | null> {
-  const admin = createAdminClient();
-  const { data: attempt, error } = await admin
-    .from('sales_call_attempts')
-    .select('callback_request_id')
-    .eq('id', attemptId)
-    .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון שיחת המכירה נכשלה', { cause: error });
-  if (!attempt) return null;
-
-  const { data: request, error: reqErr } = await admin
-    .from('callback_requests')
-    .select('full_name, phone, topic')
-    .eq('id', attempt.callback_request_id)
-    .maybeSingle();
-  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה', { cause: reqErr });
-  if (!request) return null;
-
-  return {
-    callbackRequestId: attempt.callback_request_id,
-    fullName: request.full_name,
-    phone: request.phone,
-    topic: request.topic,
-  };
+  return getCallbackRequestContactForAttempt(TABLE, attemptId, 'טעינת ניסיון שיחת המכירה נכשלה');
 }
 
 // The scenario's OWN terminal-lifecycle report (sls/cb) — moves
@@ -393,36 +309,14 @@ export async function recordSalesDispatchConcluded(
   finishReason: string,
   callDurationSec: number | null,
 ): Promise<{ applied: boolean }> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('sales_call_attempts')
-    .update({
-      dispatch_status: 'concluded',
-      finish_reason: finishReason,
-      call_duration_sec: callDurationSec,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('רישום סיום השיחה נכשל', { cause: error });
-  return { applied: data !== null };
+  return recordAttemptDispatchConcluded(TABLE, id, finishReason, callDurationSec);
 }
 
 export async function setSalesAttemptElConversationId(
   id: string,
   elConversationId: string,
 ): Promise<{ applied: boolean }> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('sales_call_attempts')
-    .update({ el_conversation_id: elConversationId, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('רישום מזהה השיחה נכשל', { cause: error });
-  return { applied: data !== null };
+  return setAttemptElConversationId(TABLE, id, elConversationId);
 }
 
 // Single-use claim guard for the FOUR outcome-write paths this table shares

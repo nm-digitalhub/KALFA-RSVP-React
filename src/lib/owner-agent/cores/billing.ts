@@ -4,6 +4,7 @@ import type { createAdminClient } from '@/lib/supabase/admin';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 
 import { upTo, type CoreWindow } from './window';
+import { countOf } from './count';
 
 // Request-free CORE for billing counts (owner-agent tool 3, billing_summary;
 // plan §5). Takes a service-role client and returns numbers only.
@@ -50,11 +51,6 @@ function operations(client: AdminClient) {
 
 function credits(client: AdminClient) {
   return client.from('billing_credits').select('id', { count: 'exact', head: true });
-}
-
-function countOf(result: { count: number | null; error: unknown }, code: string): number {
-  if (result.error) throw new Error(code);
-  return result.count ?? 0;
 }
 
 // A table-returning rpc answers with an array; the sums function always yields

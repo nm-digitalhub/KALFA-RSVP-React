@@ -5,6 +5,7 @@ import type { CampaignStatus } from '@/lib/data/campaign-status';
 import { rangeStartIso, type OwnerAgentRange } from '@/lib/owner-agent/range';
 
 import { upTo, type CoreWindow } from './window';
+import { countOf } from './count';
 
 // Request-free CORE for campaign status counts (owner-agent tool 2,
 // campaigns_status_summary; plan §5). Takes a service-role client and returns
@@ -41,11 +42,6 @@ export const ADMIN_ATTENTION_FILTER = `status.in.(${WINDDOWN_STATUSES.join(',')}
 
 function head(client: AdminClient) {
   return client.from('campaigns').select('id', { count: 'exact', head: true });
-}
-
-function countOf(result: { count: number | null; error: unknown }, code: string): number {
-  if (result.error) throw new Error(code);
-  return result.count ?? 0;
 }
 
 // The sidebar badge's number (nav-counts.ts).

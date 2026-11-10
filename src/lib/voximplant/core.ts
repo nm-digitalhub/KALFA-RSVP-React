@@ -73,6 +73,41 @@ export type VoxParams = Record<
   string | number | boolean | null | undefined
 >;
 
+// One HTTP request to Voximplant, body read as text. A transport failure, an
+// unreadable body and a non-2xx status are all VoximplantNetworkError.
+async function fetchVoxText(
+  url: string,
+  init: Pick<RequestInit, 'method' | 'headers' | 'body'>,
+  timeoutMs: number,
+): Promise<{ res: Response; text: string }> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      // Node/undici `fetch` has NO default timeout — without this an unresponsive
+      // Management API would hang the worker forever, and the outbound trigger's
+      // "ambiguous timeout → start_unknown" path could never fire. The abort throws
+      // here and is (correctly) classified below as a VoximplantNetworkError.
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    throw new VoximplantNetworkError('שגיאת תקשורת עם מערכת השיחות');
+  }
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    throw new VoximplantNetworkError('תגובה לא תקינה ממערכת השיחות');
+  }
+  if (!res.ok) {
+    throw new VoximplantNetworkError(
+      `תגובה לא תקינה ממערכת השיחות (${res.status})`,
+      res.status,
+    );
+  }
+  return { res, text };
+}
+
 // Call any Management API method. Params are form-urlencoded (skips null/undefined).
 // Throws VoximplantApiError on a business error envelope, VoximplantNetworkError on
 // transport/parse/non-2xx. NEVER logs params or the token (may carry PII/secrets).
@@ -88,40 +123,21 @@ export async function voxRequest<T = unknown>(
     if (value !== null && value !== undefined) body.set(key, String(value));
   }
 
-  let res: Response;
-  try {
-    res = await fetch(`${MGMT_BASE}/${method}/`, {
+  // Read the body as TEXT first, then check status + Content-Type, and only
+  // then JSON.parse — so a non-JSON body (HTML error page, empty body) is
+  // classified as a network-layer failure and never reaches JSON.parse blind.
+  const { res, text } = await fetchVoxText(
+    `${MGMT_BASE}/${method}/`,
+    {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body,
-      // Node/undici `fetch` has NO default timeout — without this an unresponsive
-      // Management API would hang the worker forever, and the outbound trigger's
-      // "ambiguous timeout → start_unknown" path could never fire. The abort throws
-      // here and is (correctly) classified below as a VoximplantNetworkError.
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch {
-    throw new VoximplantNetworkError('שגיאת תקשורת עם מערכת השיחות');
-  }
-
-  // Read the body as TEXT first, then check status + Content-Type, and only
-  // then JSON.parse — so a non-JSON body (HTML error page, empty body) is
-  // classified as a network-layer failure and never reaches JSON.parse blind.
-  let text: string;
-  try {
-    text = await res.text();
-  } catch {
-    throw new VoximplantNetworkError('תגובה לא תקינה ממערכת השיחות');
-  }
-  if (!res.ok) {
-    throw new VoximplantNetworkError(
-      `תגובה לא תקינה ממערכת השיחות (${res.status})`,
-      res.status,
-    );
-  }
+    },
+    timeoutMs,
+  );
   const contentType = (res.headers?.get('content-type') ?? '').toLowerCase();
   const stripped = text.replace(/^\uFEFF/, '').trimStart();
   const looksJson =
@@ -913,27 +929,11 @@ export async function getMediaResources(
     .filter(([, v]) => v === true)
     .map(([k]) => k)
     .join('&');
-  let res: Response;
-  try {
-    res = await fetch(`https://api.voximplant.com/getMediaResources${query ? `?${query}` : ''}`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch {
-    throw new VoximplantNetworkError('שגיאת תקשורת עם מערכת השיחות');
-  }
-  let text: string;
-  try {
-    text = await res.text();
-  } catch {
-    throw new VoximplantNetworkError('תגובה לא תקינה ממערכת השיחות');
-  }
-  if (!res.ok) {
-    throw new VoximplantNetworkError(
-      `תגובה לא תקינה ממערכת השיחות (${res.status})`,
-      res.status,
-    );
-  }
+  const { text } = await fetchVoxText(
+    `https://api.voximplant.com/getMediaResources${query ? `?${query}` : ''}`,
+    { method: 'GET' },
+    timeoutMs,
+  );
   try {
     return JSON.parse(text.replace(/^\uFEFF/, '').trimStart());
   } catch {

@@ -19,33 +19,31 @@ const MAX_RESPONSE_BYTES = 65_536;
 export type RdpGatewayFailureKind = 'unreachable' | 'timeout' | 'rejected' | 'bad_response';
 export type RdpGatewayResult<T> = { ok: true; value: T } | { ok: false; kind: RdpGatewayFailureKind };
 
-const disconnectResponseSchema = z.object({ closed: z.number().int().nonnegative() });
+type RdpGatewayFailure = { ok: false; kind: RdpGatewayFailureKind };
 
-/** Which tunnels to close: every tunnel of the gateway identity, or one tunnel by id. */
-export type RdpDisconnectSelector = { user: string } | { tunnelId: string };
-
-export async function disconnectRdpTunnels(
-  config: Pick<RdpGatewayConfig, 'adminOrigin' | 'adminSecret'>,
-  selector: RdpDisconnectSelector,
-): Promise<RdpGatewayResult<{ closed: number }>> {
-  let response: Response;
+// One request to a gateway listener. `redirect: 'manual'` and `cache: 'no-store'` on every call (see the note
+// above); a transport failure is a fixed kind, the response itself is the caller's to judge.
+async function gatewayFetch(
+  url: string,
+  init: Pick<RequestInit, 'method' | 'headers' | 'body'>,
+  timeoutMs: number,
+): Promise<{ ok: true; value: Response } | RdpGatewayFailure> {
   try {
-    response = await fetch(`${config.adminOrigin}/admin/v1/disconnect`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.adminSecret}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(selector),
-      signal: AbortSignal.timeout(ADMIN_TIMEOUT_MS),
+    const value = await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs),
       redirect: 'manual',
       cache: 'no-store',
     });
+    return { ok: true, value };
   } catch (err) {
     const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
     return { ok: false, kind: timedOut ? 'timeout' : 'unreachable' };
   }
+}
 
+// An admin-listener answer: a 2xx with a bounded JSON body of the expected shape, or a fixed failure kind.
+async function readAdminJson<T>(response: Response, schema: z.ZodType<T>): Promise<RdpGatewayResult<T>> {
   if (!response.ok) return { ok: false, kind: 'rejected' };
 
   let text: string;
@@ -62,9 +60,37 @@ export async function disconnectRdpTunnels(
   } catch {
     return { ok: false, kind: 'bad_response' };
   }
-  const parsed = disconnectResponseSchema.safeParse(json);
+  const parsed = schema.safeParse(json);
   if (!parsed.success) return { ok: false, kind: 'bad_response' };
-  return { ok: true, value: { closed: parsed.data.closed } };
+  return { ok: true, value: parsed.data };
+}
+
+const disconnectResponseSchema = z.object({ closed: z.number().int().nonnegative() });
+
+/** Which tunnels to close: every tunnel of the gateway identity, or one tunnel by id. */
+export type RdpDisconnectSelector = { user: string } | { tunnelId: string };
+
+export async function disconnectRdpTunnels(
+  config: Pick<RdpGatewayConfig, 'adminOrigin' | 'adminSecret'>,
+  selector: RdpDisconnectSelector,
+): Promise<RdpGatewayResult<{ closed: number }>> {
+  const response = await gatewayFetch(
+    `${config.adminOrigin}/admin/v1/disconnect`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.adminSecret}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(selector),
+    },
+    ADMIN_TIMEOUT_MS,
+  );
+  if (!response.ok) return response;
+
+  const parsed = await readAdminJson(response.value, disconnectResponseSchema);
+  if (!parsed.ok) return parsed;
+  return { ok: true, value: { closed: parsed.value.closed } };
 }
 
 // ── /admin/v1/tunnels: who is connected right now ────────────────────────────────
@@ -90,38 +116,16 @@ export type RdpLiveTunnel = { tunnelId: string; user: string; clientIp: string; 
 export async function listRdpTunnels(
   config: Pick<RdpGatewayConfig, 'adminOrigin' | 'adminSecret'>,
 ): Promise<RdpGatewayResult<{ tunnels: RdpLiveTunnel[] }>> {
-  let response: Response;
-  try {
-    response = await fetch(`${config.adminOrigin}/admin/v1/tunnels`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${config.adminSecret}` },
-      signal: AbortSignal.timeout(ADMIN_TIMEOUT_MS),
-      redirect: 'manual',
-      cache: 'no-store',
-    });
-  } catch (err) {
-    const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return { ok: false, kind: timedOut ? 'timeout' : 'unreachable' };
-  }
-  if (!response.ok) return { ok: false, kind: 'rejected' };
+  const response = await gatewayFetch(
+    `${config.adminOrigin}/admin/v1/tunnels`,
+    { method: 'GET', headers: { Authorization: `Bearer ${config.adminSecret}` } },
+    ADMIN_TIMEOUT_MS,
+  );
+  if (!response.ok) return response;
 
-  let text: string;
-  try {
-    text = await response.text();
-  } catch {
-    return { ok: false, kind: 'bad_response' };
-  }
-  if (text.length > MAX_RESPONSE_BYTES) return { ok: false, kind: 'bad_response' };
-
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    return { ok: false, kind: 'bad_response' };
-  }
-  const parsed = tunnelsResponseSchema.safeParse(json);
-  if (!parsed.success) return { ok: false, kind: 'bad_response' };
-  return { ok: true, value: { tunnels: parsed.data.tunnels ?? [] } };
+  const parsed = await readAdminJson(response.value, tunnelsResponseSchema);
+  if (!parsed.ok) return parsed;
+  return { ok: true, value: { tunnels: parsed.value.tunnels ?? [] } };
 }
 
 // ── /connect: the signed .rdp file ───────────────────────────────────────────
@@ -146,23 +150,20 @@ export async function connectRdpFile(
   // A malformed address would put attacker-shaped text into a header. It is a caller bug, reported as a refusal.
   if (!clientIpSchema.safeParse(clientIp).success) return { ok: false, kind: 'rejected' };
 
-  let response: Response;
-  try {
-    response = await fetch(`${config.gatewayOrigin}/connect?host=${encodeURIComponent(config.target)}`, {
+  const fetched = await gatewayFetch(
+    `${config.gatewayOrigin}/connect?host=${encodeURIComponent(config.target)}`,
+    {
       method: 'GET',
       headers: {
         'X-Kalfa-Staff-Id': config.gatewayUser,
         'X-Kalfa-Internal': config.connectSecret,
         'X-Forwarded-For': clientIp,
       },
-      signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS),
-      redirect: 'manual',
-      cache: 'no-store',
-    });
-  } catch (err) {
-    const timedOut = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return { ok: false, kind: timedOut ? 'timeout' : 'unreachable' };
-  }
+    },
+    CONNECT_TIMEOUT_MS,
+  );
+  if (!fetched.ok) return fetched;
+  const response = fetched.value;
 
   if (response.status !== 200) return { ok: false, kind: 'rejected' };
 

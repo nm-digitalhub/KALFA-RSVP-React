@@ -2,7 +2,18 @@ import 'server-only';
 
 import type { QueryData, SupabaseClient } from '@supabase/supabase-js';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { CONSOLE_DIAL_AUDIT_ACTION } from '@/lib/data/console-calls';
+import {
+  countActiveDispatchAttempts,
+  DISPATCH_PRE_TERMINAL,
+  getAttemptByAccessToken,
+  getAttemptVoiceRowByAccessToken,
+  getCallbackRequestContactForAttempt,
+  recordAttemptDialConfirmed,
+  recordAttemptDispatchConcluded,
+  recordAttemptDispatchOutcome,
+  setAttemptElConversationId,
+} from '@/lib/data/dispatch-attempt-store';
+import { countRecentAuditedCallbackDials, recordSystemCallbackDialAudit } from '@/lib/data/callback-dial-audit';
 import type { CallbackPolicy } from '@/lib/callbacks/schedule-policy';
 import type { Database, TablesInsert } from '@/lib/supabase/types';
 // Request-FREE service-role DAL for callback_request_attempts — the
@@ -29,10 +40,12 @@ const selectAllAttempts = (client: SupabaseClient<Database>) => client.from('cal
 type AttemptRow = QueryData<ReturnType<typeof selectAllAttempts>>[number];
 type AttemptInsert = TablesInsert<'callback_request_attempts'>;
 
-// Mirrors call_attempts' own PRE_TERMINAL exactly (call-attempts.ts) — the
-// dispatch_status CHECK constraint's pre-terminal subset. Used for the
-// concurrency count and every CAS-guarded update below.
-export const DISPATCH_PRE_TERMINAL = ['queued', 'dialing', 'in_progress'] as const;
+// The queries this table shares with sales_call_attempts (the dispatch-status
+// writers, the concurrency count, the token lookups) live in
+// dispatch-attempt-store.ts; the functions below name the table and its wording.
+const TABLE = 'callback_request_attempts';
+
+export { DISPATCH_PRE_TERMINAL };
 
 export type CreateCallbackDispatchAttemptInput = {
   callbackRequestId: string;
@@ -125,40 +138,7 @@ export async function recordCallbackDialConfirmed(
   id: string,
   callSessionHistoryId: number,
 ): Promise<{ applied: boolean }> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('callback_request_attempts')
-    .update({
-      vox_call_session_history_id: String(callSessionHistoryId),
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('רישום אימות החיוג נכשל', { cause: error });
-  return { applied: data !== null };
-}
-
-async function recordDispatchOutcome(
-  id: string,
-  status: 'failed_to_start' | 'start_unknown',
-  reason: string,
-): Promise<{ applied: boolean }> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('callback_request_attempts')
-    .update({
-      dispatch_status: status,
-      finish_reason: reason,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('רישום תוצאת השיגור נכשל', { cause: error });
-  return { applied: data !== null };
+  return recordAttemptDialConfirmed(TABLE, id, callSessionHistoryId);
 }
 
 // Definite provider rejection (VoximplantApiError). Non-retryable — mirrors
@@ -174,7 +154,7 @@ export async function markCallbackDispatchFailed(
   id: string,
   reason: string,
 ): Promise<{ applied: boolean }> {
-  return recordDispatchOutcome(id, 'failed_to_start', reason);
+  return recordAttemptDispatchOutcome(TABLE, id, 'failed_to_start', reason);
 }
 
 // Ambiguous StartScenarios outcome (network/timeout/5xx-after-send/
@@ -183,7 +163,7 @@ export async function markCallbackDispatchUnknown(
   id: string,
   reason: string,
 ): Promise<{ applied: boolean }> {
-  return recordDispatchOutcome(id, 'start_unknown', reason);
+  return recordAttemptDispatchOutcome(TABLE, id, 'start_unknown', reason);
 }
 
 // The scenario's OWN terminal lifecycle report (mtg/cb/[token], NOT the
@@ -193,7 +173,7 @@ export async function markCallbackDispatchUnknown(
 // answer, voicemail, bad line) — the semantic OUTCOME lives on
 // confirmation_call_status (a separate axis, written by claimCallbackVoiceOutcome
 // via the mtg/tool/* routes during the call, or left at 'not_sent' when the
-// call never got that far). Guarded exactly like recordDispatchOutcome: only
+// call never got that far). Guarded exactly like the dispatch-outcome writers: only
 // applies from a pre-terminal dispatch_status, so a duplicate/late report
 // can never clobber an already-concluded row.
 export async function recordCallbackDispatchConcluded(
@@ -201,21 +181,7 @@ export async function recordCallbackDispatchConcluded(
   finishReason: string,
   callDurationSec: number | null,
 ): Promise<{ applied: boolean }> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('callback_request_attempts')
-    .update({
-      dispatch_status: 'concluded',
-      finish_reason: finishReason,
-      call_duration_sec: callDurationSec,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[])
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('רישום סיום השיחה נכשל', { cause: error });
-  return { applied: data !== null };
+  return recordAttemptDispatchConcluded(TABLE, id, finishReason, callDurationSec);
 }
 
 // ADDITIVE, best-effort (mirrors call-attempts.ts's setElConversationId): the
@@ -227,28 +193,14 @@ export async function setCallbackAttemptElConversationId(
   id: string,
   elConversationId: string,
 ): Promise<{ applied: boolean }> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('callback_request_attempts')
-    .update({ el_conversation_id: elConversationId, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select('id')
-    .maybeSingle();
-  if (error) throw new Error('רישום מזהה השיחה נכשל', { cause: error });
-  return { applied: data !== null };
+  return setAttemptElConversationId(TABLE, id, elConversationId);
 }
 
 // Durable concurrency counter — the callback-dispatch half of the combined
 // cross-table count. Never call this alone to enforce a concurrency cap; see
 // voximplant-concurrency.ts's countActiveCallsAllSurfaces for why.
 export async function countActiveCallbackDispatches(): Promise<number> {
-  const admin = createAdminClient();
-  const { count, error } = await admin
-    .from('callback_request_attempts')
-    .select('id', { count: 'exact', head: true })
-    .in('dispatch_status', DISPATCH_PRE_TERMINAL as unknown as string[]);
-  if (error) throw new Error('count_active_callback_dispatches_failed');
-  return count ?? 0;
+  return countActiveDispatchAttempts(TABLE, 'count_active_callback_dispatches_failed');
 }
 
 // The same attempt cap that already protects this callback_requests row
@@ -279,41 +231,16 @@ export async function countRecentCallbackAuditedAttempts(
   nowMs: number,
   policy: CallbackPolicy,
 ): Promise<number> {
-  const admin = createAdminClient();
-  const sinceIso = new Date(nowMs - policy.attemptWindowMs).toISOString();
-  const { count, error } = await admin
-    .from('activity_log')
-    .select('id', { count: 'exact', head: true })
-    .eq('action', CONSOLE_DIAL_AUDIT_ACTION)
-    .eq('meta->>callback_request_id', callbackRequestId)
-    .gte('created_at', sinceIso);
-  if (error) return policy.maxAttempts; // unreadable ⇒ treat as capped (fail-closed, matches console-calls.ts)
-  return count ?? 0;
+  return countRecentAuditedCallbackDials(callbackRequestId, nowMs, policy);
 }
 
-// Write the SAME audit action a human console dial writes
-// (recordConsoleDialAudit in console-calls.ts), so an AI-dispatched call
-// becomes visible to whatever already reads CONSOLE_DIAL_AUDIT_ACTION rows
-// for this callback_request_id — including countRecentCallbackAuditedAttempts
-// above. user_id is null (no human agent chose this dial; a null user_id is
-// the same convention recordRsvpFromCall/recordManualDialOutcome already use
-// for a system-initiated activity_log row). Best-effort: a lost write
-// degrades a cap's visibility for future dials, never the call that already
-// happened.
+// Write the SAME audit action a human console dial writes, so an
+// AI-dispatched call becomes visible to whatever already reads
+// CONSOLE_DIAL_AUDIT_ACTION rows for this callback_request_id — including
+// countRecentCallbackAuditedAttempts above. Best-effort (see
+// recordSystemCallbackDialAudit).
 export async function recordCallbackDialAudit(callbackRequestId: string): Promise<void> {
-  try {
-    const admin = createAdminClient();
-    type ActivityLogInsert = TablesInsert<'activity_log'>;
-    const row: ActivityLogInsert = {
-      event_id: null,
-      user_id: null,
-      action: CONSOLE_DIAL_AUDIT_ACTION,
-      meta: { callback_request_id: callbackRequestId } as ActivityLogInsert['meta'],
-    };
-    await admin.from('activity_log').insert(row);
-  } catch {
-    // Deliberately swallowed — see doc comment.
-  }
+  await recordSystemCallbackDialAudit(callbackRequestId);
 }
 
 // --- mtg/ctx|cb voice-token surface (public-rsvp-sentinel-reviewed 2026-08-22) ---
@@ -335,9 +262,6 @@ export type CallbackVoiceContext = {
   };
 };
 
-const VOICE_CTX_SELECT =
-  'id, callback_request_id, token_expires_at, scheduled_at_snapshot, el_conversation_id';
-
 // Branch B (ctx endpoint): resolve the attempt + the live callback_requests row
 // from the opaque access_token. Identity ALWAYS comes from this server-side
 // lookup — same discipline as call-attempts.ts's getCallContextByAccessToken.
@@ -353,16 +277,10 @@ const VOICE_CTX_SELECT =
 export async function getCallbackVoiceContextByAccessToken(
   accessToken: string,
 ): Promise<CallbackVoiceContext | null> {
-  const admin = createAdminClient();
-  const { data: attempt, error } = await admin
-    .from('callback_request_attempts')
-    .select(VOICE_CTX_SELECT)
-    .eq('access_token', accessToken)
-    .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
+  const attempt = await getAttemptVoiceRowByAccessToken(TABLE, accessToken, 'טעינת ניסיון השיחה נכשלה');
   if (!attempt) return null;
 
-  const { data: request, error: reqErr } = await admin
+  const { data: request, error: reqErr } = await createAdminClient()
     .from('callback_requests')
     .select('full_name, topic, status, scheduled_at, calendar_item_id')
     .eq('id', attempt.callback_request_id)
@@ -379,14 +297,7 @@ export async function getCallbackVoiceContextByAccessToken(
 export async function getCallbackAttemptByAccessToken(
   accessToken: string,
 ): Promise<{ id: string; callback_request_id: string; token_expires_at: string } | null> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from('callback_request_attempts')
-    .select('id, callback_request_id, token_expires_at')
-    .eq('access_token', accessToken)
-    .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
-  return data ?? null;
+  return getAttemptByAccessToken(TABLE, accessToken, 'טעינת ניסיון השיחה נכשלה');
 }
 
 // Resolve the parent callback_requests row's contact fields for a tool-call
@@ -401,29 +312,7 @@ export async function getCallbackRequestForAttempt(attemptId: string): Promise<{
   phone: string;
   topic: string | null;
 } | null> {
-  const admin = createAdminClient();
-  const { data: attempt, error } = await admin
-    .from('callback_request_attempts')
-    .select('callback_request_id')
-    .eq('id', attemptId)
-    .maybeSingle();
-  if (error) throw new Error('טעינת ניסיון השיחה נכשלה', { cause: error });
-  if (!attempt) return null;
-
-  const { data: request, error: reqErr } = await admin
-    .from('callback_requests')
-    .select('full_name, phone, topic')
-    .eq('id', attempt.callback_request_id)
-    .maybeSingle();
-  if (reqErr) throw new Error('טעינת בקשת ההתקשרות נכשלה', { cause: reqErr });
-  if (!request) return null;
-
-  return {
-    callbackRequestId: attempt.callback_request_id,
-    fullName: request.full_name,
-    phone: request.phone,
-    topic: request.topic,
-  };
+  return getCallbackRequestContactForAttempt(TABLE, attemptId, 'טעינת ניסיון השיחה נכשלה');
 }
 
 // Single-use claim guard (review finding B2): callback_request_attempts has
