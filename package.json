@@ -157,6 +157,7 @@
     "@xstate/react": "^6.1.0",
     "@zxcvbn-ts/core": "^4.1.2",
     "@zxcvbn-ts/language-common": "^4.1.2",
+    "agent-browser": "^0.42.0",
     "ai": "^7.0.141",
     "calendar-link": "^2.11.6",
     "chrome-devtools-mcp": "^1.10.1",
