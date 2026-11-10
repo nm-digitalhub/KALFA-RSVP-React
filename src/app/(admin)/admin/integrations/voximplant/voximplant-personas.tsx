@@ -71,6 +71,65 @@ export function VoximplantLiveCallsToggle({
   );
 }
 
+// The panel of one persona's switch: its rule field, its checkbox and its submit.
+// Markup only — the <form>'s action and its result come from the persona's own
+// component (its own useActionState), so the forms stay siblings, never shared.
+function PersonaChannelForm({
+  action,
+  formError,
+  notice,
+  title,
+  description,
+  ruleFieldName,
+  ruleFieldHelp,
+  enabledFieldName,
+  ruleId,
+  enabled,
+  fullyConfigured,
+}: {
+  action: (formData: FormData) => void;
+  formError?: string;
+  notice?: string;
+  title: string;
+  description: React.ReactNode;
+  ruleFieldName: string;
+  ruleFieldHelp: string;
+  enabledFieldName: string;
+  ruleId: string;
+  enabled: boolean;
+  fullyConfigured: boolean;
+}) {
+  return (
+    <form
+      action={action}
+      className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
+    >
+      <FormError message={formError} />
+      <FormNotice message={notice} />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-sm font-semibold">{title}</p>
+          <p className="text-xs text-muted-foreground">{description}</p>
+          <VoximplantRuleField name={ruleFieldName} defaultValue={ruleId} help={ruleFieldHelp} />
+        </div>
+        <div className="flex shrink-0 items-center justify-end gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              name={enabledFieldName}
+              defaultChecked={enabled}
+              disabled={!fullyConfigured && !enabled}
+              className="size-4 accent-primary"
+            />
+            מופעל
+          </label>
+          <SubmitButton className="w-auto">עדכון</SubmitButton>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 /** Meeting-confirm persona: its own rule_id, its own toggle. */
 export function VoximplantMeetingConfirmToggle({
   ruleId,
@@ -83,40 +142,24 @@ export function VoximplantMeetingConfirmToggle({
 }) {
   const [state, action] = useActionState(updateMeetingConfirmChannelAction, {});
   return (
-    <form
+    <PersonaChannelForm
       action={action}
-      className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
-    >
-      <FormError message={actionFormError(state)} />
-      <FormNotice message={state.data?.notice} />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-sm font-semibold">שיחות אישור פגישה (Meeting-confirm)</p>
-          <p className="text-xs text-muted-foreground">
-            שיחת AI קצרה לאישור/שינוי מועד לפגישה שכבר תואמה. משתמש בחשבון
-            ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
-          </p>
-          <VoximplantRuleField
-            name="voximplant_meeting_confirm_rule_id"
-            defaultValue={ruleId}
-            help="הכלל שממנו יוצאת שיחת אישור הפגישה. בחרו מרשימת הכללים בחשבון כדי לא להקליד מזהה מהזיכרון."
-          />
-        </div>
-        <div className="flex shrink-0 items-center justify-end gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              name="voximplant_meeting_confirm_enabled"
-              defaultChecked={enabled}
-              disabled={!fullyConfigured && !enabled}
-              className="size-4 accent-primary"
-            />
-            מופעל
-          </label>
-          <SubmitButton className="w-auto">עדכון</SubmitButton>
-        </div>
-      </div>
-    </form>
+      formError={actionFormError(state)}
+      notice={state.data?.notice}
+      title="שיחות אישור פגישה (Meeting-confirm)"
+      description={
+        <>
+          שיחת AI קצרה לאישור/שינוי מועד לפגישה שכבר תואמה. משתמש בחשבון
+          ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
+        </>
+      }
+      ruleFieldName="voximplant_meeting_confirm_rule_id"
+      ruleFieldHelp="הכלל שממנו יוצאת שיחת אישור הפגישה. בחרו מרשימת הכללים בחשבון כדי לא להקליד מזהה מהזיכרון."
+      enabledFieldName="voximplant_meeting_confirm_enabled"
+      ruleId={ruleId}
+      enabled={enabled}
+      fullyConfigured={fullyConfigured}
+    />
   );
 }
 
@@ -132,39 +175,23 @@ export function VoximplantSalesCallToggle({
 }) {
   const [state, action] = useActionState(updateSalesCallChannelAction, {});
   return (
-    <form
+    <PersonaChannelForm
       action={action}
-      className="mt-4 space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/5 p-4"
-    >
-      <FormError message={actionFormError(state)} />
-      <FormNotice message={state.data?.notice} />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-sm font-semibold">שיחות סגירת מכירה (Sales-closing)</p>
-          <p className="text-xs text-muted-foreground">
-            שיחת AI יוצאת ללקוח שביקש חזרה בנושא &quot;מכירות&quot;, במועד
-            שנקבע. משתמש בחשבון ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
-          </p>
-          <VoximplantRuleField
-            name="voximplant_sales_call_rule_id"
-            defaultValue={ruleId}
-            help="הכלל שממנו יוצאת שיחת סגירת המכירה. בחרו מרשימת הכללים בחשבון כדי לא להקליד מזהה מהזיכרון."
-          />
-        </div>
-        <div className="flex shrink-0 items-center justify-end gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              name="voximplant_sales_calls_enabled"
-              defaultChecked={enabled}
-              disabled={!fullyConfigured && !enabled}
-              className="size-4 accent-primary"
-            />
-            מופעל
-          </label>
-          <SubmitButton className="w-auto">עדכון</SubmitButton>
-        </div>
-      </div>
-    </form>
+      formError={actionFormError(state)}
+      notice={state.data?.notice}
+      title="שיחות סגירת מכירה (Sales-closing)"
+      description={
+        <>
+          שיחת AI יוצאת ללקוח שביקש חזרה בנושא &quot;מכירות&quot;, במועד
+          שנקבע. משתמש בחשבון ובמספר היוצא המשותפים, עם Rule ID נפרד משלה.
+        </>
+      }
+      ruleFieldName="voximplant_sales_call_rule_id"
+      ruleFieldHelp="הכלל שממנו יוצאת שיחת סגירת המכירה. בחרו מרשימת הכללים בחשבון כדי לא להקליד מזהה מהזיכרון."
+      enabledFieldName="voximplant_sales_calls_enabled"
+      ruleId={ruleId}
+      enabled={enabled}
+      fullyConfigured={fullyConfigured}
+    />
   );
 }

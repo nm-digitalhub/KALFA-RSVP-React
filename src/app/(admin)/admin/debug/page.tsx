@@ -19,7 +19,7 @@ import {
   ExchangePanel,
   AppErrorsPanel,
 } from './_panels';
-import { AutoRefreshToggle } from './_auto-refresh-toggle';
+import { AutoRefreshToggle } from '../_auto-refresh-toggle';
 
 export const metadata: Metadata = { title: 'Debug Mode' };
 
@@ -117,7 +117,7 @@ export default async function DebugPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <PageHeading>Debug Mode</PageHeading>
-        <AutoRefreshToggle />
+        <AutoRefreshToggle storageKey="kalfa-debug-auto-refresh" />
       </div>
 
       <SummaryCard status={overall} />

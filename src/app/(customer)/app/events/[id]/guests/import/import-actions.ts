@@ -18,10 +18,10 @@ import {
   bulkInsertGuests,
   type BulkGuestInput,
 } from '@/lib/data/guests';
-import { buildContactsForEvent, reconcileCampaignSetForContact } from '@/lib/data/contacts';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { requireEventAccess } from '@/lib/data/events';
 import { CSV_MAX_ROWS, CSV_MAX_BYTES } from '@/lib/constants';
+import { admitImportedContacts } from './admit-imported-contacts';
 
 // A single row that failed validation, reported back to the user in Hebrew.
 export interface ImportRowError {
@@ -306,32 +306,8 @@ export const importGuestsAction = actionClient
       returnUserError('ייבוא המוזמנים נכשל.');
     }
 
-    // Materialize the contacts table (billing source-of-truth) from the imported
-    // guests — the bulk path, so a one-time whole-event rebuild is appropriate.
-    // Best-effort: the guests are already committed; a failure must not report
-    // the import as failed.
-    try {
-      const { contactIds } = await buildContactsForEvent(eventId);
-      // Admit each imported contact into an already-operational campaign's
-      // authorized set — otherwise a bulk-imported contact would be silently
-      // excluded forever. reconcileCampaignSetForContact is
-      // itself best-effort/never-throws (a cheap no-op when there is no
-      // operational campaign or the contact is already a member), so this loop
-      // cannot fail the import; it only ever helps an eligible contact get
-      // admitted (a campaign with a package quota admits only until it is full).
-      for (const contactId of contactIds) {
-        await reconcileCampaignSetForContact(eventId, 'add', contactId);
-      }
-    } catch (err) {
-      unstable_rethrow(err);
-      // Derived secondary effect — never blocks a completed import, but log (no
-      // PII) so a failed contacts rebuild is auditable and reconcilable.
-      console.error(
-        `[contacts] post-import contacts rebuild failed (event=${eventId}): ${
-          err instanceof Error ? err.message : 'unknown error'
-        }`,
-      );
-    }
+    // The contacts rebuild and campaign admission — best-effort, never fails the import.
+    await admitImportedContacts(eventId);
 
     await logActivity({
       eventId,

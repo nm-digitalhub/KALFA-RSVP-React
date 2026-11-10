@@ -13,7 +13,7 @@ import {
   UnreadableAlert,
   UnsupportedVersionAlert,
 } from './_panels';
-import { AutoRefreshToggle } from './_auto-refresh-toggle';
+import { AutoRefreshToggle } from '../_auto-refresh-toggle';
 
 export const metadata: Metadata = { title: 'העברת דומיין' };
 
@@ -38,7 +38,7 @@ export default async function RelocationPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <PageHeading>העברת דומיין</PageHeading>
-        <AutoRefreshToggle />
+        <AutoRefreshToggle storageKey="kalfa-relocation-auto-refresh" />
       </div>
 
       {view.kind === 'no-run' ? <NoRunEmptyState /> : null}

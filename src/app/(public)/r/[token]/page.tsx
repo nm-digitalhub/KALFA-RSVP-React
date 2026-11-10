@@ -4,13 +4,15 @@ import { headers } from 'next/headers';
 import { RSVP_READ_RATE } from '@/lib/constants';
 import { getEventAttendeesPublic, getRsvpByToken, looksLikeRsvpToken } from '@/lib/data/rsvp';
 import { getT } from '@/i18n.server';
-import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 import { RsvpForm } from './rsvp-form';
 import { AddToCalendar } from '@/components/add-to-calendar';
+import { GuestAlert } from '@/components/guest/guest-alert';
 import { GuestShell } from '@/components/guest/guest-shell';
+
+import { inviteImageUrlOrNull } from '../../invite-image-url';
 
 // Always render per-request: the response is guest-specific and must never be
 // cached or prerendered. Response headers (no-store, no-referrer) are set for
@@ -43,12 +45,9 @@ export default async function RsvpPage({
   if (!gate.allowed) {
     return (
       <GuestShell width="md">
-        <p
-          role="alert"
-          className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
-        >
+        <GuestAlert tone="warning">
           {t('r.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.')}
-        </p>
+        </GuestAlert>
       </GuestShell>
     );
   }
@@ -59,12 +58,9 @@ export default async function RsvpPage({
     // reveal which, to avoid leaking token validity.
     return (
       <GuestShell width="md">
-        <p
-          role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
+        <GuestAlert tone="error">
           {t('r.invalidLink', 'קישור אישור ההגעה אינו תקף, פג תוקפו או בוטל.')}
-        </p>
+        </GuestAlert>
       </GuestShell>
     );
   }
@@ -73,18 +69,7 @@ export default async function RsvpPage({
   // a valid view (the bucket is private; the token holder is exactly the guest
   // this invitation was sent to). Fail-open — the page renders without the
   // image on any signing hiccup.
-  let inviteImageUrl: string | null = null;
-  if (view.event.invite_image_path) {
-    try {
-      inviteImageUrl = await signedInviteImageUrl(view.event.invite_image_path, 600);
-    } catch (err) {
-      console.error(
-        `[event-media] rsvp invite image signing failed (event=${view.event.id}): ${
-          err instanceof Error ? err.message : 'unknown error'
-        }`,
-      );
-    }
-  }
+  const inviteImageUrl = await inviteImageUrlOrNull(view.event.invite_image_path, view.event.id, 'rsvp');
 
   // "Who's coming" opt-in list. Own rate-limit bucket (read-rate shape reused;
   // separate key so it can't starve the main read gate). Fail-open on error —

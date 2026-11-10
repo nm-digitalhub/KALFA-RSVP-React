@@ -6,12 +6,12 @@ import { Loader2 } from 'lucide-react';
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { createClient } from '@/lib/supabase/client';
+import { subscribeConsoleCallFeed, subscribeHumanLegs } from '@/lib/realtime/console-channels';
 import {
-  makePollingFallback,
-  REALTIME_SUBSCRIBE_STATES,
-  subscribeConsoleCallFeed,
-  subscribeHumanLegs,
-} from '@/lib/realtime/console-channels';
+  bearerToken,
+  postWithBearer,
+  subscribeWithPollingFallback,
+} from '@/components/console/console-client';
 import { cn } from '@/lib/utils';
 
 // "שיחות AI חיות" — the browser console's view onto live AI (RSVPAgent) calls,
@@ -83,12 +83,6 @@ const LEG_STATUS_VARIANT: Partial<Record<LegStatus, BadgeVariant>> = {
   requested: 'info',
 };
 
-async function bearerToken(): Promise<string | null> {
-  const supabase = createClient();
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
-}
-
 export function AiHandoffSection({
   selfUserId,
   roster,
@@ -156,36 +150,12 @@ export function AiHandoffSection({
 
   useEffect(() => {
     void loadRows();
-    let stopPolling: (() => void) | null = null;
-    const stopRealtime = subscribeConsoleCallFeed(() => void loadRows(), (status) => {
-      if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
-        stopPolling?.();
-        stopPolling = null;
-        return;
-      }
-      if (!stopPolling) stopPolling = makePollingFallback(() => void loadRows(), 60_000);
-    });
-    return () => {
-      stopRealtime();
-      stopPolling?.();
-    };
+    return subscribeWithPollingFallback(subscribeConsoleCallFeed, () => void loadRows(), 60_000);
   }, [loadRows]);
 
   useEffect(() => {
     void loadLegs();
-    let stopPolling: (() => void) | null = null;
-    const stopRealtime = subscribeHumanLegs(() => void loadLegs(), (status) => {
-      if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
-        stopPolling?.();
-        stopPolling = null;
-        return;
-      }
-      if (!stopPolling) stopPolling = makePollingFallback(() => void loadLegs(), 60_000);
-    });
-    return () => {
-      stopRealtime();
-      stopPolling?.();
-    };
+    return subscribeWithPollingFallback(subscribeHumanLegs, () => void loadLegs(), 60_000);
   }, [loadLegs]);
 
   const claim = useCallback(
@@ -232,12 +202,7 @@ export function AiHandoffSection({
     try {
       const token = await bearerToken();
       if (!token) throw new Error('אין session פעיל');
-      const res = await fetch(`/api/calls/${callAttemptId}/monitor`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
-        cache: 'no-store',
-      });
+      const res = await postWithBearer(`/api/calls/${callAttemptId}/monitor`, token, { mode });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
         setAttachError((p) => ({ ...p, [callAttemptId]: body?.error ?? 'הבקשה נכשלה' }));
@@ -260,12 +225,7 @@ export function AiHandoffSection({
     try {
       const token = await bearerToken();
       if (!token) throw new Error('אין session פעיל');
-      const res = await fetch(`/api/calls/${callAttemptId}/agent-command`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: 'close_agent' }),
-        cache: 'no-store',
-      });
+      const res = await postWithBearer(`/api/calls/${callAttemptId}/agent-command`, token, { command: 'close_agent' });
       if (res.ok) setCloseSent((p) => ({ ...p, [callAttemptId]: true }));
     } finally {
       setCloseBusy((p) => ({ ...p, [callAttemptId]: false }));

@@ -3,12 +3,14 @@ import { headers } from 'next/headers';
 
 import { getGiftByToken } from '@/lib/data/gift';
 import { getT } from '@/i18n.server';
-import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 import { GiftLanding } from './gift-landing';
+import { GuestAlert } from '@/components/guest/guest-alert';
 import { GuestShell } from '@/components/guest/guest-shell';
+
+import { inviteImageUrlOrNull } from '../../invite-image-url';
 
 // Always render per-request: the response depends on the token and must never
 // be cached or prerendered. Response headers (no-store, no-referrer, noindex)
@@ -47,12 +49,9 @@ export default async function GiftPage({
   if (!gate.allowed) {
     return (
       <GuestShell>
-        <p
-          role="alert"
-          className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
-        >
+        <GuestAlert tone="warning">
           {t('g.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.')}
-        </p>
+        </GuestAlert>
       </GuestShell>
     );
   }
@@ -63,12 +62,9 @@ export default async function GiftPage({
     // to avoid leaking token validity.
     return (
       <GuestShell>
-        <p
-          role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
+        <GuestAlert tone="error">
           {t('g.invalidLink', 'הקישור אינו תקף או שאינו זמין עוד.')}
-        </p>
+        </GuestAlert>
       </GuestShell>
     );
   }
@@ -76,18 +72,7 @@ export default async function GiftPage({
   // Invitation-image hero: sign a short-lived URL AFTER the token resolved to a
   // valid, active event (the bucket is private). Fail-open — render without the
   // image on any signing hiccup.
-  let inviteImageUrl: string | null = null;
-  if (view.invite_image_path) {
-    try {
-      inviteImageUrl = await signedInviteImageUrl(view.invite_image_path, 600);
-    } catch (err) {
-      console.error(
-        `[event-media] gift invite image signing failed (event=${view.id}): ${
-          err instanceof Error ? err.message : 'unknown error'
-        }`,
-      );
-    }
-  }
+  const inviteImageUrl = await inviteImageUrlOrNull(view.invite_image_path, view.id, 'gift');
 
   return (
     <GuestShell>

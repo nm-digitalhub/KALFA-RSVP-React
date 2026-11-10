@@ -28,14 +28,17 @@ import {
   type ConsolePhoneSnapshot,
 } from '@/lib/voximplant/web-client';
 import {
-  makePollingFallback,
-  REALTIME_SUBSCRIBE_STATES,
   subscribeAgentStatus,
   subscribeChatMessages,
   subscribeConsoleCalls,
 } from '@/lib/realtime/console-channels';
 import { AiHandoffSection } from '@/components/console/ai-handoff-section';
 import { CallBar } from '@/components/console/call-bar';
+import {
+  bearerToken,
+  postWithBearer,
+  subscribeWithPollingFallback,
+} from '@/components/console/console-client';
 import { ChatSection } from '@/components/console/chat-section';
 import { ConsolePushAlertToggle } from '@/components/console/push-alert-toggle';
 import { computeUnreadChatCount, type ChatMessageRow } from '@/lib/console/chat';
@@ -353,22 +356,11 @@ function SoftphonePanelBody({
     };
     refetch();
 
-    let stopPolling: (() => void) | null = null;
-    const stopRealtime = subscribeAgentStatus(refetch, (status) => {
-      if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
-        stopPolling?.();
-        stopPolling = null;
-        return;
-      }
-      // CHANNEL_ERROR / TIMED_OUT / CLOSED — presence must still update, just
-      // less promptly, so fall back to polling until/unless it recovers.
-      if (!stopPolling) stopPolling = makePollingFallback(refetch, 60_000);
-    });
+    const stopFeed = subscribeWithPollingFallback(subscribeAgentStatus, refetch, 60_000);
 
     return () => {
       cancelled = true;
-      stopRealtime();
-      stopPolling?.();
+      stopFeed();
     };
   }, []);
 
@@ -412,18 +404,11 @@ function SoftphonePanelBody({
     // 'in_call' is system-managed and rejected by the route (400) — never
     // re-POST it. A null selfStatus means the initial read hasn't landed yet.
     if (!selfStatus || selfStatus === 'in_call') return;
-    const supabase = createClient();
     const beat = async () => {
       try {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
+        const token = await bearerToken();
         if (!token) return;
-        const res = await fetch('/api/agents/status', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: selfStatus }),
-          cache: 'no-store',
-        });
+        const res = await postWithBearer('/api/agents/status', token, { status: selfStatus });
         if (!res.ok) throw new Error(`heartbeat POST ${res.status}`);
         heartbeatFailureStreak.current = 0;
         setHeartbeatDegraded(false);
@@ -521,20 +506,11 @@ function SoftphonePanelBody({
     }
 
     refresh();
-    let stopPolling: (() => void) | null = null;
-    const stopRealtime = subscribeConsoleCalls(() => void refresh(), (status) => {
-      if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
-        stopPolling?.();
-        stopPolling = null;
-        return;
-      }
-      if (!stopPolling) stopPolling = makePollingFallback(() => void refresh(), 30_000);
-    });
+    const stopFeed = subscribeWithPollingFallback(subscribeConsoleCalls, () => void refresh(), 30_000);
 
     return () => {
       cancelled = true;
-      stopRealtime();
-      stopPolling?.();
+      stopFeed();
     };
   }, [selfUserId]);
 
@@ -584,20 +560,11 @@ function SoftphonePanelBody({
     }
 
     void loadMessages();
-    let stopPolling: (() => void) | null = null;
-    const stopRealtime = subscribeChatMessages(() => void loadMessages(), (status) => {
-      if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
-        stopPolling?.();
-        stopPolling = null;
-        return;
-      }
-      if (!stopPolling) stopPolling = makePollingFallback(() => void loadMessages(), 30_000);
-    });
+    const stopFeed = subscribeWithPollingFallback(subscribeChatMessages, () => void loadMessages(), 30_000);
 
     return () => {
       cancelled = true;
-      stopRealtime();
-      stopPolling?.();
+      stopFeed();
     };
   }, []);
 
@@ -647,16 +614,9 @@ function SoftphonePanelBody({
     setStatusBusy(true);
     setStatusError(null);
     try {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
+      const token = await bearerToken();
       if (!token) throw new Error('אין session פעיל — יש להתחבר מחדש למערכת');
-      const res = await fetch('/api/agents/status', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
-        cache: 'no-store',
-      });
+      const res = await postWithBearer('/api/agents/status', token, { status });
       if (!res.ok) throw new Error('עדכון הסטטוס נכשל');
       // Optimistic ONLY after a confirmed 2xx — no state the server hasn't
       // actually accepted yet (save_rsvp 'queued' precedent: never fake it).
@@ -675,16 +635,9 @@ function SoftphonePanelBody({
     setShiftBusy(true);
     setShiftError(null);
     try {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
+      const token = await bearerToken();
       if (!token) throw new Error('אין session פעיל — יש להתחבר מחדש למערכת');
-      const res = await fetch('/api/agents/shift', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active }),
-        cache: 'no-store',
-      });
+      const res = await postWithBearer('/api/agents/shift', token, { active });
       if (!res.ok) throw new Error('עדכון המשמרת נכשל');
       setShiftActive(active);
     } catch (err) {

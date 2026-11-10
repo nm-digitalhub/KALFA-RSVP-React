@@ -7,7 +7,6 @@ import {
   CalendarDays,
   ChevronsUpDown,
   LifeBuoy,
-  LogOut,
   Menu,
   Settings,
   Shield,
@@ -34,12 +33,16 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  AccountAvatar,
+  AccountIdentityText,
+  AccountMenuLabel,
+  LogoutMenuItem,
+} from '@/components/account-menu-parts';
 import { OrgSwitcher, type OrgOption } from '@/components/org-switcher';
 import { getInitials } from '@/lib/utils';
 
@@ -95,30 +98,6 @@ function MobileMenuTrigger() {
   );
 }
 
-function LogoutMenuItem() {
-  // The menu closes (and unmounts via an exit animation) on item click, which
-  // can race the native form submit. requestSubmit() fires the POST
-  // synchronously on click, independent of when the popup unmounts.
-  return (
-    <form action="/auth/logout" method="post">
-      <DropdownMenuItem
-        nativeButton
-        variant="destructive"
-        render={
-          <button
-            type="submit"
-            className="w-full"
-            onClick={(event) => event.currentTarget.form?.requestSubmit()}
-          >
-            <LogOut />
-            התנתקות
-          </button>
-        }
-      />
-    </form>
-  );
-}
-
 export function AppShell({
   userEmail,
   userName,
@@ -148,6 +127,8 @@ export function AppShell({
   const pathname = usePathname();
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
+  // The email is the secondary line only when a name is shown above it.
+  const secondaryEmail = userName ? (userEmail ?? '') : undefined;
 
   // Events, then the team link (if permitted), then the secondary group, then
   // the admin link (platform staff only). The /app/team and /admin routes
@@ -206,21 +187,8 @@ export function AppShell({
                   <DropdownMenuTrigger
                     render={
                       <SidebarMenuButton size="lg">
-                        <Avatar className="size-8">
-                          <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
-                            {initials}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="grid flex-1 text-start text-sm leading-tight">
-                          <span className="truncate font-medium">
-                            {displayName}
-                          </span>
-                          {userName ? (
-                            <span className="truncate text-xs text-muted-foreground">
-                              {userEmail}
-                            </span>
-                          ) : null}
-                        </div>
+                        <AccountAvatar initials={initials} />
+                        <AccountIdentityText displayName={displayName} email={secondaryEmail} />
                         <ChevronsUpDown className="ms-auto size-4 text-muted-foreground" />
                       </SidebarMenuButton>
                     }
@@ -229,25 +197,11 @@ export function AppShell({
                       it throws #31 on open. Opens upward from the sidebar footer. */}
                   <DropdownMenuContent side="top" align="end" className="w-56">
                     <DropdownMenuGroup>
-                      <DropdownMenuLabel className="p-0 font-normal">
-                        <div className="flex items-center gap-2 px-2 py-1.5">
-                          <Avatar className="size-8">
-                            <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
-                              {initials}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="grid flex-1 text-start text-sm leading-tight">
-                            <span className="truncate font-medium">
-                              {displayName}
-                            </span>
-                            {userName ? (
-                              <span className="truncate text-xs text-muted-foreground">
-                                {userEmail}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </DropdownMenuLabel>
+                      <AccountMenuLabel
+                        initials={initials}
+                        displayName={displayName}
+                        email={secondaryEmail}
+                      />
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         render={
@@ -258,7 +212,7 @@ export function AppShell({
                         }
                       />
                       <DropdownMenuSeparator />
-                      <LogoutMenuItem />
+                      <LogoutMenuItem label="התנתקות" />
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>

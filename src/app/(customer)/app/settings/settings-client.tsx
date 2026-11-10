@@ -257,27 +257,52 @@ function SummarySection({
           <dt className="text-muted-foreground">טלפון</dt>
           <dd className="mt-1 font-medium">{profile?.phone || 'לא הוגדר עדיין'}</dd>
         </div>
-        <div className="rounded-md border border-border p-3">
-          <dt className="text-muted-foreground">עדכון פרופיל אחרון</dt>
-          <dd className="mt-1 font-medium">
-            {profile?.updated_at
-              ? formatIsraelDate(profile.updated_at)
-              : 'עדיין לא נשמר'}
-          </dd>
-        </div>
-        <div className="rounded-md border border-border p-3">
-          <dt className="text-muted-foreground">עדכון הגדרות אחרון</dt>
-          <dd className="mt-1 font-medium">
-            {settings.updated_at
-              ? formatIsraelDate(settings.updated_at)
-              : 'ברירות מחדל פעילות'}
-          </dd>
-        </div>
+        <LastUpdatedItems profile={profile} settings={settings} />
       </dl>
     </section>
   );
 }
 
+
+// The two "last updated" entries the summary and the account sections both list
+// inside their <dl>. `settingsFullWidth` stretches the settings entry over both
+// columns where it closes an odd-numbered grid.
+function LastUpdatedItems({
+  profile,
+  settings,
+  settingsFullWidth = false,
+}: {
+  profile: ProfileDTO | null;
+  settings: UserSettingsDTO;
+  settingsFullWidth?: boolean;
+}) {
+  return (
+    <>
+      <div className="rounded-md border border-border p-3">
+        <dt className="text-muted-foreground">עדכון פרופיל אחרון</dt>
+        <dd className="mt-1 font-medium">
+          {profile?.updated_at
+            ? formatIsraelDate(profile.updated_at)
+            : 'עדיין לא נשמר'}
+        </dd>
+      </div>
+      <div
+        className={
+          settingsFullWidth
+            ? 'rounded-md border border-border p-3 sm:col-span-2'
+            : 'rounded-md border border-border p-3'
+        }
+      >
+        <dt className="text-muted-foreground">עדכון הגדרות אחרון</dt>
+        <dd className="mt-1 font-medium">
+          {settings.updated_at
+            ? formatIsraelDate(settings.updated_at)
+            : 'ברירות מחדל פעילות'}
+        </dd>
+      </div>
+    </>
+  );
+}
 
 function SecuritySection() {
   const [state, action] = useActionState(sendPasswordResetAction, {});
@@ -385,22 +410,7 @@ function AccountSection({
             {userEmail ? <bdi dir="ltr">{userEmail}</bdi> : 'לא זמין'}
           </dd>
         </div>
-        <div className="rounded-md border border-border p-3">
-          <dt className="text-muted-foreground">עדכון פרופיל אחרון</dt>
-          <dd className="mt-1 font-medium">
-            {profile?.updated_at
-              ? formatIsraelDate(profile.updated_at)
-              : 'עדיין לא נשמר'}
-          </dd>
-        </div>
-        <div className="rounded-md border border-border p-3 sm:col-span-2">
-          <dt className="text-muted-foreground">עדכון הגדרות אחרון</dt>
-          <dd className="mt-1 font-medium">
-            {settings.updated_at
-              ? formatIsraelDate(settings.updated_at)
-              : 'ברירות מחדל פעילות'}
-          </dd>
-        </div>
+        <LastUpdatedItems profile={profile} settings={settings} settingsFullWidth />
       </dl>
     </section>
   );

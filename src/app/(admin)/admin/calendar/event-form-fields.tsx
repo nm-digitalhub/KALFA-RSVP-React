@@ -62,6 +62,23 @@ export type EventFormValue = {
   recurrence: RecurrenceDraft | null;
 };
 
+// A fresh draft: what the create dialog opens with (the grid click fills in the
+// times) and what the edit dialog holds until the event's own values load.
+export const EMPTY_EVENT_FORM: EventFormValue = {
+  subject: '',
+  startLocal: '',
+  endLocal: '',
+  allDay: false,
+  location: '',
+  body: '',
+  reminderMinutes: 15,
+  showAs: 'busy',
+  isPrivate: false,
+  category: '',
+  attendees: [],
+  recurrence: null,
+};
+
 export const REMINDER_OPTIONS = [
   { value: 0, label: 'ללא תזכורת' },
   { value: 5, label: '5 דקות לפני' },

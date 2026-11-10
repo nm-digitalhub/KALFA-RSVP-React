@@ -10,9 +10,9 @@
 import { useActionState, useState } from 'react';
 
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
-import { HelpTip } from '@/components/help-tip';
 import { actionFormError } from '@/lib/action-result';
 import { Tabs, TabsList, TabsTab, TabsPanel } from '@/components/ui/tabs';
+import { HelpField } from '../../_form-fields';
 import { saveCallbackPolicyAction } from './actions';
 import type { CallbackPolicyFormValues } from '@/lib/callbacks/policy-config-admin';
 
@@ -29,7 +29,6 @@ const DAY_LABELS: Record<(typeof DAYS)[number], string> = {
 
 const inputClass =
   'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';
-const labelClass = 'text-sm font-medium';
 
 // The loader stores minutes-since-midnight as a plain numeric string (matching
 // the DB column); <input type="time"> needs "HH:MM".
@@ -100,40 +99,15 @@ function DayRow({
   );
 }
 
-function NumberField({
-  name,
-  label,
-  defaultValue,
-  help,
-  errors,
-}: {
+// Every numeric policy value: a number input, always LTR.
+function NumberField(props: {
   name: string;
   label: string;
   defaultValue: string;
   help: string;
   errors?: string[];
 }) {
-  return (
-    <div>
-      <div className="mb-1 flex items-center gap-1.5">
-        <label htmlFor={name} className={labelClass}>
-          {label}
-        </label>
-        <HelpTip text={help} />
-      </div>
-      <input
-        id={name}
-        name={name}
-        type="number"
-        defaultValue={defaultValue}
-        dir="ltr"
-        inputMode="numeric"
-        autoComplete="off"
-        className={inputClass}
-      />
-      <FieldError errors={errors} />
-    </div>
-  );
+  return <HelpField {...props} type="number" dir="ltr" inputMode="numeric" />;
 }
 
 export function CallbackPolicyForm({ values }: { values: CallbackPolicyFormValues }) {

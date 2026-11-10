@@ -3,12 +3,14 @@ import { headers } from 'next/headers';
 
 import { getThankyouByToken } from '@/lib/data/thankyou';
 import { getT } from '@/i18n.server';
-import { signedInviteImageUrl } from '@/lib/storage/event-media';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 
 import { ThankyouLanding } from './thankyou-landing';
+import { GuestAlert } from '@/components/guest/guest-alert';
 import { GuestShell } from '@/components/guest/guest-shell';
+
+import { inviteImageUrlOrNull } from '../../invite-image-url';
 
 // Always render per-request: the response depends on the token and must never
 // be cached or prerendered. Response headers (no-store, no-referrer, noindex)
@@ -47,12 +49,9 @@ export default async function ThankyouPage({
   if (!gate.allowed) {
     return (
       <GuestShell>
-        <p
-          role="alert"
-          className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
-        >
+        <GuestAlert tone="warning">
           {t('ty.rateLimited', 'נשלחו יותר מדי בקשות. נא לנסות שוב בעוד רגע.')}
-        </p>
+        </GuestAlert>
       </GuestShell>
     );
   }
@@ -63,12 +62,9 @@ export default async function ThankyouPage({
     // leaking token validity.
     return (
       <GuestShell>
-        <p
-          role="alert"
-          className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700"
-        >
+        <GuestAlert tone="error">
           {t('ty.invalidLink', 'הקישור אינו תקף או שאינו זמין עוד.')}
-        </p>
+        </GuestAlert>
       </GuestShell>
     );
   }
@@ -76,18 +72,7 @@ export default async function ThankyouPage({
   // Invitation-image hero: sign a short-lived URL AFTER the token resolved to a
   // valid, active event (the bucket is private). Fail-open — render without the
   // image on any signing hiccup.
-  let inviteImageUrl: string | null = null;
-  if (view.invite_image_path) {
-    try {
-      inviteImageUrl = await signedInviteImageUrl(view.invite_image_path, 600);
-    } catch (err) {
-      console.error(
-        `[event-media] thankyou invite image signing failed (event=${view.id}): ${
-          err instanceof Error ? err.message : 'unknown error'
-        }`,
-      );
-    }
-  }
+  const inviteImageUrl = await inviteImageUrlOrNull(view.invite_image_path, view.id, 'thankyou');
 
   return (
     <GuestShell>

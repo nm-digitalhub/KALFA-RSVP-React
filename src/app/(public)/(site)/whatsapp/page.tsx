@@ -4,6 +4,7 @@ import { SiteLink as Link } from '@/components/site/site-link';
 import { ArrowLeft, ListChecks, MessageCircle, ShieldCheck } from 'lucide-react';
 import { Trans } from 'react-i18next/TransWithoutContext';
 
+import { SiteCardGrid, SiteFaqList } from '@/components/site/content-blocks';
 import { siteCta } from '@/components/site/cta';
 import { getUser } from '@/lib/auth/dal';
 import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
@@ -133,14 +134,7 @@ export default async function WhatsappRsvpPage() {
             <h2 className="max-w-2xl text-balance text-display font-bold tracking-tight">
               {t('site.whatsapp.points.title', 'למה דווקא בערוץ הזה')}
             </h2>
-            <div className="k-reveal-group mt-10 grid gap-4 sm:grid-cols-2">
-              {points(t).map(({ title, d }) => (
-                <div key={title} className="k-card rounded-xl border border-border bg-background p-6 hover:shadow-md">
-                  <h3 className="text-lg font-bold">{title}</h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{d}</p>
-                </div>
-              ))}
-            </div>
+            <SiteCardGrid items={points(t)} />
           </div>
         </section>
 
@@ -182,16 +176,7 @@ export default async function WhatsappRsvpPage() {
             <h2 className="mt-3 text-balance text-display font-bold tracking-tight">
               {t('site.whatsapp.faq.title', 'שליחה בוואטסאפ: שאלות שחוזרות')}
             </h2>
-            <div className="k-reveal-group mt-8 space-y-8">
-              {faq.map((f) => (
-                <div key={f.q} className="border-b border-border pb-6 last:border-b-0 last:pb-0">
-                  <h3 className="text-lg font-bold">{f.q}</h3>
-                  <p className="mt-2 max-w-prose text-base leading-relaxed text-muted-foreground">
-                    {f.a}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <SiteFaqList items={faq} />
             <p className="mt-10 text-muted-foreground">
               <Trans
                 t={t}

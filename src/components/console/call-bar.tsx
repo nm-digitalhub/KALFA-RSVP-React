@@ -19,11 +19,12 @@ import {
   type ConsoleCallSnapshot,
   type ConsoleCallState,
 } from '@/lib/voximplant/web-client';
+import { subscribeConsoleCalls } from '@/lib/realtime/console-channels';
 import {
-  makePollingFallback,
-  REALTIME_SUBSCRIBE_STATES,
-  subscribeConsoleCalls,
-} from '@/lib/realtime/console-channels';
+  bearerToken,
+  postWithBearer,
+  subscribeWithPollingFallback,
+} from '@/components/console/console-client';
 import type { RosterAgent } from '@/components/console/softphone-panel';
 import { cn } from '@/lib/utils';
 
@@ -82,12 +83,6 @@ interface CollabCallInfo {
   /** Set only once the consult target actually ANSWERED — see below. */
   consultConnectedAt: string | null;
   conferenceAgentIds: string[];
-}
-
-async function bearerToken(): Promise<string | null> {
-  const supabase = createClient();
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
 }
 
 // conference_agent_ids is jsonb — generated as `Json` (a union wide enough to
@@ -164,20 +159,11 @@ export function CallBar({
     }
 
     void refresh();
-    let stopPolling: (() => void) | null = null;
-    const stopRealtime = subscribeConsoleCalls(() => void refresh(), (status) => {
-      if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
-        stopPolling?.();
-        stopPolling = null;
-        return;
-      }
-      if (!stopPolling) stopPolling = makePollingFallback(() => void refresh(), 30_000);
-    });
+    const stopFeed = subscribeWithPollingFallback(subscribeConsoleCalls, () => void refresh(), 30_000);
 
     return () => {
       cancelled = true;
-      stopRealtime();
-      stopPolling?.();
+      stopFeed();
     };
   }, [consultConferenceEnabled, selfUserId]);
 
@@ -197,12 +183,11 @@ export function CallBar({
       try {
         const token = await bearerToken();
         if (!token) throw new Error('אין session פעיל');
-        const res = await fetch(`/api/console-calls/${collab.id}/${path}`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: toAgentId ? JSON.stringify({ to_agent_id: toAgentId }) : undefined,
-          cache: 'no-store',
-        });
+        const res = await postWithBearer(
+          `/api/console-calls/${collab.id}/${path}`,
+          token,
+          toAgentId ? { to_agent_id: toAgentId } : undefined,
+        );
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           setCollabError(body?.error ?? 'הפעולה נכשלה');

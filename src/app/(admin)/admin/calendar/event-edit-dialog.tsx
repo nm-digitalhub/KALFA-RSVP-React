@@ -40,6 +40,7 @@ import type { ExchangeCategory } from '@/lib/exchange-ews/types';
 import {
   EventFormFields,
   REMINDER_OPTIONS as SHARED_REMINDERS,
+  EMPTY_EVENT_FORM,
   type EventFormValue,
 } from './event-form-fields';
 import {
@@ -404,20 +405,7 @@ export function EventEditDialog({
 
   // One draft object for the whole Outlook-parity field set (see
   // event-form-fields.tsx — the same component backs the create dialog).
-  const [form, setForm] = useState<EventFormValue>({
-    subject: '',
-    startLocal: '',
-    endLocal: '',
-    allDay: false,
-    location: '',
-    body: '',
-    reminderMinutes: 15,
-    showAs: 'busy',
-    isPrivate: false,
-    category: '',
-    attendees: [],
-    recurrence: null,
-  });
+  const [form, setForm] = useState<EventFormValue>(EMPTY_EVENT_FORM);
 
   useEffect(() => {
     if (!appointmentId) return;

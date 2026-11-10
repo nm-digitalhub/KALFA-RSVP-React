@@ -27,7 +27,6 @@ import {
   ChartColumn,
   ListChecks,
   Send,
-  LogOut,
   MailOpen,
   Megaphone,
   Menu,
@@ -68,12 +67,16 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  AccountAvatar,
+  AccountIdentityText,
+  AccountMenuLabel,
+  LogoutMenuItem,
+} from '@/components/account-menu-parts';
 import {
   AvailabilityDot,
   AvailabilityMenuSection,
@@ -303,30 +306,6 @@ function MobileMenuTrigger() {
   );
 }
 
-function LogoutMenuItem() {
-  // The menu closes (and unmounts via an exit animation) on item click, which
-  // can race the native form submit. requestSubmit() fires the POST
-  // synchronously on click, independent of when the popup unmounts.
-  return (
-    <form action="/auth/logout" method="post">
-      <DropdownMenuItem
-        nativeButton
-        variant="destructive"
-        render={
-          <button
-            type="submit"
-            className="w-full"
-            onClick={(event) => event.currentTarget.form?.requestSubmit()}
-          >
-            <LogOut />
-            התנתקות
-          </button>
-        }
-      />
-    </form>
-  );
-}
-
 // The shell under PlatformAbilityProvider, so the sidebar below and every admin page's client components decide
 // from the same rules (design D5).
 export function AdminShell({
@@ -386,6 +365,8 @@ function AdminShellFrame({
   const pathname = usePathname();
   const displayName = userName || userEmail || '';
   const initials = getInitials(displayName);
+  // The email is the secondary line only when a name is shown above it.
+  const secondaryEmail = userName ? (userEmail ?? '') : undefined;
   const ability = useAbility<PlatformAbility>();
 
   const visibleGroups = useMemo(() => visibleNavGroups(navGrants, ability), [navGrants, ability]);
@@ -472,11 +453,7 @@ function AdminShellFrame({
                     render={
                       <SidebarMenuButton size="lg">
                         <span className="relative inline-flex">
-                          <Avatar className="size-8">
-                            <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
-                              {initials}
-                            </AvatarFallback>
-                          </Avatar>
+                          <AccountAvatar initials={initials} />
                           {/* Presence dot on the avatar itself — the standard
                               affordance; bottom-end so it stays clear of the
                               initials in both directions. */}
@@ -485,16 +462,7 @@ function AdminShellFrame({
                             className="absolute -bottom-0.5 -end-0.5"
                           />
                         </span>
-                        <div className="grid flex-1 text-start text-sm leading-tight">
-                          <span className="truncate font-medium">
-                            {displayName}
-                          </span>
-                          {userName ? (
-                            <span className="truncate text-xs text-muted-foreground">
-                              {userEmail}
-                            </span>
-                          ) : null}
-                        </div>
+                        <AccountIdentityText displayName={displayName} email={secondaryEmail} />
                         <ChevronsUpDown className="ms-auto size-4 text-muted-foreground" />
                       </SidebarMenuButton>
                     }
@@ -503,25 +471,11 @@ function AdminShellFrame({
                       it throws #31 on open. Opens upward from the sidebar footer. */}
                   <DropdownMenuContent side="top" align="end" className="w-56">
                     <DropdownMenuGroup>
-                      <DropdownMenuLabel className="p-0 font-normal">
-                        <div className="flex items-center gap-2 px-2 py-1.5">
-                          <Avatar className="size-8">
-                            <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
-                              {initials}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="grid flex-1 text-start text-sm leading-tight">
-                            <span className="truncate font-medium">
-                              {displayName}
-                            </span>
-                            {userName ? (
-                              <span className="truncate text-xs text-muted-foreground">
-                                {userEmail}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </DropdownMenuLabel>
+                      <AccountMenuLabel
+                        initials={initials}
+                        displayName={displayName}
+                        email={secondaryEmail}
+                      />
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         render={
@@ -538,7 +492,7 @@ function AdminShellFrame({
                         hasConnection={hasExchangeConnection}
                       />
                       <DropdownMenuSeparator />
-                      <LogoutMenuItem />
+                      <LogoutMenuItem label="התנתקות" />
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>

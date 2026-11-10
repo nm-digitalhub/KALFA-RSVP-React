@@ -98,6 +98,22 @@ function finishReasonLabel(reason: string | null): string {
   return FINISH_REASON_LABELS[reason] ?? reason;
 }
 
+type Tile = { label: string; value: string; icon: LucideIcon; tone: MeterTone };
+
+// One stat tile: tone chip with the icon, the label, the number.
+function StatTile({ tile }: { tile: Tile }) {
+  const Icon = tile.icon;
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border p-4">
+      <span className={`inline-flex size-7 items-center justify-center rounded-full ${toneChipClass(tile.tone)}`}>
+        <Icon className="size-4" aria-hidden />
+      </span>
+      <span className="text-sm text-muted-foreground">{tile.label}</span>
+      <span className="text-2xl font-bold">{tile.value}</span>
+    </div>
+  );
+}
+
 export default async function EventVoicePage({
   params,
   searchParams,
@@ -142,7 +158,6 @@ export default async function EventVoicePage({
       .length,
   );
 
-  type Tile = { label: string; value: string; icon: LucideIcon; tone: MeterTone };
   const telephonyTiles: Tile[] = [
     { label: 'ניסיונות (סה״כ)', value: String(attempts.total), icon: PhoneCall, tone: 'info' },
     { label: 'הושלמו (בעמוד)', value: String(tally.completed), icon: CheckCircle2, tone: 'success' },
@@ -204,36 +219,18 @@ export default async function EventVoicePage({
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">תוצאות טלפוניה</h2>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          {telephonyTiles.map((t) => {
-            const Icon = t.icon;
-            return (
-              <div key={t.label} className="flex flex-col gap-2 rounded-lg border border-border p-4">
-                <span className={`inline-flex size-7 items-center justify-center rounded-full ${toneChipClass(t.tone)}`}>
-                  <Icon className="size-4" aria-hidden />
-                </span>
-                <span className="text-sm text-muted-foreground">{t.label}</span>
-                <span className="text-2xl font-bold">{t.value}</span>
-              </div>
-            );
-          })}
+          {telephonyTiles.map((t) => (
+            <StatTile key={t.label} tile={t} />
+          ))}
         </div>
       </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted-foreground">תשובות RSVP מהשיחות</h2>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          {rsvpTiles.map((t) => {
-            const Icon = t.icon;
-            return (
-              <div key={t.label} className="flex flex-col gap-2 rounded-lg border border-border p-4">
-                <span className={`inline-flex size-7 items-center justify-center rounded-full ${toneChipClass(t.tone)}`}>
-                  <Icon className="size-4" aria-hidden />
-                </span>
-                <span className="text-sm text-muted-foreground">{t.label}</span>
-                <span className="text-2xl font-bold">{t.value}</span>
-              </div>
-            );
-          })}
+          {rsvpTiles.map((t) => (
+            <StatTile key={t.label} tile={t} />
+          ))}
         </div>
       </section>
 

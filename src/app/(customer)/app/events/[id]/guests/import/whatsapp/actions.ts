@@ -18,10 +18,10 @@ import {
   type BulkGuestInput,
   type ImportMatch,
 } from '@/lib/data/guests';
-import { buildContactsForEvent, reconcileCampaignSetForContact } from '@/lib/data/contacts';
 import { logActivity } from '@/lib/data/activity';
 import { normalizeGroupName } from '@/lib/data/guest-import-shared';
 import type { StagedRow } from '@/lib/data/whatsapp-import';
+import { admitImportedContacts } from '../admit-imported-contacts';
 
 // Confirm/discard a WhatsApp-staged guest list. Access = guests.create (the
 // same permission that gates the screen import); reads ride the staging RLS.
@@ -174,24 +174,8 @@ export const confirmWhatsappImportAction = actionClient
       }));
     const imported = inserts.length ? await bulkInsertGuests(eventId, inserts) : 0;
 
-    try {
-      // Admit the imported contacts into an already-operational campaign's
-      // authorized set, as import-actions.ts does. reconcileCampaignSetForContact
-      // is itself best-effort/never-throws, so this cannot fail the import.
-      const { contactIds } = await buildContactsForEvent(eventId);
-      for (const contactId of contactIds) {
-        await reconcileCampaignSetForContact(eventId, 'add', contactId);
-      }
-    } catch (err) {
-      unstable_rethrow(err);
-      // A derived step: it never fails a completed import, but it is logged, as import-actions.ts logs it (event id
-      // and the error message only, no guest data), so a missed admission is visible; the worker's top-up repairs it.
-      console.error(
-        `[contacts] post-import contacts rebuild failed (event=${eventId}): ${
-          err instanceof Error ? err.message : 'unknown error'
-        }`,
-      );
-    }
+    // The contacts rebuild and campaign admission — best-effort, never fails the import.
+    await admitImportedContacts(eventId);
     await resolveStaging(stagingId, 'confirmed');
     await logActivity({
       eventId,

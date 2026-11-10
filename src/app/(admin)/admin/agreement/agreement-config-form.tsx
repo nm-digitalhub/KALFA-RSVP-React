@@ -7,7 +7,7 @@
 // FieldError/FormError/FormNotice/SubmitButton), mirroring company-form.tsx.
 //
 // Each field carries a help (?) icon that opens a detailed bubble explaining the
-// parameter — Base UI Popover (HelpTip), RTL-correct via the admin-shell DirectionProvider.
+// parameter (HelpField in ../_form-fields.tsx).
 //
 // Field `name` attributes and the inline Zod keys in ./config-actions.ts are kept
 // in camelCase, matching the prop keys returned by getAgreementConfigForAdmin().
@@ -15,15 +15,10 @@
 
 import { useActionState } from 'react';
 
-import {
-  FieldError,
-  FormError,
-  FormNotice,
-  SubmitButton,
-} from '@/components/forms';
+import { FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { actionFormError } from '@/lib/action-result';
 import { saveAgreementConfigAction } from './config-actions';
-import { HelpTip } from '@/components/help-tip';
+import { HelpField } from '../_form-fields';
 
 // The raw string values, keyed exactly as getAgreementConfigForAdmin() returns
 // them. All values are plain strings (form-friendly); validation/coercion lives
@@ -35,50 +30,6 @@ export type AgreementConfigValues = {
   retentionDays: string;
   recordRetentionMonths: string;
 };
-
-const inputClass =
-  'w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15';
-const labelClass = 'text-sm font-medium';
-
-function Field({
-  name,
-  label,
-  defaultValue,
-  help,
-  dir,
-  inputMode,
-  errors,
-}: {
-  name: string;
-  label: string;
-  defaultValue: string;
-  help: string;
-  dir?: 'rtl' | 'ltr';
-  inputMode?: 'numeric' | 'text';
-  errors?: string[];
-}) {
-  return (
-    <div>
-      <div className="mb-1 flex items-center gap-1.5">
-        <label htmlFor={name} className={labelClass}>
-          {label}
-        </label>
-        <HelpTip text={help} />
-      </div>
-      <input
-        id={name}
-        name={name}
-        type="text"
-        defaultValue={defaultValue}
-        dir={dir}
-        inputMode={inputMode}
-        autoComplete="off"
-        className={inputClass}
-      />
-      <FieldError errors={errors} />
-    </div>
-  );
-}
 
 export function AgreementConfigForm({
   values,
@@ -93,7 +44,7 @@ export function AgreementConfigForm({
         <FormError message={actionFormError(state)} />
         <FormNotice message={state.data?.notice} />
 
-        <Field
+        <HelpField
           name="serviceActivationWindow"
           label="חלון הפעלת שירות"
           defaultValue={values.serviceActivationWindow}
@@ -102,7 +53,7 @@ export function AgreementConfigForm({
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field
+          <HelpField
             name="offerValidityDays"
             label="תוקף הצעה (ימים)"
             defaultValue={values.offerValidityDays}
@@ -111,7 +62,7 @@ export function AgreementConfigForm({
             inputMode="numeric"
             errors={e?.offerValidityDays}
           />
-          <Field
+          <HelpField
             name="liabilityCap"
             label="תקרת אחריות (₪)"
             defaultValue={values.liabilityCap}
@@ -123,14 +74,14 @@ export function AgreementConfigForm({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field
+          <HelpField
             name="retentionDays"
             label="שמירת מידע"
             defaultValue={values.retentionDays}
             help="כמה זמן נשמרים הנתונים האישיים (פרטי אורחים ולקוח) לפני מחיקה או הנגשה. מדיניות שמירה לפי חוק הגנת הפרטיות ותיקון 13 — מומלץ ערך כמו ״24 חודשים״."
             errors={e?.retentionDays}
           />
-          <Field
+          <HelpField
             name="recordRetentionMonths"
             label="שמירת ראיות (חודשים)"
             defaultValue={values.recordRetentionMonths}

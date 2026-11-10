@@ -2,17 +2,17 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AutoRefreshToggle as DebugToggle } from './_auto-refresh-toggle';
-import { AutoRefreshToggle as RelocationToggle } from '../relocation/_auto-refresh-toggle';
+import { AutoRefreshToggle } from './_auto-refresh-toggle';
 
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 
-// The two opt-in refresh switches share one pattern: a per-browser preference in
-// localStorage (default OFF) and a 30s refresh only while it is on.
+// The two opt-in refresh switches are one component: a per-browser preference in
+// localStorage (default OFF), kept under each page's own key, and a 30s refresh
+// only while it is on. The keys are the ones the two pages pass.
 const cases = [
-  { name: 'debug', Toggle: DebugToggle, key: 'kalfa-debug-auto-refresh' },
-  { name: 'relocation', Toggle: RelocationToggle, key: 'kalfa-relocation-auto-refresh' },
+  { name: 'debug', key: 'kalfa-debug-auto-refresh' },
+  { name: 'relocation', key: 'kalfa-relocation-auto-refresh' },
 ] as const;
 
 beforeEach(() => {
@@ -27,10 +27,10 @@ afterEach(() => {
 
 const theSwitch = () => screen.getByRole('switch');
 
-describe.each(cases)('$name auto-refresh switch', ({ Toggle, key }) => {
+describe.each(cases)('$name auto-refresh switch', ({ key }) => {
   it('is off by default and does not refresh', () => {
     vi.useFakeTimers();
-    render(<Toggle />);
+    render(<AutoRefreshToggle storageKey={key} />);
 
     expect(theSwitch().getAttribute('aria-checked')).toBe('false');
     act(() => vi.advanceTimersByTime(60_000));
@@ -39,14 +39,14 @@ describe.each(cases)('$name auto-refresh switch', ({ Toggle, key }) => {
 
   it('reads a value stored by the previous format ("true")', () => {
     localStorage.setItem(key, 'true');
-    render(<Toggle />);
+    render(<AutoRefreshToggle storageKey={key} />);
 
     expect(theSwitch().getAttribute('aria-checked')).toBe('true');
   });
 
   it('turning it on stores it and refreshes every 30 seconds', () => {
     vi.useFakeTimers();
-    render(<Toggle />);
+    render(<AutoRefreshToggle storageKey={key} />);
 
     fireEvent.click(theSwitch());
 
@@ -57,7 +57,7 @@ describe.each(cases)('$name auto-refresh switch', ({ Toggle, key }) => {
   });
 
   it('follows a change made in another tab', () => {
-    render(<Toggle />);
+    render(<AutoRefreshToggle storageKey={key} />);
 
     act(() => {
       localStorage.setItem(key, 'true');

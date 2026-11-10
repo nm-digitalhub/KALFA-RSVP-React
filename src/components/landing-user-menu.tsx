@@ -1,9 +1,10 @@
 'use client';
 
 import { SiteLink as Link } from '@/components/site/site-link';
-import { LayoutDashboard, LifeBuoy, LogOut, Settings } from 'lucide-react';
+import { LayoutDashboard, LifeBuoy, Settings } from 'lucide-react';
 import { useT } from 'next-i18next/client';
 
+import { AccountMenuLabel, LogoutMenuItem } from '@/components/account-menu-parts';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +12,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -22,31 +22,6 @@ import { getInitials } from '@/lib/utils';
 // same initials derivation, same primitives, same logout mechanism — so the
 // two stay consistent. Base UI's menu portal ignores the DOM `dir` attribute
 // and reads the DirectionProvider of the root layout, which follows the language.
-
-function LogoutMenuItem() {
-  const { t } = useT('public');
-  // The menu closes (and unmounts via an exit animation) on item click, which
-  // can race the native form submit. requestSubmit() fires the POST
-  // synchronously on click, independent of when the popup unmounts.
-  return (
-    <form action="/auth/logout" method="post">
-      <DropdownMenuItem
-        nativeButton
-        variant="destructive"
-        render={
-          <button
-            type="submit"
-            className="w-full"
-            onClick={(event) => event.currentTarget.form?.requestSubmit()}
-          >
-            <LogOut />
-            {t('site.header.userMenu.logout', 'התנתקות')}
-          </button>
-        }
-      />
-    </form>
-  );
-}
 
 export function LandingUserMenu({
   userEmail,
@@ -83,21 +58,10 @@ export function LandingUserMenu({
       />
       <DropdownMenuContent side="bottom" align="end" className="w-56">
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="p-0 font-normal">
-            <div className="flex items-center gap-2 px-2 py-1.5">
-              <Avatar className="size-8">
-                <AvatarFallback className="bg-primary text-xs font-bold text-primary-foreground">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="grid flex-1 text-start text-sm leading-tight">
-                {/* Full name only — no email line (owner directive). Falls
-                    back to the email as the label solely when the profile
-                    has no name, since something has to identify the row. */}
-                <span className="truncate font-medium">{displayName}</span>
-              </div>
-            </div>
-          </DropdownMenuLabel>
+          {/* Full name only — no email line (owner directive). Falls back to
+              the email as the label solely when the profile has no name, since
+              something has to identify the row. */}
+          <AccountMenuLabel initials={initials} displayName={displayName} />
           <DropdownMenuSeparator />
           <DropdownMenuItem
             render={
@@ -124,7 +88,7 @@ export function LandingUserMenu({
             }
           />
           <DropdownMenuSeparator />
-          <LogoutMenuItem />
+          <LogoutMenuItem label={t('site.header.userMenu.logout', 'התנתקות')} />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

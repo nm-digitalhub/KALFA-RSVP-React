@@ -5,6 +5,7 @@ import { useActionState, useState } from 'react';
 
 import { setupSaveEventAction, updateEventAction } from './actions';
 import { CelebrantFields } from '../celebrant-fields';
+import { GiftPaymentUrlField, InviteImageInput, MealPrefField } from '../event-form-fields';
 import {
   CELEBRANT_KIND_BY_EVENT_TYPE,
   CELEBRANT_REQUIRED_FIELD_KEYS_BY_KIND,
@@ -13,7 +14,6 @@ import {
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import type { EventDetail } from '@/lib/data/events';
 import { ilDateInputValue, ilTimeInputValue } from '@/lib/data/event-date';
-import { INVITE_IMAGE_MAX_BYTES } from '@/lib/constants';
 import { FieldError, FormError, FormNotice, SubmitButton } from '@/components/forms';
 import { actionFormError } from '@/lib/action-result';
 import { PlacesAutocomplete } from '@/components/places-autocomplete';
@@ -316,42 +316,12 @@ export function EditEventForm({
         <FieldError errors={fieldErrors?.venue_address} />
       </div>
 
-      <div>
-        <label htmlFor="gift_payment_url" className="mb-1 block text-sm font-medium">
-          קישור למתנה (פייבוקס/ביט)
-        </label>
-        <input
-          id="gift_payment_url"
-          name="gift_payment_url"
-          type="url"
-          dir="ltr"
-          placeholder="https://…"
-          defaultValue={event.gift_payment_url ?? ''}
-          className="w-full rounded-md border border-border bg-background px-3 py-2"
-        />
-        <p className="mt-1 text-xs text-muted-foreground">
-          יופיע בתזכורת המתנה בוואטסאפ — האורחים יועברו אליו בלחיצה.
-        </p>
-        <FieldError errors={fieldErrors?.gift_payment_url} />
-      </div>
+      <GiftPaymentUrlField
+        defaultValue={event.gift_payment_url ?? ''}
+        errors={fieldErrors?.gift_payment_url}
+      />
 
-      <div>
-        <label className="flex items-start gap-2 text-sm font-medium">
-          <input
-            type="checkbox"
-            name="show_meal_pref"
-            defaultChecked={event.show_meal_pref}
-            className="mt-0.5 size-4 accent-primary"
-          />
-          <span>
-            איסוף העדפת תפריט מהאורחים
-            <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-              כשמופעל, טופס אישור ההגעה יציג לאורחים שמאשרים הגעה שדה חופשי
-              להעדפת תפריט (כשר, צמחוני וכדומה). ניתן לשינוי בכל שלב.
-            </span>
-          </span>
-        </label>
-      </div>
+      <MealPrefField defaultChecked={event.show_meal_pref} />
 
       <div>
         <label htmlFor="invite_image" className="mb-1 block text-sm font-medium">
@@ -374,22 +344,7 @@ export function EditEventForm({
             />
           </a>
         ) : null}
-        <input
-          id="invite_image"
-          name="invite_image"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="block w-full text-sm"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f && f.size > INVITE_IMAGE_MAX_BYTES) {
-              setImageError('הקובץ גדול מדי (מעל 5MB) — נא לכווץ את התמונה.');
-              e.target.value = '';
-            } else {
-              setImageError(null);
-            }
-          }}
-        />
+        <InviteImageInput onSizeError={setImageError} />
         <FieldError errors={imageError ? [imageError] : undefined} />
         <p className="mt-1 text-xs text-muted-foreground">
           {event.invite_image_path

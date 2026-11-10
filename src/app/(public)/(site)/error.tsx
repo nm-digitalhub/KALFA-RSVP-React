@@ -2,9 +2,8 @@
 
 import { SiteLink as Link } from '@/components/site/site-link';
 
-import { useVersionSkewReload } from '@/components/use-version-skew-reload';
+import { RouteErrorView, routeErrorSecondaryActionClass } from '@/components/route-error-view';
 import { useT } from 'next-i18next/client';
-import { isVersionSkewError } from '@/lib/version-skew';
 
 // Error boundary for the marketing site (every page under (public)/(site)) —
 // overrides the broader (public)/error.tsx for this segment only.
@@ -20,36 +19,22 @@ export default function SiteError({
   retry: () => void;
 }) {
   const { t } = useT('public');
-  useVersionSkewReload(error);
-  if (isVersionSkewError(error)) {
-    return (
-      <div className="mx-auto max-w-md space-y-4 py-16 text-center">
-        <h1 className="text-xl font-bold">{t('site.error.updated.title', 'המערכת התעדכנה')}</h1>
-        <p className="text-muted-foreground">{t('site.error.updated.reloading', 'הדף נטען מחדש…')}</p>
-      </div>
-    );
-  }
   return (
-    <div className="mx-auto max-w-md space-y-4 py-16 text-center">
-      <h1 className="text-xl font-bold">{t('site.error.generic.title', 'משהו השתבש')}</h1>
-      <p className="text-muted-foreground">
-        {t('site.error.generic.body', 'אירעה תקלה בטעינת הדף. אפשר לנסות שוב, ואם הבעיה נמשכת נסו שוב מאוחר יותר.')}
-      </p>
-      <div className="flex items-center justify-center gap-3">
-        <button
-          type="button"
-          onClick={() => retry()}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-        >
-          {t('site.error.generic.retry', 'נסו שוב')}
-        </button>
-        <Link
-          href="/"
-          className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
-        >
+    <RouteErrorView
+      error={error}
+      retry={retry}
+      texts={{
+        updatedTitle: t('site.error.updated.title', 'המערכת התעדכנה'),
+        reloading: t('site.error.updated.reloading', 'הדף נטען מחדש…'),
+        title: t('site.error.generic.title', 'משהו השתבש'),
+        body: t('site.error.generic.body', 'אירעה תקלה בטעינת הדף. אפשר לנסות שוב, ואם הבעיה נמשכת נסו שוב מאוחר יותר.'),
+        retry: t('site.error.generic.retry', 'נסו שוב'),
+      }}
+      secondaryAction={
+        <Link href="/" className={routeErrorSecondaryActionClass}>
           {t('site.error.generic.home', 'לדף הבית')}
         </Link>
-      </div>
-    </div>
+      }
+    />
   );
 }

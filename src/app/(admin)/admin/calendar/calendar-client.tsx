@@ -43,7 +43,7 @@ import {
 } from './actions';
 import { CALENDAR_I18N_HE } from './calendar-he';
 import { EventEditDialog } from './event-edit-dialog';
-import { EventFormFields, type EventFormValue } from './event-form-fields';
+import { EMPTY_EVENT_FORM, EventFormFields, type EventFormValue } from './event-form-fields';
 import { CalendarOpTracker } from './op-tracker';
 
 // The admin Exchange calendar client. Exchange is the single source of truth:
@@ -66,22 +66,6 @@ const ISRAEL_WEEKEND = [5, 6];
 // live" for a business calendar and is a trivial load on the mailbox (one
 // range read); focus/visibility changes refresh immediately regardless.
 const AUTO_REFRESH_MS = 60_000;
-
-// A fresh draft; the grid click fills in the times before the dialog opens.
-const EMPTY_CREATE_FORM: EventFormValue = {
-  subject: '',
-  startLocal: '',
-  endLocal: '',
-  allDay: false,
-  location: '',
-  body: '',
-  reminderMinutes: 15,
-  showAs: 'busy',
-  isPrivate: false,
-  category: '',
-  attendees: [],
-  recurrence: null,
-};
 
 
 type UiError = { key: string; message: string };
@@ -122,7 +106,7 @@ export function AdminExchangeCalendar({
   /** undefined = still loading; [] = none available, picker degrades to text. */
   const [categories, setCategories] = useState<ExchangeCategory[] | undefined>(undefined);
   // The full Outlook-parity draft (same component as the edit dialog).
-  const [createForm, setCreateForm] = useState<EventFormValue>(EMPTY_CREATE_FORM);
+  const [createForm, setCreateForm] = useState<EventFormValue>(EMPTY_EVENT_FORM);
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -285,7 +269,7 @@ export function AdminExchangeCalendar({
 
   const openCreate = useCallback((start: Date, end: Date, allDay: boolean) => {
     setCreateForm({
-      ...EMPTY_CREATE_FORM,
+      ...EMPTY_EVENT_FORM,
       // The form shows Israel wall time, like the calendar grid (timeZone below).
       startLocal: ilDateTimeInputValue(start),
       endLocal: ilDateTimeInputValue(end),

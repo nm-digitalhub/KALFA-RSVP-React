@@ -37,6 +37,7 @@ import type {
   PermissionDefDTO,
   OrgRolePermissionMatrix,
 } from '@/lib/data/orgs';
+import { grantKey, grantedKeySet, groupInOrder, useOptimisticGrant } from '@/components/role-matrix';
 import { actionErrorMessage } from '@/lib/action-result';
 
 import { resetOrgRolePermissionsAction, setOrgRolePermissionAction } from './actions';
@@ -104,12 +105,15 @@ function ResetRoleButton({ role }: { role: OrgRoleDTO }) {
   );
 }
 
-// Client matrix editor for the ORG (customer) role-permission screen —
-// COPIED (not imported) from ../../../../(admin)/admin/roles/roles-client.tsx
-// one layer down, per the design doc: the DTOs differ (OrgRoleDTO/
-// PermissionDefDTO vs PlatformRoleDTO/PlatformPermissionDTO) and this screen
-// has no "create role" form (the 4 org roles are fixed globally; only what
-// each one may do, per-org, is editable here). Permissions are rows (grouped
+// Client matrix editor for the ORG (customer) role-permission screen — a
+// screen of its own, COPIED (not imported) from
+// ../../../../(admin)/admin/roles/roles-client.tsx one layer down, per the
+// design doc: the DTOs differ (OrgRoleDTO/PermissionDefDTO vs
+// PlatformRoleDTO/PlatformPermissionDTO) and this screen has no "create role"
+// form (the 4 org roles are fixed globally; only what each one may do,
+// per-org, is editable here). The two screens share only the side-neutral
+// mechanics in @/components/role-matrix (grouping, the granted lookup, the
+// optimistic switch). Permissions are rows (grouped
 // by resource — the org catalog has no separate `category` field, unlike the
 // platform catalog); roles are columns; each cell is a Switch that
 // grants/revokes one (role, permission) pair. Toggling is SERVER-VERIFIED: the
@@ -157,8 +161,12 @@ function MatrixCell({
   initialChecked: boolean;
   onError: (message: string | null) => void;
 }) {
-  const [checked, setChecked] = useState(initialChecked);
-  const [pending, startTransition] = useTransition();
+  const { checked, pending, onChange } = useOptimisticGrant(
+    initialChecked,
+    async (granted) =>
+      actionErrorMessage(await setOrgRolePermissionAction({ roleId, permissionId, granted })),
+    onError,
+  );
 
   if (locked) {
     return (
@@ -179,23 +187,6 @@ function MatrixCell({
     );
   }
 
-  const onChange = (next: boolean): void => {
-    setChecked(next); // optimistic
-    onError(null);
-    startTransition(async () => {
-      const result = await setOrgRolePermissionAction({
-        roleId,
-        permissionId,
-        granted: next,
-      });
-      const message = actionErrorMessage(result);
-      if (message) {
-        setChecked(!next); // revert
-        onError(message);
-      }
-    });
-  };
-
   return (
     <Switch
       checked={checked}
@@ -204,25 +195,6 @@ function MatrixCell({
       aria-label={ariaLabel}
     />
   );
-}
-
-// Group permissions by resource, preserving first-appearance order (the data
-// layer already orders permissions by sort_order).
-function groupByResource(
-  permissions: PermissionDefDTO[],
-): { resource: string; items: PermissionDefDTO[] }[] {
-  const groups: { resource: string; items: PermissionDefDTO[] }[] = [];
-  const index = new Map<string, number>();
-  for (const permission of permissions) {
-    let i = index.get(permission.resource);
-    if (i === undefined) {
-      i = groups.length;
-      index.set(permission.resource, i);
-      groups.push({ resource: permission.resource, items: [] });
-    }
-    groups[i].items.push(permission);
-  }
-  return groups;
 }
 
 // Whether a (role, permission) cell should render locked, and why.
@@ -286,7 +258,7 @@ function RolesAccordion({
   onError,
 }: {
   roles: OrgRoleDTO[];
-  groups: { resource: string; items: PermissionDefDTO[] }[];
+  groups: { key: string; items: PermissionDefDTO[] }[];
   grantedSet: Set<string>;
   onError: (message: string | null) => void;
 }) {
@@ -297,7 +269,7 @@ function RolesAccordion({
           (total, group) =>
             total +
             group.items.filter((permission) =>
-              role.isOwnerRole || grantedSet.has(`${role.id}:${permission.id}`),
+              role.isOwnerRole || grantedSet.has(grantKey(role.id, permission.id)),
             ).length,
           0,
         );
@@ -321,9 +293,9 @@ function RolesAccordion({
             </AccordionTrigger>
             <AccordionPanel className="space-y-1">
               {groups.map((group) => (
-                <div key={`${role.id}-${group.resource}`}>
+                <div key={`${role.id}-${group.key}`}>
                   <p className="pt-2 text-xs font-semibold text-muted-foreground">
-                    {RESOURCE_LABEL[group.resource] ?? group.resource}
+                    {RESOURCE_LABEL[group.key] ?? group.key}
                   </p>
                   <div className="divide-y divide-border">
                     {group.items.map((permission) => (
@@ -331,7 +303,7 @@ function RolesAccordion({
                         key={permission.id}
                         permission={permission}
                         role={role}
-                        granted={grantedSet.has(`${role.id}:${permission.id}`)}
+                        granted={grantedSet.has(grantKey(role.id, permission.id))}
                         onError={onError}
                       />
                     ))}
@@ -355,15 +327,12 @@ function RolesMatrix({ roles, permissions, granted }: OrgRolePermissionMatrix) {
   // Shared feedback banner for cell toggles (success is silent; only failures
   // surface, alongside the automatic revert).
   const [error, setError] = useState<string | null>(null);
-  const groups = useMemo(() => groupByResource(permissions), [permissions]);
+  const groups = useMemo(
+    () => groupInOrder(permissions, (permission) => permission.resource),
+    [permissions],
+  );
   // Fast lookup: is (role, permission) currently granted?
-  const grantedSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const [roleId, permissionIds] of Object.entries(granted)) {
-      for (const permissionId of permissionIds) set.add(`${roleId}:${permissionId}`);
-    }
-    return set;
-  }, [granted]);
+  const grantedSet = useMemo(() => grantedKeySet(granted), [granted]);
 
   const colCount = roles.length + 1;
 
@@ -406,10 +375,10 @@ function RolesMatrix({ roles, permissions, granted }: OrgRolePermissionMatrix) {
           </TableHeader>
           <TableBody>
             {groups.map((group) => (
-              <Fragment key={`res-${group.resource}`}>
+              <Fragment key={`res-${group.key}`}>
                 <TableRow className="bg-muted/40">
                   <TableCell colSpan={colCount} className="text-xs font-semibold text-muted-foreground">
-                    {RESOURCE_LABEL[group.resource] ?? group.resource}
+                    {RESOURCE_LABEL[group.key] ?? group.key}
                   </TableCell>
                 </TableRow>
                 {group.items.map((permission) => (
@@ -422,7 +391,7 @@ function RolesMatrix({ roles, permissions, granted }: OrgRolePermissionMatrix) {
                     </TableCell>
                     {roles.map((role) => {
                       const lock = cellLock(role, permission);
-                      const grantedNow = grantedSet.has(`${role.id}:${permission.id}`);
+                      const grantedNow = grantedSet.has(grantKey(role.id, permission.id));
                       return (
                         <TableCell key={role.id} className="text-center">
                           <div className="flex justify-center">

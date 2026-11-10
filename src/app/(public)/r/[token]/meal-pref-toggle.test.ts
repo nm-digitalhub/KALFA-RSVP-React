@@ -47,12 +47,18 @@ describe('meal-preference toggle — app side', () => {
   });
 
   it('the owner edit form posts a show_meal_pref checkbox', () => {
-    const source = readFileSync(
-      join(ROOT, 'src', 'app', '(customer)', 'app', 'events', '[id]', 'edit-event-form.tsx'),
-      'utf8',
+    const eventsDir = join(ROOT, 'src', 'app', '(customer)', 'app', 'events');
+    // The checkbox is MealPrefField, shared by the create and the edit form: the
+    // edit form must render it, and the field itself must be the posted checkbox.
+    const form = readFileSync(join(eventsDir, '[id]', 'edit-event-form.tsx'), 'utf8');
+    expect(form).toContain('<MealPrefField defaultChecked={event.show_meal_pref} />');
+    const field = readFileSync(join(eventsDir, 'event-form-fields.tsx'), 'utf8');
+    const mealPrefField = field.slice(
+      field.indexOf('export function MealPrefField'),
+      field.indexOf('export function InviteImageInput'),
     );
-    expect(source).toContain('name="show_meal_pref"');
-    expect(source).toContain('type="checkbox"');
+    expect(mealPrefField).toContain('name="show_meal_pref"');
+    expect(mealPrefField).toContain('type="checkbox"');
   });
 });
 
