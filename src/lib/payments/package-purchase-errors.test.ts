@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PURCHASE_ERROR, PURCHASE_ERROR_MESSAGES, purchaseErrorMessage } from './package-purchase-errors';
+import { PURCHASE_ERROR, PURCHASE_ERROR_MESSAGES } from './package-purchase-errors';
 
 describe('package purchase error codes', () => {
   const codes = Object.values(PURCHASE_ERROR);
@@ -34,17 +34,4 @@ describe('package purchase error codes', () => {
     expect(PURCHASE_ERROR_MESSAGES.purchase_review).toContain('אין לשלם שוב');
     expect(PURCHASE_ERROR_MESSAGES.purchase_in_progress).toContain('אין לשלם שוב');
   });
-});
-
-describe('purchaseErrorMessage', () => {
-  it('maps a known code to its sentence', () => {
-    expect(purchaseErrorMessage('purchase_declined')).toBe(PURCHASE_ERROR_MESSAGES.purchase_declined);
-  });
-
-  it.each([undefined, '', 'unknown', '__proto__', 'constructor', 'toString', '<script>alert(1)</script>'])(
-    'shows nothing for %j — the query string is attacker-controlled and only our own codes select text',
-    (code) => {
-      expect(purchaseErrorMessage(code)).toBeNull();
-    },
-  );
 });

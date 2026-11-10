@@ -7,16 +7,7 @@ import type { PackagePaymentScreen } from '@/lib/payments/package-payment-screen
 import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
 import { framedPanels } from '@/test/framed-panels';
 
-// The card form itself needs payments.js, jQuery and next/script; here it is a marker that records what it was given.
-const formProps = vi.fn();
-vi.mock('./sumit-card-form', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./sumit-card-form')>()),
-  SumitCardForm: (props: Record<string, unknown>) => {
-    formProps(props);
-    return <div data-testid="card-form" />;
-  },
-}));
-
+// The card form itself needs CardCom's iframes; here it is a marker that records what it was given.
 const cardcomProps = vi.fn();
 vi.mock('./cardcom-open-fields-form', () => ({
   CardcomOpenFieldsForm: (props: Record<string, unknown>) => {
@@ -31,45 +22,34 @@ import { PackagePaymentView } from './package-payment-view';
 
 afterEach(() => {
   cleanup();
-  formProps.mockClear();
   cardcomProps.mockClear();
 });
 
-const config = { companyId: 12345, apiPublicKey: 'pub-key' };
-const base = { eventId: 'e1', campaignId: 'c1', formConfig: config, signerName: 'דנה כהן' };
-function view(
-  screenState: PackagePaymentScreen,
-  errorMessage: string | null = null,
-  formConfig: typeof config | null = config,
-): ReactElement {
-  return <PackagePaymentView {...base} formConfig={formConfig} screen={screenState} errorMessage={errorMessage} />;
+const base = { eventId: 'e1', campaignId: 'c1', signerName: 'דנה כהן' };
+function view(screenState: PackagePaymentScreen): ReactElement {
+  return <PackagePaymentView {...base} screen={screenState} />;
 }
 
 describe('PackagePaymentView — the card form', () => {
-  it('renders the PURCHASE form, posting nowhere but the purchase flow, with the price shown', () => {
-    render(view({ kind: 'form', amount: 120 }));
-    expect(screen.getByTestId('card-form')).toBeTruthy();
-    expect(formProps).toHaveBeenCalledWith(
-      expect.objectContaining({ campaignId: 'c1', companyId: 12345, apiPublicKey: 'pub-key', amount: 120 }),
-    );
-    expect(screen.getByText(/120/)).toBeTruthy();
+  it('renders CardCom\'s form with the price and the buyer\'s name, e-mail and phone', () => {
+    render(<PackagePaymentView {...base} signerEmail="dana@example.com" signerPhone="0501234567" screen={{ kind: 'form', amount: 149 }} />);
+    expect(screen.getByTestId('cardcom-form')).toBeTruthy();
+    expect(cardcomProps).toHaveBeenCalledWith({ eventId: 'e1', campaignId: 'c1', amount: 149, defaultName: 'דנה כהן', defaultEmail: 'dana@example.com', defaultPhone: '0501234567', googlePayTerminal: null });
+    expect(screen.getByText(/149/)).toBeTruthy();
   });
 
-  it('shows the answer of a previous attempt above the form', () => {
-    render(view({ kind: 'form', amount: 120 }, PURCHASE_ERROR_MESSAGES.purchase_declined));
-    expect(screen.getByRole('alert').textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_declined);
+  it('hands the form the Google Pay terminal the page decided on, and none by default', () => {
+    render(<PackagePaymentView {...base} googlePayTerminal={172204} screen={{ kind: 'form', amount: 149 }} />);
+    expect(cardcomProps).toHaveBeenLastCalledWith(expect.objectContaining({ googlePayTerminal: 172204 }));
+    cleanup();
+    render(view({ kind: 'form', amount: 149 }));
+    expect(cardcomProps).toHaveBeenLastCalledWith(expect.objectContaining({ googlePayTerminal: null }));
   });
 
-  it('without the provider\'s public configuration there is a message, never a broken form', () => {
-    render(view({ kind: 'form', amount: 120 }, null, null));
-    expect(screen.queryByTestId('card-form')).toBeNull();
-    expect(screen.getByRole('status').textContent).toContain(PURCHASE_ERROR_MESSAGES.purchase_disabled);
-  });
-
-  it('never speaks of a hold ("תפיסה") to a customer who is being charged', () => {
+  it('never speaks of a hold ("תפיסה"), and names no payment provider in what the customer reads', () => {
     const { container } = render(view({ kind: 'form', amount: 120 }));
     expect(container.textContent).not.toContain('תפיסה');
-    expect(container.textContent).not.toMatch(/sumit/i);
+    expect(container.textContent).not.toMatch(/cardcom|sumit|קארדקום|סאמיט/i);
   });
 });
 
@@ -78,7 +58,7 @@ describe('PackagePaymentView — a payment that exists, or may exist, never offe
     const { container } = render(view({ kind: 'paid', amount: 120, activation: 'unavailable' }));
     expect(screen.getByText('התשלום התקבל')).toBeTruthy();
     expect(container.textContent).toContain('120');
-    expect(screen.queryByTestId('card-form')).toBeNull();
+    expect(screen.queryByTestId('cardcom-form')).toBeNull();
     expect(screen.getByRole('link', { name: 'הוספת מוזמנים' }).getAttribute('href')).toBe('/app/events/e1/guests');
     // Paid ends setup (design D2): the way on is the event page, not the service's own page.
     expect(container.textContent).not.toContain('מעבר לניהול הקמפיין');
@@ -91,7 +71,7 @@ describe('PackagePaymentView — a payment that exists, or may exist, never offe
   ] as const)('%s: shows the message and no form', (kind, message) => {
     render(view({ kind }));
     expect(screen.getByRole('status').textContent).toContain(message);
-    expect(screen.queryByTestId('card-form')).toBeNull();
+    expect(screen.queryByTestId('cardcom-form')).toBeNull();
   });
 });
 
@@ -101,7 +81,7 @@ describe('PackagePaymentView — test money is said out loud', () => {
   it('the form on the test terminal says no real card will be charged, and is still the form', () => {
     render(view({ kind: 'form', amount: 120, testTerminal: true }));
     expect(screen.getByRole('status').textContent).toBe('מסוף בדיקה — לא יחויב כרטיס אמיתי.');
-    expect(screen.getByTestId('card-form')).toBeTruthy();
+    expect(screen.getByTestId('cardcom-form')).toBeTruthy();
   });
 
   it('the form on any other terminal says nothing of the kind', () => {
@@ -132,13 +112,13 @@ describe('PackagePaymentView — unavailable', () => {
   ] as const)('%s → its own sentence, no form', (reason, message) => {
     render(view({ kind: 'unavailable', reason }));
     expect(screen.getByRole('status').textContent).toContain(message);
-    expect(screen.queryByTestId('card-form')).toBeNull();
+    expect(screen.queryByTestId('cardcom-form')).toBeNull();
   });
 });
 
 describe('PackagePaymentView — paid: never a start control (D23)', () => {
   it('paid and approved: says the service is being started, with no button and no "not started" notice', () => {
-    render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'starting' }} errorMessage={null} />);
+    render(view({ kind: 'paid', amount: 120, activation: 'starting' }));
     expect(screen.getByText('התשלום התקבל')).toBeTruthy();
     expect(screen.getByRole('status').textContent).toBe(SERVICE_STARTING);
     expect(screen.queryByRole('button')).toBeNull();
@@ -147,70 +127,25 @@ describe('PackagePaymentView — paid: never a start control (D23)', () => {
   });
 
   it('active: says the campaign is running, and offers no start', () => {
-    const { container } = render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'active' }} errorMessage={null} />);
+    const { container } = render(view({ kind: 'paid', amount: 120, activation: 'active' }));
     expect(container.textContent).toContain('השירות פעיל');
     expect(container.textContent).not.toContain(SERVICE_STARTING);
     expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('neither (the event passed, or staff paused it): says they paid, nothing about starting, no button', () => {
-    const { container } = render(<PackagePaymentView {...base} screen={{ kind: 'paid', amount: 120, activation: 'unavailable' }} errorMessage={null} />);
+    const { container } = render(view({ kind: 'paid', amount: 120, activation: 'unavailable' }));
     expect(screen.getByText('התשלום התקבל')).toBeTruthy();
     expect(container.textContent).not.toContain(SERVICE_STARTING);
     expect(screen.queryByRole('button')).toBeNull();
   });
 });
 
-describe('PackagePaymentView — which form', () => {
-  it('shows CardCom\'s form, with the price and the buyer\'s name and e-mail, when CardCom takes the purchase — and not the SUMIT form', () => {
-    render(<PackagePaymentView {...base} provider="cardcom" signerEmail="dana@example.com" signerPhone="0501234567" screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
-    expect(screen.getByTestId('cardcom-form')).toBeTruthy();
-    expect(screen.queryByTestId('card-form')).toBeNull();
-    expect(cardcomProps).toHaveBeenCalledWith({ eventId: 'e1', campaignId: 'c1', amount: 149, defaultName: 'דנה כהן', defaultEmail: 'dana@example.com', defaultPhone: '0501234567', googlePayTerminal: null });
-  });
-
-  it('hands CardCom\'s form the Google Pay terminal the page decided on, and none by default', () => {
-    render(<PackagePaymentView {...base} provider="cardcom" googlePayTerminal={172204} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
-    expect(cardcomProps).toHaveBeenLastCalledWith(expect.objectContaining({ googlePayTerminal: 172204 }));
-    cleanup();
-    render(<PackagePaymentView {...base} provider="cardcom" screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
-    expect(cardcomProps).toHaveBeenLastCalledWith(expect.objectContaining({ googlePayTerminal: null }));
-  });
-
-  it('never gives the SUMIT form a Google Pay terminal', () => {
-    render(<PackagePaymentView {...base} provider="sumit" googlePayTerminal={172204} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
-    expect(formProps).toHaveBeenCalled();
-    expect(JSON.stringify(formProps.mock.calls)).not.toContain('172204');
-    expect(cardcomProps).not.toHaveBeenCalled();
-  });
-
-  it('needs no SUMIT public configuration for CardCom, but never shows an empty SUMIT form without it', () => {
-    render(<PackagePaymentView {...base} provider="cardcom" formConfig={null} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
-    expect(screen.getByTestId('cardcom-form')).toBeTruthy();
-    cleanup();
-    render(<PackagePaymentView {...base} provider="sumit" formConfig={null} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
-    expect(screen.queryByTestId('cardcom-form')).toBeNull();
-    expect(screen.queryByTestId('card-form')).toBeNull();
-    expect(screen.getByRole('status').textContent).toBe(PURCHASE_ERROR_MESSAGES.purchase_disabled);
-  });
-
-  it('keeps the SUMIT form when no provider is given (the default)', () => {
-    render(<PackagePaymentView {...base} screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
-    expect(screen.getByTestId('card-form')).toBeTruthy();
-    expect(screen.queryByTestId('cardcom-form')).toBeNull();
-  });
-
-  it('names no payment provider in what the customer reads', () => {
-    render(<PackagePaymentView {...base} provider="cardcom" screen={{ kind: 'form', amount: 149 }} errorMessage={null} />);
-    expect(document.body.textContent).not.toMatch(/cardcom|sumit|קארדקום|סאמיט/i);
-  });
-});
-
 // The payment renders inside the setup shell's one content surface (design D3, task 4.3): the payment details and the
 // card form are sections with headings, never frames of their own.
 describe('PackagePaymentView — flat inside the step surface', () => {
-  it.each(['sumit', 'cardcom'] as const)('the %s form screen draws no framed panel', (provider) => {
-    const { container } = render(<PackagePaymentView {...base} provider={provider} screen={{ kind: 'form', amount: 120 }} errorMessage={null} />);
+  it('the form screen draws no framed panel', () => {
+    const { container } = render(view({ kind: 'form', amount: 120 }));
     expect(framedPanels(container.innerHTML)).toEqual([]);
     expect(Array.from(container.querySelectorAll('section h3')).map((h) => h.textContent)).toEqual(['פרטי התשלום', 'פרטי כרטיס אשראי']);
   });

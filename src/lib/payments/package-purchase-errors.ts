@@ -1,13 +1,11 @@
-// The answers the package purchase route can send back to the payment page (`?error=<code>`), and the sentence the
-// customer reads for each. One module on purpose: the route picks a code, the page shows the sentence, and
-// package-purchase-errors.test.ts proves every code has one — a route code without a sentence would render as an
-// error banner with nothing in it.
+// The answers a package purchase can end in, and the sentence the customer reads for each. One module on purpose: the
+// payment form and the payment screen pick a code, and package-purchase-errors.test.ts proves every code has a
+// sentence — a code without one would render as an error banner with nothing in it.
 //
 // Customer-facing wording that touches what is charged is reviewed for compliance before it goes live; it lives here,
 // as data, so that review changes one file. None of it names the payment provider.
 
 export const PURCHASE_ERROR = {
-  TOKEN_MISSING: 'token_missing',
   DISABLED: 'purchase_disabled',
   BAD_STATE: 'bad_state',
   IN_PROGRESS: 'purchase_in_progress',
@@ -28,7 +26,6 @@ export const PURCHASE_ERROR = {
 export type PurchaseErrorCode = (typeof PURCHASE_ERROR)[keyof typeof PURCHASE_ERROR];
 
 export const PURCHASE_ERROR_MESSAGES: Record<PurchaseErrorCode, string> = {
-  token_missing: 'לא התקבלו פרטי אשראי. נסו שוב.',
   purchase_disabled: 'שלב התשלום אינו פעיל כעת.',
   bad_state: 'לא ניתן לרכוש את החבילה במצב הנוכחי.',
   purchase_in_progress: 'תשלום כבר מתבצע עבור החבילה. המתינו מספר שניות ורעננו את העמוד — אין לשלם שוב.',
@@ -43,10 +40,3 @@ export const PURCHASE_ERROR_MESSAGES: Record<PurchaseErrorCode, string> = {
   reapproval_required: 'תוקף ההטבה הסתיים, והמחיר חזר למחיר המלא. יש לאשר את התנאים מחדש לפני התשלום.',
 };
 
-// `?error=` is attacker-controlled text. Only a code this module defines selects a sentence; anything else is nothing.
-export function purchaseErrorMessage(code: string | undefined): string | null {
-  if (code === undefined) return null;
-  return Object.prototype.hasOwnProperty.call(PURCHASE_ERROR_MESSAGES, code)
-    ? PURCHASE_ERROR_MESSAGES[code as PurchaseErrorCode]
-    : null;
-}

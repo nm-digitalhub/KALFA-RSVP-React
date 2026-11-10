@@ -8,51 +8,51 @@ vi.mock('server-only', () => ({}));
 import { CARDCOM_TEST_TERMINAL } from '@/lib/data/cardcom-config';
 import { LEDGER_TEST_TERMINAL } from '@/test/ledger-stamp-trigger';
 
-import { resolvePurchaseProvider } from './provider';
+import { cardcomTakesPurchase } from './provider';
 
-// Which clearing company takes a package purchase. SUMIT unless the CardCom pilot is explicitly on — and on CardCom's
-// published test terminal (1000), where nothing is charged, only for someone who may configure the integration:
-// everyone else keeps paying through SUMIT, never through a "payment" that moves no money and still activates a campaign.
-// The one exception is a server on a local database (no real customer there): every buyer is on the test terminal.
+// Whether a package purchase is open to this buyer. Closed unless the CardCom switch is explicitly on — and on CardCom's
+// published test terminal (1000), where nothing is charged, open only to someone who may configure the integration: a
+// customer never gets a "payment" that moves no money and still activates a campaign. The one exception is a server on a
+// local database (no real customer there): every buyer is on the test terminal.
 
 const HOSTED_DB = 'https://abcdefghijklmnopqrst.supabase.co';
 const LOCAL_DB = 'http://127.0.0.1:54321';
 
 const cfg = (over = {}) => ({ terminalNumber: 1001, apiName: 'x', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off' as const, ...over });
 
-describe('resolvePurchaseProvider', () => {
+describe('cardcomTakesPurchase', () => {
   // The hosted project unless a case says otherwise: the database address is the one input that is not an argument.
   beforeEach(() => vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', HOSTED_DB));
   afterEach(() => vi.unstubAllEnvs());
 
-  it('is SUMIT when CardCom is not configured', () => {
-    expect(resolvePurchaseProvider(null, false)).toBe('sumit');
+  it('is closed when CardCom is not configured', () => {
+    expect(cardcomTakesPurchase(null, false)).toBe(false);
   });
 
-  it('is SUMIT while the pilot switch is off', () => {
-    expect(resolvePurchaseProvider(cfg({ enabled: false }), true)).toBe('sumit');
+  it('is closed while the switch is off', () => {
+    expect(cardcomTakesPurchase(cfg({ enabled: false }), true)).toBe(false);
   });
 
-  it('is CardCom on a real terminal, for everyone', () => {
-    expect(resolvePurchaseProvider(cfg(), false)).toBe('cardcom');
-    expect(resolvePurchaseProvider(cfg(), true)).toBe('cardcom');
+  it('is open on a real terminal, for everyone', () => {
+    expect(cardcomTakesPurchase(cfg(), false)).toBe(true);
+    expect(cardcomTakesPurchase(cfg(), true)).toBe(true);
   });
 
-  it('on the test terminal is CardCom only for a platform admin; a customer stays on SUMIT', () => {
-    expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000 }), true)).toBe('cardcom');
-    expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000 }), false)).toBe('sumit');
+  it('on the test terminal is open only to a platform admin; a customer is refused', () => {
+    expect(cardcomTakesPurchase(cfg({ terminalNumber: 1000 }), true)).toBe(true);
+    expect(cardcomTakesPurchase(cfg({ terminalNumber: 1000 }), false)).toBe(false);
   });
 
-  it('on a local database the test terminal is CardCom for every buyer', () => {
+  it('on a local database the test terminal is open to every buyer', () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', LOCAL_DB);
-    expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000 }), false)).toBe('cardcom');
-    expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000 }), true)).toBe('cardcom');
+    expect(cardcomTakesPurchase(cfg({ terminalNumber: 1000 }), false)).toBe(true);
+    expect(cardcomTakesPurchase(cfg({ terminalNumber: 1000 }), true)).toBe(true);
   });
 
   it('on a local database the switch still decides first', () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', LOCAL_DB);
-    expect(resolvePurchaseProvider(cfg({ terminalNumber: 1000, enabled: false }), false)).toBe('sumit');
-    expect(resolvePurchaseProvider(null, false)).toBe('sumit');
+    expect(cardcomTakesPurchase(cfg({ terminalNumber: 1000, enabled: false }), false)).toBe(false);
+    expect(cardcomTakesPurchase(null, false)).toBe(false);
   });
 });
 

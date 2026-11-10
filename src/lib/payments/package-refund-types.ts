@@ -1,8 +1,7 @@
 import type { ProviderDocument, StoredOperation } from './ledger';
 
-// The shapes a package refund shares across clearing companies (package-refund.ts for SUMIT, cardcom-refund.ts for CardCom).
-// Their own file so that neither implementation has to import the other; package-refund.ts re-exports them, so existing
-// importers are untouched.
+// The shapes of a package refund (cardcom-refund.ts moves the money; package-refund.ts reads the ledger record). Their own
+// file so the cancellation screens and the resolution can name them without importing either module.
 
 export type PackageRefundInput = {
   campaignId: string;
@@ -18,8 +17,7 @@ export type PackageRefundRefusal =
   | 'invalid_amount'
   | 'no_payment' // the campaign has no succeeded package payment, or nothing left on it
   | 'exceeds_refundable'
-  | 'no_customer' // SUMIT: the payer has no customer number: a credit must never open a second customer
-  | 'no_card' // nothing to refund automatically (SUMIT: no saved card, expiry or holder id; CardCom: no recorded transaction id or cardholder name): the admin refunds by hand
+  | 'no_card' // nothing to refund automatically (no recorded transaction id or cardholder name): the admin refunds by hand
   | 'no_document' // CardCom: the payment's document type has no credit counterpart we can name: refund by hand
   | 'terminal_changed'; // CardCom: the payment was made on a terminal that is not the one the connection uses now, or on one never recorded (an old row)
 
@@ -31,8 +29,7 @@ export type PackageRefundResult =
   | { status: 'refused'; reason: PackageRefundRefusal } // checked BEFORE anything was written or sent
   | { status: 'error' }; // something failed BEFORE anything was sent
 
-// What a screen and the cancellation resolution need to know about a package's money (packageRefundSummary, for either
-// clearing company). `refundDocument` is the credit document of THIS request's confirmed refund, as the ledger recorded it
+// What a screen and the cancellation resolution need to know about a package's money (cardcomRefundSummary). `refundDocument` is the credit document of THIS request's confirmed refund, as the ledger recorded it
 // (the request row itself keeps only a SUMIT document id and url, never a CardCom document number) — null when the
 // request refunded nothing yet, or no request was named.
 export type PackageRefundSummary = {

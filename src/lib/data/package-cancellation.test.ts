@@ -48,7 +48,6 @@ describe('packageRefundMessage — what the admin is told when the refund did no
       { status: 'refused', reason: 'invalid_amount' },
       { status: 'refused', reason: 'no_payment' },
       { status: 'refused', reason: 'exceeds_refundable' },
-      { status: 'refused', reason: 'no_customer' },
       { status: 'refused', reason: 'no_card' },
       { status: 'refused', reason: 'no_document' },
       { status: 'refused', reason: 'terminal_changed' },
@@ -62,14 +61,14 @@ describe('packageRefundMessage — what the admin is told when the refund did no
     expect(packageRefundMessage({ status: 'review' })).toContain('אל תנסו שוב');
   });
 
-  it('no card / no customer / no document / a payment from another terminal send the admin to refund by hand', () => {
-    for (const reason of ['no_card', 'no_customer', 'no_document', 'terminal_changed'] as const) {
+  it('no card / no document / a payment from another terminal send the admin to refund by hand', () => {
+    for (const reason of ['no_card', 'no_document', 'terminal_changed'] as const) {
       expect(packageRefundMessage({ status: 'refused', reason })).toContain('ידנית');
     }
   });
 
   it('names no clearing company: the same sentences serve every provider', () => {
-    const reasons = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_customer', 'no_card', 'no_document', 'terminal_changed'] as const;
+    const reasons = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_card', 'no_document', 'terminal_changed'] as const;
     const all = [
       ...reasons.map((reason) => packageRefundMessage({ status: 'refused', reason })),
       ...(['declined', 'review', 'in_progress', 'error'] as const).map((status) => packageRefundMessage({ status })),
@@ -121,10 +120,9 @@ describe('packageCancellationState', () => {
   });
 });
 
-// The same sentences serve a refund through either clearing company, so none of them may name one — and every refusal a
-// refund can give has a sentence (a missing one would show the admin an empty banner).
+// The sentences name no clearing company — and every refusal a refund can give has a sentence (a missing one would show the admin an empty banner).
 describe('packageRefundMessage: every refusal has a provider-neutral sentence', () => {
-  const REASONS = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_customer', 'no_card', 'no_document', 'terminal_changed'] as const;
+  const REASONS = ['disabled', 'invalid_amount', 'no_payment', 'exceeds_refundable', 'no_card', 'no_document', 'terminal_changed'] as const;
 
   it.each(REASONS)('%s says what happened, that nothing was done, and names no company', (reason) => {
     const message = packageRefundMessage({ status: 'refused', reason });

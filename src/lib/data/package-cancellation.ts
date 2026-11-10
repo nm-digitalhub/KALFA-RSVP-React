@@ -1,6 +1,6 @@
 // The two pure decisions of resolving a cancellation request for a fixed-price package: how much goes back, and what
 // the admin is told when it could not. No server-only imports, nothing read or written: the money itself moves in
-// src/lib/payments/package-refund.ts.
+// src/lib/payments/cardcom-refund.ts.
 
 import type { PackageRefundRefusal } from '@/lib/payments/package-refund-types';
 
@@ -53,13 +53,12 @@ type RefundResultLike =
   | { status: 'declined' | 'review' | 'in_progress' | 'error' }
   | { status: 'refused'; reason: PackageRefundRefusal };
 
-// Wording that names no clearing company: the same sentences serve a refund through SUMIT and one through CardCom.
+// Wording that names no clearing company.
 const REFUSALS: Record<PackageRefundRefusal, string> = {
   disabled: 'התשלומים כבויים או שהגדרות הסליקה חסרות — לא בוצעה פעולה',
   invalid_amount: 'סכום ההחזר אינו תקין — לא בוצעה פעולה',
   no_payment: 'אין בקמפיין תשלום חבילה להחזרה — לא בוצעה פעולה',
   exceeds_refundable: 'סכום ההחזר גדול ממה שנותר להחזרה בקמפיין — לא בוצעה פעולה',
-  no_customer: 'לא נמצא מספר לקוח אצל חברת הסליקה עבור המשלם — יש להחזיר ידנית אצלה. לא בוצעה פעולה',
   no_card: 'אין כרטיס שמור לתשלום הזה — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
   no_document: 'לסוג המסמך של התשלום הזה אין מסמך זיכוי שאפשר להפיק אוטומטית — יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',
   terminal_changed: 'התשלום בוצע במסוף שונה מזה שבחיבור הנוכחי של חברת הסליקה (או שהמסוף שלו לא נרשם) — אי אפשר לזכות אותו אוטומטית. יש להחזיר ידנית אצל חברת הסליקה. לא בוצעה פעולה',

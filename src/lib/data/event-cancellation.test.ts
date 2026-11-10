@@ -15,12 +15,12 @@ vi.mock('@/lib/email/templates', () => ({ cancellationRequestResponseEmail: vi.f
 vi.mock('@/lib/data/cancellation-sms', () => ({ buildCancellationSmsText: vi.fn() }));
 vi.mock('@/lib/url', () => ({ getAppOrigin: vi.fn().mockResolvedValue('https://beta.kalfa.me') }));
 vi.mock('@/lib/data/activity', () => ({ logActivity: vi.fn() }));
-vi.mock('@/lib/payments/package-refund', () => ({
-  checkPackageRefund: vi.fn(),
-  packageRefundSummary: vi.fn(),
-  packagePaymentRecord: vi.fn(),
-  refundPackagePayment: vi.fn(),
+vi.mock('@/lib/payments/cardcom-refund', () => ({
+  checkCardcomRefund: vi.fn(),
+  cardcomRefundSummary: vi.fn(),
+  refundCardcomPayment: vi.fn(),
 }));
+vi.mock('@/lib/payments/package-refund', () => ({ packagePaymentRecord: vi.fn() }));
 // The pricing module decides "is this a package" (task 4.1); each fixture states the campaign's current-round price.
 vi.mock('@/lib/data/campaign-pricing', () => ({ getCurrentPricing: vi.fn() }));
 
@@ -34,7 +34,8 @@ import { getSmsSender } from '@/lib/sms/sender';
 import { cancellationRequestResponseEmail } from '@/lib/email/templates';
 import { buildCancellationSmsText } from '@/lib/data/cancellation-sms';
 import { logActivity } from '@/lib/data/activity';
-import { checkPackageRefund, packagePaymentRecord, packageRefundSummary, refundPackagePayment } from '@/lib/payments/package-refund';
+import { cardcomRefundSummary, checkCardcomRefund, refundCardcomPayment } from '@/lib/payments/cardcom-refund';
+import { packagePaymentRecord } from '@/lib/payments/package-refund';
 import {
   CANCELLATION_REQUEST_ALREADY_OPEN,
   createCancellationRequest,
@@ -199,16 +200,16 @@ describe('getCampaignForEventAdmin', () => {
   it('a package campaign: what the card paid and whether a card is on file come from the ledger', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     adminClientFor(PKG_ROW);
-    (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 70, refundedForRequest: 50, hasCard: true });
+    (cardcomRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 70, refundedForRequest: 50, hasCard: true });
     const r = await getCampaignForEventAdmin('e1', 'req1');
-    expect(packageRefundSummary).toHaveBeenCalledWith('camp1', 'req1');
+    expect(cardcomRefundSummary).toHaveBeenCalledWith('camp1', 'req1');
     expect(r).toMatchObject({ isPackage: true, packagePaid: 120, packageRefundable: 70, hasCardOnFile: true, packageUnreadable: false });
   });
 
   it('a package: what THIS request already sent back is reported, so the screen can say a resolve is being resumed', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     adminClientFor(PKG_ROW);
-    (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 15, refundedForRequest: 105, hasCard: true });
+    (cardcomRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 15, refundedForRequest: 105, hasCard: true });
     expect(await getCampaignForEventAdmin('e1', 'req1')).toMatchObject({ packagePaid: 120, packageRefundable: 15, packageRefundedForRequest: 105 });
   });
 
@@ -217,7 +218,7 @@ describe('getCampaignForEventAdmin', () => {
   it('a package: the purchase document and the last refund attempt of THIS request come from the ledger', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     adminClientFor(PKG_ROW);
-    (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
+    (cardcomRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
     const record = {
       purchaseDocument: { id: null, number: 6, url: null },
       lastRefundAttempt: { outcome: 'failed', providerStatus: '9006', providerStatusDescription: 'אין הרשאה', recordedAt: '2026-10-09T13:12:32Z' },
@@ -230,14 +231,14 @@ describe('getCampaignForEventAdmin', () => {
   it('a package with no usable saved card says so', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     adminClientFor(PKG_ROW);
-    (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: false });
+    (cardcomRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: false });
     expect((await getCampaignForEventAdmin('e1', 'req1'))?.hasCardOnFile).toBe(false);
   });
 
   it('a package whose ledger cannot be read is reported as unreadable — never as "paid nothing"', async () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     adminClientFor(PKG_ROW);
-    (packageRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
+    (cardcomRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
     expect(await getCampaignForEventAdmin('e1', 'req1')).toMatchObject({ isPackage: true, packagePaid: null, packageRefundable: null, packageRefundedForRequest: null, hasCardOnFile: false, packageUnreadable: true });
   });
 
@@ -245,7 +246,7 @@ describe('getCampaignForEventAdmin', () => {
     (requirePlatformPermission as unknown as Mock).mockResolvedValue(undefined);
     adminClientFor({ ...PKG_ROW, package_price: null, contact_quota: null });
     const r = await getCampaignForEventAdmin('e1', 'req1');
-    expect(packageRefundSummary).not.toHaveBeenCalled();
+    expect(cardcomRefundSummary).not.toHaveBeenCalled();
     expect(r).toEqual({
       id: 'camp1',
       contactQuota: null,
@@ -387,13 +388,13 @@ describe('resolveCancellationRequest', () => {
     const DOC = { id: 9001, number: 4023, url: 'https://example.test/doc/9001' };
     function pkg(over: { status?: string; paid?: number; refundedForRequest?: number } = {}) {
       const h = happy({ packagePrice: 120, campaignStatus: over.status ?? 'active' });
-      (packageRefundSummary as unknown as Mock).mockResolvedValue({
+      (cardcomRefundSummary as unknown as Mock).mockResolvedValue({
         refundable: over.paid ?? 120,
         refundedForRequest: over.refundedForRequest ?? 0,
         hasCard: true,
       });
-      (checkPackageRefund as unknown as Mock).mockResolvedValue(null);
-      (refundPackagePayment as unknown as Mock).mockImplementation(async (i: { amount: number }) => ({
+      (checkCardcomRefund as unknown as Mock).mockResolvedValue(null);
+      (refundCardcomPayment as unknown as Mock).mockImplementation(async (i: { amount: number }) => ({
         status: 'refunded', amount: i.amount, document: DOC, alreadyDone: false,
       }));
       return h;
@@ -402,20 +403,20 @@ describe('resolveCancellationRequest', () => {
 
     it.each(['before', 'after'] as const)('with a cancelled campaign listed %s the live one, the refund is made for the LIVE campaign, never the cancelled one', async (where) => {
       const h = happy({ packagePrice: 120, campaignStatus: 'active', cancelledCampaign: where });
-      (packageRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
-      (checkPackageRefund as unknown as Mock).mockResolvedValue(null);
-      (refundPackagePayment as unknown as Mock).mockImplementation(async (i: { amount: number }) => ({ status: 'refunded', amount: i.amount, document: DOC, alreadyDone: false }));
+      (cardcomRefundSummary as unknown as Mock).mockResolvedValue({ refundable: 120, refundedForRequest: 0, hasCard: true });
+      (checkCardcomRefund as unknown as Mock).mockResolvedValue(null);
+      (refundCardcomPayment as unknown as Mock).mockImplementation(async (i: { amount: number }) => ({ status: 'refunded', amount: i.amount, document: DOC, alreadyDone: false }));
       await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
-      expect(packageRefundSummary).toHaveBeenCalledWith('camp1', 'r1');
-      expect(refundPackagePayment).toHaveBeenCalledWith({ campaignId: 'camp1', eventId: 'e1', amount: 120, cancellationRequestId: 'r1' });
-      expect(packageRefundSummary).not.toHaveBeenCalledWith('camp0', expect.anything());
+      expect(cardcomRefundSummary).toHaveBeenCalledWith('camp1', 'r1');
+      expect(refundCardcomPayment).toHaveBeenCalledWith({ campaignId: 'camp1', eventId: 'e1', amount: 120, cancellationRequestId: 'r1' });
+      expect(cardcomRefundSummary).not.toHaveBeenCalledWith('camp0', expect.anything());
       expect(h.update).toBeDefined();
     });
 
     it('full cancellation: refunds what the card paid, closes the campaign and the event, and records the credit document', async () => {
       const { update, rpc } = pkg();
       await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
-      expect(refundPackagePayment).toHaveBeenCalledWith({ campaignId: 'camp1', eventId: 'e1', amount: 120, cancellationRequestId: 'r1' });
+      expect(refundCardcomPayment).toHaveBeenCalledWith({ campaignId: 'camp1', eventId: 'e1', amount: 120, cancellationRequestId: 'r1' });
       expect(rpc).toHaveBeenCalledWith('campaign_runstate', {
         p_campaign: 'camp1', p_action: 'close', p_actor: 'staff1',
         p_via: 'cancellation_request', p_cancellation_request: 'r1',
@@ -428,15 +429,15 @@ describe('resolveCancellationRequest', () => {
     it('checks the refund, closes through the RPC, refunds, then emails', async () => {
       const { send, rpc } = pkg();
       await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'cancelled' });
-      expect(checkPackageRefund).toHaveBeenCalledWith({
+      expect(checkCardcomRefund).toHaveBeenCalledWith({
         campaignId: 'camp1',
         eventId: 'e1',
         amount: 120,
         cancellationRequestId: 'r1',
       });
-      expect(order(checkPackageRefund)).toBeLessThan(order(rpc));
-      expect(order(rpc)).toBeLessThan(order(refundPackagePayment));
-      expect(order(refundPackagePayment)).toBeLessThan(order(send));
+      expect(order(checkCardcomRefund)).toBeLessThan(order(rpc));
+      expect(order(rpc)).toBeLessThan(order(refundCardcomPayment));
+      expect(order(refundCardcomPayment)).toBeLessThan(order(send));
     });
 
     it('the e-mail says what went back: the amount the ledger confirmed', async () => {
@@ -455,15 +456,15 @@ describe('resolveCancellationRequest', () => {
       await expect(
         resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' }),
       ).rejects.toThrow('הכסף הוחזר ללקוח, אך שליחת המייל נכשלה');
-      expect(refundPackagePayment).toHaveBeenCalledTimes(1);
+      expect(refundCardcomPayment).toHaveBeenCalledTimes(1);
       expect(h.smsSend).not.toHaveBeenCalled();
       expect(h.update).not.toHaveBeenCalled();
 
       // The retry: the ledger now holds this request's refund, so the module returns it instead of refunding again.
       vi.clearAllMocks();
       const again = pkg({ paid: 0, refundedForRequest: 120 });
-      (checkPackageRefund as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: 120, document: DOC, alreadyDone: true });
-      (refundPackagePayment as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: 120, document: DOC, alreadyDone: true });
+      (checkCardcomRefund as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: 120, document: DOC, alreadyDone: true });
+      (refundCardcomPayment as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: 120, document: DOC, alreadyDone: true });
       await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
       expect(again.send).toHaveBeenCalledTimes(1);
       expect(cancellationRequestResponseEmail).toHaveBeenCalledWith(expect.objectContaining({ refundedAmount: 120 }));
@@ -473,14 +474,14 @@ describe('resolveCancellationRequest', () => {
     it('partial: the typed amount stays with us, the rest goes back, and the customer is told the amount kept', async () => {
       pkg();
       await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 15, resolutionNote: 'דמי ביטול' });
-      expect(refundPackagePayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
+      expect(refundCardcomPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
       expect(cancellationRequestResponseEmail).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'partial_charge', resolutionAmount: 15 }));
     });
 
     it('partial as a percentage: 5% of the ₪120 paid stays (₪6.00), ₪114 goes back', async () => {
       pkg();
       await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 5, resolutionNote: 'דמי ביטול 5%' });
-      expect(refundPackagePayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 114 }));
+      expect(refundCardcomPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 114 }));
       expect(cancellationRequestResponseEmail).toHaveBeenCalledWith(expect.objectContaining({ resolutionAmount: 6 }));
     });
 
@@ -491,8 +492,8 @@ describe('resolveCancellationRequest', () => {
     describe('a retry after a half-finished resolve (the money went back, a later step failed)', () => {
       function resumed(refunded: number, paid = 120) {
         const h = pkg({ status: 'closed', paid: paid - refunded, refundedForRequest: refunded });
-        (checkPackageRefund as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: refunded, document: DOC, alreadyDone: true });
-        (refundPackagePayment as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: refunded, document: DOC, alreadyDone: true });
+        (checkCardcomRefund as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: refunded, document: DOC, alreadyDone: true });
+        (refundCardcomPayment as unknown as Mock).mockResolvedValue({ status: 'refunded', amount: refunded, document: DOC, alreadyDone: true });
         return h;
       }
       const emailArg = () => (cancellationRequestResponseEmail as unknown as Mock).mock.calls[0][0] as { resolution: string; resolutionAmount?: number };
@@ -520,14 +521,14 @@ describe('resolveCancellationRequest', () => {
         resumed(105);
         await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 50, resolutionNote: 'דמי ביטול 50%' });
         expect(emailArg()).toMatchObject({ resolution: 'partial_charge', resolutionAmount: 15 });
-        expect(refundPackagePayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
+        expect(refundCardcomPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
       });
 
       it('nothing is refunded twice, and the campaign and the event are still closed', async () => {
         resumed(105);
         await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' });
-        expect(checkPackageRefund).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
-        expect(refundPackagePayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105, cancellationRequestId: 'r1' }));
+        expect(checkCardcomRefund).toHaveBeenCalledWith(expect.objectContaining({ amount: 105 }));
+        expect(refundCardcomPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 105, cancellationRequestId: 'r1' }));
         expect(logActivity).toHaveBeenCalledWith({ eventId: 'e1', action: 'event.closed_by_admin', meta: {} });
       });
 
@@ -544,8 +545,8 @@ describe('resolveCancellationRequest', () => {
     it('keeping everything (100%): nothing goes back, no refund is attempted, the request still closes with no money movement', async () => {
       const { update } = pkg();
       await resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionPercent: 100, resolutionNote: 'ללא החזר' });
-      expect(checkPackageRefund).not.toHaveBeenCalled();
-      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(checkCardcomRefund).not.toHaveBeenCalled();
+      expect(refundCardcomPayment).not.toHaveBeenCalled();
       expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'not_applicable', resolution_amount: null }));
     });
 
@@ -553,28 +554,28 @@ describe('resolveCancellationRequest', () => {
       const { update, rpc } = pkg();
       await resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'האירוע כבר בעיצומו' });
       expect(rpc).not.toHaveBeenCalled();
-      expect(checkPackageRefund).not.toHaveBeenCalled();
-      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(checkCardcomRefund).not.toHaveBeenCalled();
+      expect(refundCardcomPayment).not.toHaveBeenCalled();
       expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'not_applicable' }));
     });
 
     it('declined with an unreadable ledger still goes ahead: a decline moves no money', async () => {
       const { update } = pkg();
-      (packageRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
+      (cardcomRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
       await resolveCancellationRequest('r1', { resolution: 'declined', resolutionNote: 'האירוע כבר בעיצומו' });
       expect(update).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'declined', capture_outcome: 'not_applicable' }));
-      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(refundCardcomPayment).not.toHaveBeenCalled();
     });
 
     it('a refund that cannot go ahead is refused BEFORE the e-mail — no promise is made that cannot be kept', async () => {
       const { send, smsSend, update } = pkg();
-      (checkPackageRefund as unknown as Mock).mockResolvedValue({ status: 'refused', reason: 'no_card' });
+      (checkCardcomRefund as unknown as Mock).mockResolvedValue({ status: 'refused', reason: 'no_card' });
       await expect(
         resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' }),
       ).rejects.toThrow('אין כרטיס שמור');
       expect(send).not.toHaveBeenCalled();
       expect(smsSend).not.toHaveBeenCalled();
-      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(refundCardcomPayment).not.toHaveBeenCalled();
       expect(update).not.toHaveBeenCalled();
     });
 
@@ -584,7 +585,7 @@ describe('resolveCancellationRequest', () => {
         resolveCancellationRequest('r1', { resolution: 'partial_charge', resolutionAmount: 200, resolutionNote: 'דמי ביטול' }),
       ).rejects.toThrow('גדול ממה ששולם');
       expect(send).not.toHaveBeenCalled();
-      expect(checkPackageRefund).not.toHaveBeenCalled();
+      expect(checkCardcomRefund).not.toHaveBeenCalled();
     });
 
     it('a percentage with nothing paid to take it of is refused before the e-mail', async () => {
@@ -597,12 +598,12 @@ describe('resolveCancellationRequest', () => {
 
     it('an unreadable ledger stops everything before the e-mail', async () => {
       const { send } = pkg();
-      (packageRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
+      (cardcomRefundSummary as unknown as Mock).mockRejectedValue(new Error('db down'));
       await expect(
         resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' }),
       ).rejects.toThrow('נכשלה');
       expect(send).not.toHaveBeenCalled();
-      expect(refundPackagePayment).not.toHaveBeenCalled();
+      expect(refundCardcomPayment).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -612,7 +613,7 @@ describe('resolveCancellationRequest', () => {
       ['an error', { status: 'error' }, 'נכשלה'],
     ])('when the refund itself ends in %s the request stays open, the campaign is not closed and the customer is told nothing', async (_label, result, message) => {
       const { update, send, smsSend } = pkg();
-      (refundPackagePayment as unknown as Mock).mockResolvedValue(result);
+      (refundCardcomPayment as unknown as Mock).mockResolvedValue(result);
       await expect(
         resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל, מזוכה' }),
       ).rejects.toThrow(message);
@@ -635,14 +636,14 @@ describe('resolveCancellationRequest', () => {
           p_via: 'cancellation_request',
           p_cancellation_request: 'r1',
         }));
-        expect(checkPackageRefund).toHaveBeenCalledWith({
+        expect(checkCardcomRefund).toHaveBeenCalledWith({
           campaignId: 'camp1',
           eventId: 'e1',
           amount: 120,
           cancellationRequestId: 'r1',
         });
-        expect(order(checkPackageRefund)).toBeLessThan(order(rpc));
-        expect(refundPackagePayment).not.toHaveBeenCalled();
+        expect(order(checkCardcomRefund)).toBeLessThan(order(rpc));
+        expect(refundCardcomPayment).not.toHaveBeenCalled();
         expect(send).not.toHaveBeenCalled();
         expect(smsSend).not.toHaveBeenCalled();
         expect(update).not.toHaveBeenCalled();
@@ -654,7 +655,7 @@ describe('resolveCancellationRequest', () => {
         await expect(
           resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'cancelled' }),
         ).rejects.toThrow('forbidden');
-        expect(refundPackagePayment).not.toHaveBeenCalled();
+        expect(refundCardcomPayment).not.toHaveBeenCalled();
         expect(send).not.toHaveBeenCalled();
         expect(update).not.toHaveBeenCalled();
       });
@@ -700,8 +701,8 @@ describe('resolveCancellationRequest', () => {
     it('full cancellation: no money moves, recorded as not_applicable, the event is closed', async () => {
       const { update } = happy({});
       await resolveCancellationRequest('r1', { resolution: 'full_cancellation', resolutionNote: 'בוטל במלואו' });
-      expect(refundPackagePayment).not.toHaveBeenCalled();
-      expect(packageRefundSummary).not.toHaveBeenCalled();
+      expect(refundCardcomPayment).not.toHaveBeenCalled();
+      expect(cardcomRefundSummary).not.toHaveBeenCalled();
       expect(update).toHaveBeenCalledWith(expect.objectContaining({ capture_outcome: 'not_applicable', status: 'resolved' }));
       expect(logActivity).toHaveBeenCalledWith({ eventId: 'e1', action: 'event.closed_by_admin', meta: {} });
     });

@@ -21,7 +21,7 @@ import { refundableAmount, refundableCents } from './status';
 import { labelTestMoney } from './test-money-label';
 
 // Giving a customer's money back for a package paid through CardCom (docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md,
-// 4.8). The counterpart of package-refund.ts (SUMIT), with the same safety argument in the same order:
+// 4.8). The safety argument, in order:
 //   1. every gate is fail-closed (payments on, CardCom configured, the API password stored);
 //   2. the amount is checked against the LEDGER — what the card actually paid minus what already went back, refunds still
 //      pending or in review counted as gone — never against anything the admin or the browser typed;

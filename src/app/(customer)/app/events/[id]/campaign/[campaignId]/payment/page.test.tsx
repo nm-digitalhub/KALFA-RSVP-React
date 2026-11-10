@@ -27,21 +27,14 @@ vi.mock('../../../event-status-actions', () => ({
   ),
 }));
 vi.mock('@/lib/data/profiles', () => ({ getProfile: vi.fn() }));
-vi.mock('@/lib/data/payments', () => ({
-  getPaymentsEnabled: vi.fn(),
-  getPackageModelEnabled: vi.fn(),
-  getSumitPublicConfig: vi.fn(),
-}));
-vi.mock('@/lib/payments/package-purchase', () => ({ getPackagePaymentState: vi.fn() }));
+vi.mock('@/lib/data/payments', () => ({ getPaymentsEnabled: vi.fn(), getPackageModelEnabled: vi.fn() }));
+vi.mock('@/lib/payments/package-paid', () => ({ getPackagePaymentState: vi.fn() }));
 vi.mock('@/lib/auth/dal', () => ({ hasPlatformPermission: vi.fn(), requireUser: vi.fn() }));
 vi.mock('@/lib/data/cardcom-config', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/data/cardcom-config')>()), getCardcomServerConfig: vi.fn() }));
 vi.mock('@/lib/payments/cardcom-pending', () => ({ isCardcomPurchasePending: vi.fn() }));
 vi.mock('./package-payment-view', () => ({
   PackagePaymentView: (props: {
     screen: { kind: string; activation?: string; testTerminal?: boolean; testMoney?: boolean };
-    errorMessage: string | null;
-    formConfig: unknown;
-    provider?: string;
     googlePayTerminal?: number | null;
     signerEmail?: string;
     signerPhone?: string;
@@ -52,9 +45,6 @@ vi.mock('./package-payment-view', () => ({
       data-activation={props.screen.activation ?? ''}
       data-test-terminal={props.screen.testTerminal ? 'yes' : 'no'}
       data-test-money={props.screen.testMoney ? 'yes' : 'no'}
-      data-error={props.errorMessage ?? ''}
-      data-config={props.formConfig ? 'yes' : 'no'}
-      data-provider={props.provider ?? ''}
       data-google-pay={props.googlePayTerminal == null ? 'no' : String(props.googlePayTerminal)}
       data-email={props.signerEmail ?? ''}
       data-phone={props.signerPhone ?? ''}
@@ -68,22 +58,25 @@ import { getCampaign } from '@/lib/data/campaigns';
 import { canAccessEvent, getEvent, requireOwnedEvent } from '@/lib/data/events';
 import { CLOSE_BLOCKED_MONEY_ERROR } from '@/lib/data/event-lifecycle';
 import { getProfile } from '@/lib/data/profiles';
-import { getPackageModelEnabled, getPaymentsEnabled, getSumitPublicConfig } from '@/lib/data/payments';
+import { getPackageModelEnabled, getPaymentsEnabled } from '@/lib/data/payments';
 import { hasPlatformPermission, requireUser } from '@/lib/auth/dal';
 import { getCardcomServerConfig } from '@/lib/data/cardcom-config';
 import { isCardcomPurchasePending } from '@/lib/payments/cardcom-pending';
-import { getPackagePaymentState } from '@/lib/payments/package-purchase';
-import { PURCHASE_ERROR_MESSAGES } from '@/lib/payments/package-purchase-errors';
+import { getPackagePaymentState } from '@/lib/payments/package-paid';
 import CampaignPaymentPage from './page';
 
-// The payment step: a package campaign is paid by one purchase, decided from the payment ledger. It is a setup step
-// (design D2/D3, task 3.3): it renders inside the setup shell, and once the event is in management the owner is sent to
-// the event page.
+// The payment step: a package campaign is paid by one purchase through CardCom, decided from the payment ledger. It is a
+// setup step (design D2/D3, task 3.3): it renders inside the setup shell, and once the event is in management the owner
+// is sent to the event page.
 
 const EVENT_ID = 'e1';
 const CAMPAIGN_ID = 'c1';
 const EVENT_PAGE = `/app/events/${EVENT_ID}`;
 const EVENT_DATE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+const LIVE_TERMINAL = 172204;
+const TEST_TERMINAL = 1000;
+// The hosted project: a server that runs against a local database opens CardCom's test terminal to every buyer.
+const HOSTED_DATABASE_URL = 'https://abcdefghijklmnopqrst.supabase.co';
 
 function campaign(over: Record<string, unknown> = {}) {
   return {
@@ -95,11 +88,13 @@ function campaign(over: Record<string, unknown> = {}) {
   };
 }
 
-async function render(searchParams: Record<string, string> = {}): Promise<string> {
-  const tree = await CampaignPaymentPage({
-    params: Promise.resolve({ id: EVENT_ID, campaignId: CAMPAIGN_ID }),
-    searchParams: Promise.resolve(searchParams),
-  });
+// The CardCom connection: switched on, on a live terminal, unless a test says otherwise.
+function cardcom(over: Record<string, unknown> = {}) {
+  return { terminalNumber: LIVE_TERMINAL, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off', ...over };
+}
+
+async function render(): Promise<string> {
+  const tree = await CampaignPaymentPage({ params: Promise.resolve({ id: EVENT_ID, campaignId: CAMPAIGN_ID }) });
   return renderToStaticMarkup(tree);
 }
 
@@ -126,11 +121,10 @@ beforeEach(() => {
   vi.mocked(getProfile).mockResolvedValue({ id: 'u1', full_name: 'דנה כהן', phone: '0501234567', updated_at: null } as never);
   vi.mocked(getPaymentsEnabled).mockResolvedValue(true);
   vi.mocked(getPackageModelEnabled).mockResolvedValue(true);
-  vi.mocked(getSumitPublicConfig).mockResolvedValue({ companyId: 12345, apiPublicKey: 'pub-key' });
   vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'none', collected: 0, credit: 0, committed: 0 });
   vi.mocked(requireUser).mockResolvedValue({ id: 'u1', email: 'dana@example.com' } as never);
   vi.mocked(hasPlatformPermission).mockResolvedValue(false);
-  vi.mocked(getCardcomServerConfig).mockResolvedValue(null);
+  vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
   vi.mocked(isCardcomPurchasePending).mockResolvedValue(false);
 });
 
@@ -143,20 +137,18 @@ describe('payment page — a package campaign', () => {
     const html = await render();
     expect(html).toContain('data-marker="package-view"');
     expect(html).toContain('data-screen="form"');
-    expect(html).toContain('data-config="yes"');
     expect(html).not.toContain('תפיסה');
     expect(getPackagePaymentState).toHaveBeenCalledWith(CAMPAIGN_ID);
   });
 
-  it('decides "paid" from the ledger, not from a query string: paid is management, so the event page', async () => {
+  it('decides "paid" from the ledger: paid is management, so the event page; nothing recorded is the form', async () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0 });
     await expect(render()).rejects.toThrow('NEXT_REDIRECT');
     expect(redirect).toHaveBeenCalledWith(EVENT_PAGE);
-    // ...and a forged ?paid=1 with nothing recorded does not pretend
     vi.mocked(redirect).mockClear();
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'none', collected: 0, credit: 0, committed: 0 });
-    expect(await render({ paid: '1' })).toContain('data-screen="form"');
+    expect(await render()).toContain('data-screen="form"');
     expect(redirect).not.toHaveBeenCalled();
   });
 
@@ -165,10 +157,10 @@ describe('payment page — a package campaign', () => {
     ['paid with test money', 'approved', { testMoney: true }],
     ['running', 'active', {}],
     ['paused', 'paused', {}],
-  ] as const)('%s → the event page, whatever an older link says (D2)', async (_label, status, money) => {
+  ] as const)('%s → the event page (D2)', async (_label, status, money) => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120, status }) as never);
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'collected', collected: 120, credit: 0, committed: 0, ...money });
-    await expect(render({ paid: '1', activate: 'failed' })).rejects.toThrow('NEXT_REDIRECT');
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT');
     expect(redirect).toHaveBeenCalledWith(EVENT_PAGE);
   });
 
@@ -198,21 +190,13 @@ describe('payment page — a package campaign', () => {
     expect(redirect).not.toHaveBeenCalled();
   });
 
-  it('closed gates, or a missing provider configuration, never produce a form', async () => {
+  it('a closed gate never produces a form: payments off, the package model off', async () => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
+    vi.mocked(getPaymentsEnabled).mockResolvedValue(false);
+    expect(await render()).toContain('data-screen="unavailable"');
+    vi.mocked(getPaymentsEnabled).mockResolvedValue(true);
     vi.mocked(getPackageModelEnabled).mockResolvedValue(false);
     expect(await render()).toContain('data-screen="unavailable"');
-    vi.mocked(getPackageModelEnabled).mockResolvedValue(true);
-    vi.mocked(getSumitPublicConfig).mockResolvedValue(null);
-    const html = await render();
-    expect(html).toContain('data-screen="unavailable"');
-    expect(html).toContain('data-config="no"');
-  });
-
-  it('turns ?error= into one of OUR sentences only', async () => {
-    vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
-    expect(await render({ error: 'purchase_declined' })).toContain(`data-error="${PURCHASE_ERROR_MESSAGES.purchase_declined}"`);
-    expect(await render({ error: '<script>alert(1)</script>' })).toContain('data-error=""');
   });
 
   it('a campaign whose terms are not approved yet goes back to the approval step', async () => {
@@ -258,58 +242,56 @@ describe('payment page — a campaign without a package', () => {
   });
 });
 
-// Which clearing company's form the package screen shows is decided by resolvePurchaseProvider, with the same inputs the
-// purchase routes use. SUMIT unless the CardCom pilot is on; on CardCom's test terminal only for someone who may configure it.
-describe('payment page — the CardCom pilot', () => {
-  const cardcom = (over: Record<string, unknown> = {}) => ({ terminalNumber: 1001, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off', ...over });
+// CardCom is the only clearing company. Whether its form is open to this buyer is decided by cardcomTakesPurchase, with
+// the same inputs the purchase route uses: closed unless the switch is on, and on CardCom's test terminal open only to
+// someone who may configure the integration (or to anyone on a server that runs against a local database).
+describe('payment page — who CardCom takes the purchase from', () => {
   beforeEach(() => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
   });
 
-  it('shows SUMIT\'s form while CardCom is not configured or not switched on', async () => {
-    expect(await render()).toContain('data-provider="sumit"');
+  it('shows no form while CardCom is not configured or not switched on', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(null);
+    expect(await render()).toContain('data-screen="unavailable"');
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ enabled: false }) as never);
-    expect(await render()).toContain('data-provider="sumit"');
+    expect(await render()).toContain('data-screen="unavailable"');
   });
 
-  it('shows CardCom\'s form when the pilot is on, with the buyer\'s e-mail, and needs no SUMIT public configuration', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
-    vi.mocked(getSumitPublicConfig).mockResolvedValue(null);
+  it('shows the form when CardCom is on, with the buyer\'s e-mail and phone', async () => {
     const html = await render();
-    expect(html).toContain('data-provider="cardcom"');
     expect(html).toContain('data-screen="form"');
     expect(html).toContain('data-email="dana@example.com"');
     expect(html).toContain('data-phone="0501234567"');
   });
 
-  it('keeps a customer on SUMIT when the pilot is on the TEST terminal against the hosted project; an admin is on CardCom', async () => {
-    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://abcdefghijklmnopqrst.supabase.co'); // the hosted project: a local one opens the test terminal
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000 }) as never);
-    expect(await render()).toContain('data-provider="sumit"');
+  it('closes the form to a customer when CardCom is on the TEST terminal against the hosted project; an admin gets it', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', HOSTED_DATABASE_URL);
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: TEST_TERMINAL }) as never);
+    expect(await render()).toContain('data-screen="unavailable"');
     vi.mocked(hasPlatformPermission).mockResolvedValue(true);
-    expect(await render()).toContain('data-provider="cardcom"');
+    expect(await render()).toContain('data-screen="form"');
     expect(hasPlatformPermission).toHaveBeenCalledWith('integrations.manage');
   });
 
   it('puts a customer on CardCom\'s TEST terminal when the server runs against a local database, and says it is a test', async () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:54321');
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000 }) as never);
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: TEST_TERMINAL }) as never);
     const html = await render();
-    expect(html).toContain('data-provider="cardcom"');
+    expect(html).toContain('data-screen="form"');
     expect(html).toContain('data-test-terminal="yes"');
   });
 
-  it('a pending CardCom payment shows the form again (the same session is handed back); a pending SUMIT one stays "in progress"', async () => {
+  it('a pending payment shows the form again when its session can be handed back, and "in progress" otherwise', async () => {
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'pending', collected: 0, credit: 0, committed: 0 });
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
     vi.mocked(isCardcomPurchasePending).mockResolvedValue(true);
     expect(await render()).toContain('data-screen="form"');
     vi.mocked(isCardcomPurchasePending).mockResolvedValue(false);
     expect(await render()).toContain('data-screen="in_progress"');
   });
 
-  it('does not even ask about a pending CardCom purchase when SUMIT is the provider or nothing is pending', async () => {
+  it('does not even ask about a pending purchase when CardCom is closed to the buyer or nothing is pending', async () => {
     vi.mocked(getPackagePaymentState).mockResolvedValue({ status: 'pending', collected: 0, credit: 0, committed: 0 });
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(null);
     await render();
     expect(isCardcomPurchasePending).not.toHaveBeenCalled();
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
@@ -320,28 +302,22 @@ describe('payment page — the CardCom pilot', () => {
 
   it('says so on the form only when the connection is CardCom\'s TEST terminal', async () => {
     vi.mocked(hasPlatformPermission).mockResolvedValue(true);
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000 }) as never);
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: TEST_TERMINAL }) as never);
     expect(await render()).toContain('data-test-terminal="yes"');
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
     expect(await render()).toContain('data-test-terminal="no"');
   });
 
-  it('never says it for SUMIT\'s form, whatever terminal CardCom is configured with', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: 1000, enabled: false }) as never);
+  it('never says it while CardCom is switched off, whatever terminal it is configured with', async () => {
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ terminalNumber: TEST_TERMINAL, enabled: false }) as never);
     expect(await render()).toContain('data-test-terminal="no"');
-  });
-
-  it('a closed gate still closes the CardCom form', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom() as never);
-    vi.mocked(getPackageModelEnabled).mockResolvedValue(false);
-    expect(await render()).toContain('data-screen="unavailable"');
   });
 });
 
-// Google Pay (add-google-pay-cardcom): the PAGE decides whether it is offered, from the server-side setting, the buyer's rights,
-// the provider and the save-card setting, and hands the form the terminal of the same configuration that opens the session.
+// Google Pay (add-google-pay-cardcom): the PAGE decides whether it is offered, from the server-side setting, the buyer's
+// rights, whether CardCom takes the purchase and the save-card setting, and hands the form the terminal of the same
+// configuration that opens the session.
 describe('payment page — Google Pay', () => {
-  const cardcom = (over: Record<string, unknown> = {}) => ({ terminalNumber: 172204, apiName: 'kalfa-api', enabled: true, saveCardOnPurchase: false, googlePayMode: 'off', ...over });
   beforeEach(() => {
     vi.mocked(getCampaign).mockResolvedValue(campaign({ price: 120 }) as never);
   });
@@ -353,25 +329,25 @@ describe('payment page — Google Pay', () => {
     expect(await render()).toContain('data-google-pay="no"');
   });
 
-  it('is offered to every buyer through CardCom when the setting is all, with the terminal of the connection', async () => {
+  it('is offered to every buyer when the setting is all, with the terminal of the connection', async () => {
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'all' }) as never);
     const html = await render();
-    expect(html).toContain('data-provider="cardcom"');
-    expect(html).toContain('data-google-pay="172204"');
+    expect(html).toContain('data-screen="form"');
+    expect(html).toContain(`data-google-pay="${LIVE_TERMINAL}"`);
   });
 
   it('is offered only to someone who may configure the integration when the setting is admins', async () => {
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'admins' }) as never);
     expect(await render()).toContain('data-google-pay="no"');
     vi.mocked(hasPlatformPermission).mockResolvedValue(true);
-    expect(await render()).toContain('data-google-pay="172204"');
+    expect(await render()).toContain(`data-google-pay="${LIVE_TERMINAL}"`);
     expect(hasPlatformPermission).toHaveBeenCalledWith('integrations.manage');
   });
 
-  it('is never offered on SUMIT\'s form, whatever the setting is', async () => {
+  it('is never offered while CardCom is switched off, whatever the setting is', async () => {
     vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'all', enabled: false }) as never);
     const html = await render();
-    expect(html).toContain('data-provider="sumit"');
+    expect(html).toContain('data-screen="unavailable"');
     expect(html).toContain('data-google-pay="no"');
   });
 
@@ -385,10 +361,11 @@ describe('payment page — Google Pay', () => {
     expect(await render()).toContain('data-google-pay="no"');
   });
 
-  it('is not offered to an ordinary buyer on CardCom\'s test terminal even when the setting is all (they stay on SUMIT)', async () => {
-    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'all', terminalNumber: 1000 }) as never);
+  it('is not offered to an ordinary buyer on CardCom\'s test terminal even when the setting is all (the form is closed to them)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', HOSTED_DATABASE_URL);
+    vi.mocked(getCardcomServerConfig).mockResolvedValue(cardcom({ googlePayMode: 'all', terminalNumber: TEST_TERMINAL }) as never);
     const html = await render();
-    expect(html).toContain('data-provider="sumit"');
+    expect(html).toContain('data-screen="unavailable"');
     expect(html).toContain('data-google-pay="no"');
   });
 });

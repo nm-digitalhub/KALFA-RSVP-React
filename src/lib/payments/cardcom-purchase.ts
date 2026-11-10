@@ -19,7 +19,7 @@ import { settleCardcomSession } from './cardcom-settle';
 import { beginOperation, completeOperation } from './ledger';
 import { getPackagePaymentState } from './package-paid';
 import { receiptLineFor } from './package-receipt';
-import { resolvePurchaseProvider } from './provider';
+import { cardcomTakesPurchase } from './provider';
 
 // Opens a CardCom Open Fields payment session for a fixed-price package purchase (docs/superpowers/plans/
 // 2026-10-07-cardcom-pilot-plan.md, 4.3). The CardCom counterpart of purchasePackage (package-purchase.ts), with the same
@@ -99,7 +99,7 @@ async function resolvePending(admin: AdminClient, campaignId: string): Promise<P
     .maybeSingle();
   if (error) return { next: 'in_progress' };
   if (!pending) return { next: 'proceed' };
-  // A SUMIT charge in flight, or a row whose session was never recorded: not ours to judge.
+  // A row that is not a CardCom session, or whose session was never recorded: not ours to judge.
   if (asMeta(pending.meta).provider !== 'cardcom') return { next: 'in_progress' };
   const { data: session } = await admin.from('cardcom_payment_sessions').select('low_profile_id').eq('operation_id', pending.id).maybeSingle();
   if (!session) return { next: 'in_progress' };
@@ -118,7 +118,7 @@ export async function startCardcomPurchase(input: CardcomStartInput): Promise<Ca
   // 1. Gates. Each reader resolves to "off / not configured" on any error.
   const [paymentsOn, packageOn, config] = await Promise.all([getPaymentsEnabled(), getPackageModelEnabled(), getCardcomServerConfig()]);
   if (!paymentsOn || !packageOn || !config) return { status: 'disabled' };
-  if (resolvePurchaseProvider(config, input.mayUseTestTerminal) !== 'cardcom') return { status: 'disabled' };
+  if (!cardcomTakesPurchase(config, input.mayUseTestTerminal)) return { status: 'disabled' };
 
   // 2. A fixed price (the current round's, via the pricing module). NULL is a pay-per-result campaign: never charged here.
   const price = campaign.price == null ? Number.NaN : Number(campaign.price);

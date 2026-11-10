@@ -23,13 +23,9 @@ import {
   type CampaignStatus,
 } from '@/lib/data/campaign-status';
 import { CAMPAIGN_STATUS_LABELS } from '@/lib/data/event-labels';
-import {
-  checkPackageRefund,
-  packagePaymentRecord,
-  packageRefundSummary,
-  refundPackagePayment,
-  type PackagePaymentRecord,
-} from '@/lib/payments/package-refund';
+import { cardcomRefundSummary, checkCardcomRefund, refundCardcomPayment } from '@/lib/payments/cardcom-refund';
+import { packagePaymentRecord } from '@/lib/payments/package-refund';
+import type { PackagePaymentRecord } from '@/lib/payments/package-refund-types';
 import type { ProviderDocument } from '@/lib/payments/ledger';
 import { getAppOrigin } from '@/lib/url';
 import { logActivity } from '@/lib/data/activity';
@@ -389,7 +385,7 @@ export async function getCampaignForEventAdmin(
   if (isPackage) {
     try {
       const [summary, record] = await Promise.all([
-        packageRefundSummary(data.id, cancellationRequestId),
+        cardcomRefundSummary(data.id, cancellationRequestId),
         packagePaymentRecord(data.id, cancellationRequestId),
       ]);
       packageRecord = record;
@@ -456,8 +452,8 @@ export async function computeSuggestedCancellationAmount(base: number): Promise<
 
 // Money is decided and MOVED here (when there's still something to move), then notified, then persisted.
 //   - A fixed-price PACKAGE: paid once at purchase, so money only goes BACK, through the payment ledger
-//     (refundPackagePayment, src/lib/payments/package-refund.ts) — all of what the card paid for full_cancellation, what
-//     is beyond the amount that STAYS with us for partial_charge. It is checked first (checkPackageRefund): a refund that
+//     (refundCardcomPayment, src/lib/payments/cardcom-refund.ts) — all of what the card paid for full_cancellation, what
+//     is beyond the amount that STAYS with us for partial_charge. It is checked first (checkCardcomRefund): a refund that
 //     cannot be made (no saved card or cancellable document, payments off, ledger unreadable) stops here and the customer
 //     is told nothing. When nothing was paid (or it all went back already) there is no refund to make: the request is
 //     approved and no money moves. A refund that CAN be made is made BEFORE the e-mail, and the e-mail says what went
@@ -518,7 +514,7 @@ export async function resolveCancellationRequest(
   // never refunded from, and a charge never taken on, a cancelled campaign. Newest first, then the live one.
   const campaign = liveCampaignOf([...event.campaigns].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')));
   // A fixed-price package was paid at purchase. Resolving its request means giving money BACK through the payment ledger
-  // (package-refund.ts); the pieces for that are decided here, before any money moves or the customer is e-mailed.
+  // (cardcom-refund.ts); the pieces for that are decided here, before any money moves or the customer is e-mailed.
   // Whether the live campaign IS a package comes from its pricing round (the pricing module).
   const isPackage = campaign !== null && (await getCurrentPricing(campaign.id)) !== null;
 
@@ -532,7 +528,7 @@ export async function resolveCancellationRequest(
   let refundedBefore = 0;
   if (isPackage && campaign) {
     try {
-      const summary = await packageRefundSummary(campaign.id, requestId);
+      const summary = await cardcomRefundSummary(campaign.id, requestId);
       packagePaid = Math.round((summary.refundable + summary.refundedForRequest) * 100) / 100;
       refundedBefore = summary.refundedForRequest;
     } catch {
@@ -605,7 +601,7 @@ export async function resolveCancellationRequest(
   if (isPackage && campaign && resolution !== 'declined') {
     packagePlan = planPackageRefund({ paid: packagePaid ?? 0, resolution, resolutionAmount });
     if (packagePlan.refund > 0) {
-      const blocked = await checkPackageRefund({
+      const blocked = await checkCardcomRefund({
         campaignId: campaign.id,
         eventId: event.id,
         amount: packagePlan.refund,
@@ -698,7 +694,7 @@ export async function resolveCancellationRequest(
     // The money goes back through the ledger: a pending row first, the clearing company second, the outcome recorded
     // third. Anything but a confirmed refund is an error the admin sees, with the request left open and NO e-mail sent —
     // the refund is made once per request, so trying again is safe where the module says so.
-    const refund = await refundPackagePayment({
+    const refund = await refundCardcomPayment({
       campaignId: campaign.id,
       eventId: event.id,
       amount: packagePlan.refund,
