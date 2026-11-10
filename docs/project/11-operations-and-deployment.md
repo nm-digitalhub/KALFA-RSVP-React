@@ -221,13 +221,26 @@ npm run typecheck && npm run lint && npm run test && npm run deploy
 `NEXT_DIST_DIR=.next-typecheck next typegen && tsc --noEmit -p tsconfig.typecheck.json`.
 `tsconfig.typecheck.json` יורש את `tsconfig.json` ומציין **תיקיית types אחת** (`.next-typecheck`),
 ולכן לא תלוי בתיקיות הישנות ולא נוגע ב-`.next` החי. אומת: עם קובץ ישן שהוטמן בכוונה ב-`.next-verify/types`,
-`tsc --noEmit` נכשל (שגיאה אחת) ו-`npm run typecheck` נקי. ‏`next typegen` מוסיף בעצמו את
-`.next-typecheck/types/**/*.ts` ל-`tsconfig.json` בהרצה הראשונה — זה צפוי.
+`tsc --noEmit` נכשל (שגיאה אחת) ו-`npm run typecheck` נקי.
+
+**אותה עמידות לבנייה עצמה — `tsconfig.<label>.json` (10.11.2026):** `next build` בודק את **כל** הפרויקט
+שה-tsconfig שלו בוחר (`config/next-config-js/useTypeScriptCli.md`), ולכן קובץ route ישן בתיקיית build
+**אחרת** הפיל כל בנייה, כולל `npm run deploy`. נמדד 10.11: אחרי מחיקת `api/campaigns/[id]/purchase/route.ts`
+נכשלו `npm run build` ו-`npm run e2e:build` על `.next/types` (של האתר החי, מתחדש רק ב-deploy מוצלח) ועל
+`.next-e2e/types` — מלכודת מעגלית. התיקון הוא האפשרות המתועדת `typescript.tsconfigPath`
+(`config/typescript.md`, "Custom tsconfig path"): `next.config.ts` (`buildTsconfigPath`) בוחר לתיקיית build
+`.next-<label>` את `tsconfig.<label>.json` — `tsconfig.verify.json`, `tsconfig.stage.json`, `tsconfig.e2e.json`,
+`tsconfig.typecheck.json` — שכל אחד יורש את `tsconfig.json` וכולל רק את תיקיית ה-types של עצמו. `tsconfig.json`
+חזר לצורה שבתיעוד (`.next/types` + `.next/dev/types` בלבד) ומשמש את העורך ואת `next dev`. `NEXT_DIST_DIR` עם
+label שאין לו קובץ כזה נופל ל-`tsconfig.json`, ואז Next מוסיף לו את שורות ה-types של אותה תיקייה — למחוק אותן
+אחרי בנייה אד-הוק. אומת 10.11: `npm run build` עובר (exit 0) כשב-`.next/types` וב-`.next-e2e/types` עדיין
+יושב הקובץ הישן, ואף קובץ tsconfig לא נערך על ידי הבנייה או על ידי `next typegen`.
 
 **ניקוי תיקיות build:** כל `.next-*` מתעלמים ב-git (`.gitignore: /.next-*/`) וב-ESLint, ונוצרות מחדש
 בבנייה הבאה: `.next-verify` (`npm run build`), `.next-stage` (`npm run deploy`, נעלמת אחרי ההחלפה),
 `.next-typecheck` (`npm run typecheck`, קטנה). אפשר למחוק את כולן חוץ מ-`.next` (החי) כשאין בנייה רצה.
-‏15.10.2026 נמחקו `.next-verify` (4.7GB) ו-`.next-local-e2e` (439MB).
+‏15.10.2026 נמחקו `.next-verify` (4.7GB) ו-`.next-local-e2e` (439MB). ‏10.11.2026 נמחקה `.next-rewrite` (2GB),
+תיקייה של בנייה אד-הוק מ-6.11 שאף סקריפט לא יוצר.
 
 **מודל סביבת הריצה (ecosystem.config.cjs, ‏2026-07-06):** שני התהליכים
 מוגדרים בקובץ ecosystem עם env מינימלי ומפורש (`NODE_ENV` בלבד); את הסודות

@@ -1,0 +1,19 @@
+{
+  // Used by `next build` when NEXT_DIST_DIR=.next-verify (npm run build); next.config.ts selects it through
+  // `typescript.tsconfigPath` (docs: 01-app/03-api-reference/05-config/02-typescript.md, "Custom tsconfig path").
+  //
+  // Same compiler options and excludes as tsconfig.json (inherited), but `include` names ONLY this build's own
+  // generated-types directory. `next build` type-checks the complete project its tsconfig selects, so a route stub
+  // left in ANOTHER build directory for a route that was since deleted (.next of the live site, .next-e2e, …) failed
+  // every build, the deploy included (measured 10.11.2026). Both patterns Next looks for are listed, so a build never
+  // edits this file.
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts",
+    ".next-verify/types/**/*.ts",
+    ".next-verify/dev/types/**/*.ts"
+  ]
+}

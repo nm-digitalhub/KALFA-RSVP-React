@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { NextConfig } from 'next';
@@ -19,6 +19,20 @@ function readDeployId(): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+// The build directory: `.next` (what pm2's `next start` serves) unless a script names an isolated one.
+const DIST_DIR = process.env.NEXT_DIST_DIR || '.next';
+
+// The tsconfig a build type-checks with (docs: config/typescript, "Custom tsconfig path"). `next build` checks the
+// COMPLETE project its tsconfig selects, and tsconfig.json is the editor's file. So an isolated build directory
+// `.next-<label>` checks with `tsconfig.<label>.json`, which includes that directory's generated types and no other:
+// a route stub left in another build directory for a deleted route can then never fail this build. A label without
+// such a file (an ad-hoc NEXT_DIST_DIR) falls back to tsconfig.json.
+function buildTsconfigPath(): string {
+  if (!DIST_DIR.startsWith('.next-')) return 'tsconfig.json';
+  const candidate = `tsconfig.${DIST_DIR.slice('.next-'.length)}.json`;
+  return existsSync(join(process.cwd(), candidate)) ? candidate : 'tsconfig.json';
 }
 
 // The exact Supabase storage host for the image-optimizer allowlist. Falls
@@ -64,7 +78,8 @@ const nextConfig: NextConfig = {
   // Server Action" and webpack chunk (`require is not a function`) errors until
   // a restart. `next start` (pm2) leaves NEXT_DIST_DIR unset → always uses
   // `.next`; the deploy script atomically swaps the freshly built dir in.
-  distDir: process.env.NEXT_DIST_DIR || '.next',
+  distDir: DIST_DIR,
+  typescript: { tsconfigPath: buildTsconfigPath() },
   // The vhost HOME above us is itself a git project with its own lockfile
   // (the Laravel site), so Next's workspace-root inference walks up, picks the
   // WRONG root, and traces from there. Declare the truth explicitly: this app

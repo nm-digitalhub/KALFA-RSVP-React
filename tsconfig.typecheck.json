@@ -3,7 +3,7 @@
   // (inherited), but `include` names exactly ONE generated-types directory.
   //
   // Why: Next appends "<distDir>/types/**/*.ts" to tsconfig.json's `include` for every
-  // distDir a build has used (.next, .next-verify, .next-stage, .next-verify-claude, …).
+  // distDir a build has used with that tsconfig (.next, and before 10.11.2026 every .next-<label> too).
   // A stale route stub left in ANY of them — e.g. for a page that was deleted — then
   // fails `tsc --noEmit` even though the source is fine (measured 15.10.2026: 8 errors,
   // all in .next/types and .next-verify/types, none in src/).
