@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { requireConsoleAction, requireConsoleAgent } from '@/lib/auth/console-agent';
@@ -10,6 +9,7 @@ import {
   PACKAGE_NOT_PAID_ERROR,
   PACKAGE_PAYMENT_UNVERIFIED_ERROR,
 } from '@/lib/data/package-activation-errors';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 // POST /api/campaigns/{id}/status   body: { action: 'activate' | 'pause' }
@@ -43,13 +43,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const uuidSchema = z.uuid();
 const bodySchema = z.strictObject({ action: z.enum(['activate', 'pause']) });
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
 
 // The domain layer throws Hebrew, user-safe messages for every refusal a caller
 // can legitimately hit (wrong current status, past event, unpublished event).

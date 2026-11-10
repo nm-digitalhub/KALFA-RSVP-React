@@ -1,5 +1,4 @@
-import { NextResponse } from 'next/server';
-
+import { noStoreJson as json } from '@/lib/http/no-store-json';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { verifyOtp } from '@/lib/data/otp';
 import {
@@ -75,7 +74,6 @@ import { CALL_ME_NOW_OTP_PURPOSE, callMeNowVerifyBodySchema } from '@/lib/valida
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const MAX_BODY_BYTES = 512;
 const FLOOD_RATE = { limit: 10, windowMs: 60_000 } as const;
 const START_TIMEOUT_MS = 25_000; // matches outreach-calls.ts's own StartScenarios timeout
@@ -88,10 +86,6 @@ const START_TIMEOUT_MS = 25_000; // matches outreach-calls.ts's own StartScenari
 // rule id is hard-coded anywhere in src/. Blank/absent is the normal
 // fail-closed state and is rejected by the numeric guard below, so this
 // route stays inert until an admin binds a real id AND the flag is on.
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
 
 const REFUSED = { ok: false as const };
 

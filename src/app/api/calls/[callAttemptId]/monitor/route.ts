@@ -1,15 +1,14 @@
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
-import { getCallAttemptById, TERMINAL_STATUSES } from '@/lib/data/call-attempts';
+import { loadLiveCallAttempt } from '@/lib/console-calls/live-call-attempt';
+import { invalidCallIdResponse } from '@/lib/console-calls/live-call-command';
+import { requireManageVoiceAgent } from '@/lib/console-calls/route-auth';
 import {
   attachableVoxUsername,
   createRequestedLeg,
   monitorEnabled,
 } from '@/lib/data/console-monitor';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
 import { attachModeSchema, type CommandEnvelope } from '@/lib/validation/agent-console';
-import { pickSessionUrl, postCommandToSession } from '@/lib/voximplant/session-command';
+import { postCommandToSession } from '@/lib/voximplant/session-command';
 
 // POST /api/calls/{callAttemptId}/monitor   body: { mode: 'monitor' | 'takeover' }
 //
@@ -33,25 +32,13 @@ import { pickSessionUrl, postCommandToSession } from '@/lib/voximplant/session-c
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.uuid();
-const TERMINAL: ReadonlySet<string> = new Set(TERMINAL_STATUSES);
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ callAttemptId: string }> },
 ) {
-  const auth = await requireConsoleAgent(request);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
+  const auth = await requireManageVoiceAgent(request);
+  if (!auth.ok) return auth.response;
   const { ctx } = auth;
-
-  if (!(await callerHasPlatformPermission(ctx.supabase, 'manage_voice'))) {
-    return json({ error: 'אין הרשאה' }, 403);
-  }
 
   // Feature gate FIRST — before touching the call or creating a leg. When off the
   // answer is an honest "not available yet", not a leg that never connects.
@@ -60,9 +47,8 @@ export async function POST(
   }
 
   const { callAttemptId } = await params;
-  if (!uuidSchema.safeParse(callAttemptId).success) {
-    return json({ error: 'מזהה שיחה לא תקין' }, 400);
-  }
+  const badId = invalidCallIdResponse(callAttemptId);
+  if (badId) return badId;
 
   const parsed = attachModeSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return json({ error: 'גוף הבקשה אינו תקין' }, 400);
@@ -76,20 +62,9 @@ export async function POST(
     return json({ error: 'לא הוקצתה זהות למוקד עבור נציג זה' }, 409);
   }
 
-  let attempt;
-  try {
-    attempt = await getCallAttemptById(callAttemptId);
-  } catch {
-    return json({ error: 'טעינת השיחה נכשלה' }, 500);
-  }
-  if (!attempt) return json({ error: 'שיחה לא נמצאה' }, 404);
-
-  if (TERMINAL.has(attempt.status)) return json({ error: 'השיחה אינה פעילה' }, 409);
-  const sessionUrl = pickSessionUrl(
-    attempt.media_session_access_secure_url,
-    attempt.media_session_access_url,
-  );
-  if (!sessionUrl) return json({ error: 'השיחה אינה פעילה' }, 409);
+  const live = await loadLiveCallAttempt(callAttemptId);
+  if (!live.ok) return live.response;
+  const { attempt, sessionUrl } = live;
 
   // Record the intent BEFORE dialing the leg: the request_id it returns is what
   // correlates the command with the scenario's later status callbacks, and it

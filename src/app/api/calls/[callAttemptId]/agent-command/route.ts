@@ -1,17 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
-import { getCallAttemptById, TERMINAL_STATUSES } from '@/lib/data/call-attempts';
+import { loadLiveCallAttempt } from '@/lib/console-calls/live-call-attempt';
+import { invalidCallIdResponse } from '@/lib/console-calls/live-call-command';
+import { requireManageVoiceAgent } from '@/lib/console-calls/route-auth';
 import { recordConsoleAgentCommand } from '@/lib/data/console-agent-commands';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
+import { readJsonBody } from '@/lib/http/read-json-body';
 import {
   agentCommandBodySchema,
   type AgentCommandResult,
   type CommandEnvelope,
 } from '@/lib/validation/agent-console';
-import { pickSessionUrl, postCommandToSession } from '@/lib/voximplant/session-command';
+import { postCommandToSession } from '@/lib/voximplant/session-command';
 
 // POST /api/calls/{callAttemptId}/agent-command
 //
@@ -38,65 +38,36 @@ import { pickSessionUrl, postCommandToSession } from '@/lib/voximplant/session-c
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_BODY_BYTES = 8 * 1024;
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.uuid();
-const TERMINAL: ReadonlySet<string> = new Set(TERMINAL_STATUSES);
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
+const MAX_BODY_CHARS = 8 * 1024;
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ callAttemptId: string }> },
 ) {
-  const auth = await requireConsoleAgent(request);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
+  // Console-agent membership, then the authority to issue AI commands (manage_voice) —
+  // route-level only, never folded into is_console_agent().
+  const auth = await requireManageVoiceAgent(request);
+  if (!auth.ok) return auth.response;
   const { ctx } = auth;
 
-  // Authority to issue AI commands. Route-level only (never in is_console_agent()).
-  if (!(await callerHasPlatformPermission(ctx.supabase, 'manage_voice'))) {
-    return json({ error: 'אין הרשאה' }, 403);
-  }
-
   const { callAttemptId } = await params;
-  if (!uuidSchema.safeParse(callAttemptId).success) {
-    return json({ error: 'מזהה שיחה לא תקין' }, 400);
-  }
+  const badId = invalidCallIdResponse(callAttemptId);
+  if (badId) return badId;
 
-  const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) return json({ error: 'בקשה גדולה מדי' }, 413);
+  const read = await readJsonBody(request, { maxSize: MAX_BODY_CHARS, measure: 'string-length' });
+  if (!read.ok) return read.response;
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  }
-
-  const result = agentCommandBodySchema.safeParse(parsed);
+  const result = agentCommandBodySchema.safeParse(read.value);
   if (!result.success) return json({ error: 'פקודה לא תקינה' }, 400);
   const body = result.data;
 
   // media_session_access_(secure_)url is server-only (never RLS-exposed). Read it
   // via the service-role DAL; authorization was already established above.
-  let attempt;
-  try {
-    attempt = await getCallAttemptById(callAttemptId);
-  } catch {
-    return json({ error: 'טעינת השיחה נכשלה' }, 500);
-  }
-  if (!attempt) return json({ error: 'שיחה לא נמצאה' }, 404);
-
-  // A managing handle is live only for the call's duration. Reject terminal
-  // attempts and rows with no usable handle (mirrors the app's 409 branch).
-  if (TERMINAL.has(attempt.status)) return json({ error: 'השיחה אינה פעילה' }, 409);
-  const sessionUrl = pickSessionUrl(
-    attempt.media_session_access_secure_url,
-    attempt.media_session_access_url,
-  );
-  if (!sessionUrl) return json({ error: 'השיחה אינה פעילה' }, 409);
+  // A managing handle is live only for the call's duration. Terminal attempts and
+  // rows with no usable handle are rejected (mirrors the app's 409 branch).
+  const live = await loadLiveCallAttempt(callAttemptId);
+  if (!live.ok) return live.response;
+  const { attempt, sessionUrl } = live;
 
   const request_id = randomUUID();
   const payload: Record<string, unknown> =

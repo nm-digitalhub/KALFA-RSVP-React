@@ -1,7 +1,6 @@
-import { NextResponse } from 'next/server';
-
 import { requireConsoleAgent } from '@/lib/auth/console-agent';
 import { fetchVoxCallHistory } from '@/lib/data/vox-call-history';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
 import { normalizePhone } from '@/lib/phone';
 import { rateLimit } from '@/lib/security/rate-limit';
 
@@ -35,15 +34,10 @@ import { rateLimit } from '@/lib/security/rate-limit';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const RATE = { limit: 60, windowMs: 60_000 } as const;
 
 /** Matches the app's HistoryRange values; 90 is the outer bound we will serve. */
 const MAX_DAYS = 90;
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
 
 export async function GET(request: Request) {
   const auth = await requireConsoleAgent(request);

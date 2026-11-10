@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { requireManageVoiceAgent } from '@/lib/console-calls/route-auth';
 import { recordDispatchAccepted, settleDispatchFailure } from '@/lib/data/call-dispatch-status';
 import { isContactReached } from '@/lib/data/outreach-engine';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
 import { CALL_RETRY, QUEUES, type OutreachCallRequest } from '@/lib/queue/queues';
 import { getWebJobSender } from '@/lib/queue/web-sender';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -47,24 +47,15 @@ import { createAdminClient } from '@/lib/supabase/admin';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const uuid = z.uuid();
 const bodySchema = z.strictObject({ guest_id: z.uuid() });
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ eventId: string }> },
 ) {
-  const auth = await requireConsoleAgent(request);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
-  if (!(await callerHasPlatformPermission(auth.ctx.supabase, 'manage_voice'))) {
-    return json({ error: 'אין הרשאה' }, 403);
-  }
+  const auth = await requireManageVoiceAgent(request);
+  if (!auth.ok) return auth.response;
 
   const { eventId } = await params;
   if (!uuid.safeParse(eventId).success) return json({ error: 'מזהה אירוע לא תקין' }, 400);

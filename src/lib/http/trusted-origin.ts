@@ -1,6 +1,8 @@
-// A narrow, deliberate duplication of `originFromEnv()` from `@/lib/url` —
-// NOT a re-export, NOT an import of `getAppOrigin()`. Two independent
-// reasons, both real:
+// The APP_ORIGIN parser, and the proxy layer's own origin resolver.
+//
+// `@/lib/url` imports `originFromEnv` from HERE, never the other way round, and
+// this module must not import `getAppOrigin()`. Two independent reasons, both
+// real:
 //
 // 1. Trust: the internal self-fetch in serve-markdown.ts must target a fixed,
 //    known-good origin — never `request.nextUrl.origin` / `request.url`,
@@ -21,12 +23,12 @@
 //    Component boundary; nothing documents its behavior inside the separate
 //    Proxy/Middleware compilation unit. Rather than being the first import to
 //    test that undocumented combination, this module follows the graph's
-//    existing, proven convention.
-//
-// Keep in sync with `originFromEnv()` in `@/lib/url` if that validation ever
-// changes — same APP_ORIGIN contract, same failure semantics.
+//    existing, proven convention — so it stays free of imports.
 
-function originFromEnv(): string | null {
+// APP_ORIGIN must be a bare http(s) origin — no credentials, path, query or
+// fragment — so callers only ever get back a trusted `url.origin`. Null when
+// unset; throws when set but malformed.
+export function originFromEnv(): string | null {
   const configured = process.env.APP_ORIGIN?.trim();
   if (!configured) return null;
   let url: URL;

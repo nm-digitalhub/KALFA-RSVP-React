@@ -1,6 +1,4 @@
-import { NextResponse } from 'next/server';
-
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
+import { requireManageVoiceAgent } from '@/lib/console-calls/route-auth';
 import {
   MANUAL_DIAL_MAX_LIVE_CALLS,
   consoleManualDialEnabled,
@@ -12,6 +10,8 @@ import {
   resolveDialTarget,
 } from '@/lib/data/console-calls';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
+import { readJsonBody } from '@/lib/http/read-json-body';
 import { dialIntentBodySchema } from '@/lib/validation/console-calls';
 
 // POST /api/console-calls/dial-intent   Bearer   body: dialIntentBodySchema, a
@@ -39,36 +39,20 @@ import { dialIntentBodySchema } from '@/lib/validation/console-calls';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const MAX_BODY_BYTES = 2_048;
 
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 export async function POST(request: Request) {
-  const auth = await requireConsoleAgent(request);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
+  const auth = await requireManageVoiceAgent(request);
+  if (!auth.ok) return auth.response;
   const { ctx } = auth;
 
-  if (!(await callerHasPlatformPermission(ctx.supabase, 'manage_voice'))) {
-    return json({ error: 'אין הרשאה' }, 403);
-  }
-
-  const declaredLen = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
-    return json({ error: 'בקשה גדולה מדי' }, 413);
-  }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json({ error: 'בקשה גדולה מדי' }, 413);
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(raw);
-  } catch {
-    return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  }
-  const parsed = dialIntentBodySchema.safeParse(parsedJson);
+  const read = await readJsonBody(request, {
+    maxSize: MAX_BODY_BYTES,
+    measure: 'utf8-bytes',
+    checkDeclaredLength: true,
+  });
+  if (!read.ok) return read.response;
+  const parsed = dialIntentBodySchema.safeParse(read.value);
   if (!parsed.success) return json({ error: 'גוף הבקשה אינו תקין' }, 400);
 
   // 3-6: fresh DB load + DNC + quiet-hours/Shabbat, all fail-closed.

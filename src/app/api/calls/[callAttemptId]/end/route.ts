@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
-import { getCallAttemptById, TERMINAL_STATUSES } from '@/lib/data/call-attempts';
+import { loadLiveCallAttempt } from '@/lib/console-calls/live-call-attempt';
+import { invalidCallIdResponse } from '@/lib/console-calls/live-call-command';
+import { requireManageVoiceAgent } from '@/lib/console-calls/route-auth';
+import { noStoreJson } from '@/lib/http/no-store-json';
 import type { CommandEnvelope } from '@/lib/validation/agent-console';
-import { pickSessionUrl, postCommandToSession } from '@/lib/voximplant/session-command';
+import { postCommandToSession } from '@/lib/voximplant/session-command';
 
 // POST /api/calls/{callAttemptId}/end
 //
@@ -33,50 +32,26 @@ import { pickSessionUrl, postCommandToSession } from '@/lib/voximplant/session-c
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.uuid();
-const TERMINAL: ReadonlySet<string> = new Set(TERMINAL_STATUSES);
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ callAttemptId: string }> },
 ) {
-  const auth = await requireConsoleAgent(request);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
-  const { ctx } = auth;
-
-  if (!(await callerHasPlatformPermission(ctx.supabase, 'manage_voice'))) {
-    return json({ error: 'אין הרשאה' }, 403);
-  }
+  const auth = await requireManageVoiceAgent(request);
+  if (!auth.ok) return auth.response;
 
   const { callAttemptId } = await params;
-  if (!uuidSchema.safeParse(callAttemptId).success) {
-    return json({ error: 'מזהה שיחה לא תקין' }, 400);
-  }
+  const badId = invalidCallIdResponse(callAttemptId);
+  if (badId) return badId;
 
   // No body is read: ending a call takes no parameters, so there is nothing to
   // validate and nothing a caller could smuggle in.
-  let attempt;
-  try {
-    attempt = await getCallAttemptById(callAttemptId);
-  } catch {
-    return json({ error: 'טעינת השיחה נכשלה' }, 500);
-  }
-  if (!attempt) return json({ error: 'שיחה לא נמצאה' }, 404);
-
+  //
   // Already over, or no usable handle — 409, matching /agent-command and the
   // branch the app already handles. Ending an ended call is not an error worth
   // alarming anyone about, but it is not a success either.
-  if (TERMINAL.has(attempt.status)) return json({ error: 'השיחה אינה פעילה' }, 409);
-  const sessionUrl = pickSessionUrl(
-    attempt.media_session_access_secure_url,
-    attempt.media_session_access_url,
-  );
-  if (!sessionUrl) return json({ error: 'השיחה אינה פעילה' }, 409);
+  const live = await loadLiveCallAttempt(callAttemptId);
+  if (!live.ok) return live.response;
+  const { attempt, sessionUrl } = live;
 
   const request_id = randomUUID();
   const envelope: CommandEnvelope = {
@@ -87,9 +62,9 @@ export async function POST(
   };
 
   const delivery = await postCommandToSession(sessionUrl, envelope);
-  if (!delivery.delivered) return json({ error: 'הפקודה לא נמסרה לשיחה' }, 502);
+  if (!delivery.delivered) return noStoreJson({ error: 'הפקודה לא נמסרה לשיחה' }, 502);
 
   // Delivered. The call ends asynchronously and the attempt row closes via the
   // terminal callback — that row, not this response, is the record of the outcome.
-  return json({ delivered: true, request_id }, 202);
+  return noStoreJson({ delivered: true, request_id }, 202);
 }

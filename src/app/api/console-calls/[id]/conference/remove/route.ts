@@ -1,21 +1,6 @@
-import { randomUUID } from 'node:crypto';
-
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
-import {
-  getConsoleCallById,
-  getConsoleCallSessionUrls,
-  LIVE_CUSTOMER_CALL_KINDS,
-  recordConsoleConferenceAudit,
-} from '@/lib/data/console-calls';
-import { consoleEmptyActionBodySchema } from '@/lib/validation/console-calls';
-import {
-  pickSessionUrl,
-  postCommandToSession,
-  type SessionCommandEnvelope,
-} from '@/lib/voximplant/session-command';
+import { deliverParameterlessCallCommand } from '@/lib/console-calls/live-call-command';
+import { requireManageVoiceAgent } from '@/lib/console-calls/route-auth';
+import { recordConsoleConferenceAudit } from '@/lib/data/console-calls';
 
 // POST /api/console-calls/{id}/conference/remove   body: {}
 //
@@ -41,80 +26,22 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_BODY_BYTES = 256;
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.uuid();
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireConsoleAgent(request);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
-  const { ctx } = auth;
+  const auth = await requireManageVoiceAgent(request);
+  if (!auth.ok) return auth.response;
 
-  if (!(await callerHasPlatformPermission(ctx.supabase, 'manage_voice'))) {
-    return json({ error: 'אין הרשאה' }, 403);
-  }
-
-  const { id: callId } = await params;
-  if (!uuidSchema.safeParse(callId).success) {
-    return json({ error: 'מזהה שיחה לא תקין' }, 400);
-  }
-
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json({ error: 'בקשה גדולה מדי' }, 413);
-  let parsedJson: unknown;
-  try {
-    parsedJson = raw.length > 0 ? JSON.parse(raw) : {};
-  } catch {
-    return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  }
-  if (!consoleEmptyActionBodySchema.safeParse(parsedJson).success) {
-    return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  }
-
-  const call = await getConsoleCallById(callId);
-  if (!call) return json({ error: 'שיחה לא נמצאה' }, 404);
-  if (!LIVE_CUSTOMER_CALL_KINDS.has(call.kind)) {
-    return json({ error: 'לא ניתן להסיר משתתף בשיחה מסוג זה' }, 409);
-  }
-  if (call.status !== 'connected') {
-    return json({ error: 'השיחה אינה מחוברת כעת' }, 409);
-  }
-
-  const sessionUrls = await getConsoleCallSessionUrls(callId);
-  const sessionUrl = pickSessionUrl(
-    sessionUrls?.secureSessionUrl ?? null,
-    sessionUrls?.sessionUrl ?? null,
-  );
-  if (!sessionUrl) return json({ error: 'השיחה אינה זמינה כעת' }, 409);
-
-  const requestId = randomUUID();
-  const envelope: SessionCommandEnvelope = {
-    command: 'conference_remove',
-    request_id: requestId,
-    payload: {},
-  };
-
-  const delivery = await postCommandToSession(sessionUrl, envelope);
-  if (!delivery.delivered) {
-    return json({ error: 'בקשת ההסרה לא נמסרה לשיחה' }, 502);
-  }
-
-  // No toAgentId and no externalTarget: this removes whoever is currently in the
-  // conference, which this route never resolved and therefore cannot name. The
-  // auditable fact is that THIS agent removed the participant from THIS call.
-  await recordConsoleConferenceAudit({
-    fromAgentId: ctx.userId,
-    consoleCallId: callId,
-    eventId: call.eventId,
-    requestId,
-  });
-
-  // Delivered; NOT confirmed. The scenario's own conference_ended report (or
+  // A 202 here is delivered, NOT confirmed. The scenario's own conference_ended report (or
   // conference_failed, when the participant was still dialing) is the truth the
   // panel watches.
-  return json({ removing: true, request_id: requestId }, 202);
+  const { id: callId } = await params;
+  return deliverParameterlessCallCommand(request, callId, auth.ctx.userId, {
+    command: 'conference_remove',
+    wrongKindError: 'לא ניתן להסיר משתתף בשיחה מסוג זה',
+    undeliveredError: 'בקשת ההסרה לא נמסרה לשיחה',
+    // No toAgentId and no externalTarget: this removes whoever is currently in the
+    // conference, which this route never resolved and therefore cannot name. The
+    // auditable fact is that THIS agent removed the participant from THIS call.
+    audit: recordConsoleConferenceAudit,
+    acceptedFlag: 'removing',
+  });
 }

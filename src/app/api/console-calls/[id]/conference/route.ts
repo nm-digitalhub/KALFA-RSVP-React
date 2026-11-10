@@ -1,23 +1,14 @@
-import { randomUUID } from 'node:crypto';
-
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-
-import { callerHasPlatformPermission, requireConsoleAgent } from '@/lib/auth/console-agent';
 import {
-  getConsoleCallById,
-  getConsoleCallSessionUrls,
-  LIVE_CUSTOMER_CALL_KINDS,
-  recordConsoleConferenceAudit,
-  resolveExternalDialTarget,
-  resolveTransferTarget,
-} from '@/lib/data/console-calls';
+  deliverConsoleCallCommand,
+  invalidCallIdResponse,
+  loadConnectedCustomerCall,
+  resolveCallTarget,
+} from '@/lib/console-calls/live-call-command';
+import { requireManageVoiceAgent } from '@/lib/console-calls/route-auth';
+import { recordConsoleConferenceAudit } from '@/lib/data/console-calls';
+import { noStoreJson } from '@/lib/http/no-store-json';
+import { readJsonBody } from '@/lib/http/read-json-body';
 import { consoleConferenceBodySchema } from '@/lib/validation/console-calls';
-import {
-  pickSessionUrl,
-  postCommandToSession,
-  type SessionCommandEnvelope,
-} from '@/lib/voximplant/session-command';
 
 // POST /api/console-calls/{id}/conference   body: { to_agent_id: uuid } | { to_phone: string }
 //
@@ -49,102 +40,42 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 1024;
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const uuidSchema = z.uuid();
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireConsoleAgent(request);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
+  const auth = await requireManageVoiceAgent(request);
+  if (!auth.ok) return auth.response;
   const { ctx } = auth;
 
-  if (!(await callerHasPlatformPermission(ctx.supabase, 'manage_voice'))) {
-    return json({ error: 'אין הרשאה' }, 403);
-  }
-
   const { id: callId } = await params;
-  if (!uuidSchema.safeParse(callId).success) {
-    return json({ error: 'מזהה שיחה לא תקין' }, 400);
-  }
+  const badId = invalidCallIdResponse(callId);
+  if (badId) return badId;
 
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json({ error: 'בקשה גדולה מדי' }, 413);
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(raw);
-  } catch {
-    return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  }
-  const parsed = consoleConferenceBodySchema.safeParse(parsedJson);
-  if (!parsed.success) return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  const body = parsed.data;
+  const read = await readJsonBody(request, { maxSize: MAX_BODY_BYTES, measure: 'utf8-bytes' });
+  if (!read.ok) return read.response;
+  const parsed = consoleConferenceBodySchema.safeParse(read.value);
+  if (!parsed.success) return noStoreJson({ error: 'גוף הבקשה אינו תקין' }, 400);
 
-  const call = await getConsoleCallById(callId);
-  if (!call) return json({ error: 'שיחה לא נמצאה' }, 404);
-  if (!LIVE_CUSTOMER_CALL_KINDS.has(call.kind)) {
-    return json({ error: 'לא ניתן לצרף לשיחה מסוג זה' }, 409);
-  }
-  if (call.status !== 'connected') {
-    return json({ error: 'השיחה אינה מחוברת כעת' }, 409);
-  }
+  const loaded = await loadConnectedCustomerCall(callId, 'לא ניתן לצרף לשיחה מסוג זה');
+  if (!loaded.ok) return loaded.response;
 
   // Two kinds of target, two authorities — see consult/route.ts for the same
   // split and the reasoning behind resolveExternalDialTarget's gate order.
-  let payload: { vox_username: string } | { phone: string };
-  if ('to_agent_id' in body) {
-    const target = await resolveTransferTarget(body.to_agent_id, ctx.userId);
-    if (!target.ok) {
-      const messages: Record<typeof target.reason, string> = {
-        self: 'לא ניתן לצרף את עצמך',
-        not_found: 'הנציג המבוקש לא נמצא',
-        not_provisioned: 'לנציג המבוקש אין זהות טלפוניה במוקד',
-        not_ready: 'הנציג המבוקש אינו זמין כעת',
-      };
-      return json({ error: messages[target.reason] }, 409);
-    }
-    payload = { vox_username: target.voxUsername };
-  } else {
-    const external = await resolveExternalDialTarget(body.to_phone, ctx.userId);
-    if (!external.ok) {
-      const messages: Record<typeof external.reason, string> = {
-        invalid: 'מספר הטלפון אינו תקין',
-        not_allowed_country: 'ניתן לחייג למספרים ישראליים בלבד',
-        dnc: 'המספר מופיע ברשימת החסומים',
-        rate_limited: 'בוצעו יותר מדי חיוגים החוצה. נסו שוב בעוד זמן מה.',
-      };
-      return json({ error: messages[external.reason] }, external.reason === 'rate_limited' ? 429 : 409);
-    }
-    payload = { phone: external.phone };
-  }
+  const resolved = await resolveCallTarget(parsed.data, ctx.userId, 'לא ניתן לצרף את עצמך');
+  if (!resolved.ok) return resolved.response;
+  const { target } = resolved;
 
-  const sessionUrls = await getConsoleCallSessionUrls(callId);
-  const sessionUrl = pickSessionUrl(
-    sessionUrls?.secureSessionUrl ?? null,
-    sessionUrls?.sessionUrl ?? null,
-  );
-  if (!sessionUrl) return json({ error: 'השיחה אינה זמינה לצירוף כעת' }, 409);
-
-  const requestId = randomUUID();
-  const envelope: SessionCommandEnvelope = {
-    command: 'conference_add',
-    request_id: requestId,
-    payload,
-  };
-
-  const delivery = await postCommandToSession(sessionUrl, envelope);
-  if (!delivery.delivered) {
-    return json({ error: 'בקשת הצירוף לא נמסרה לשיחה' }, 502);
-  }
+  const delivery = await deliverConsoleCallCommand(callId, 'conference_add', target.payload, {
+    unavailable: 'השיחה אינה זמינה לצירוף כעת',
+    undelivered: 'בקשת הצירוף לא נמסרה לשיחה',
+  });
+  if (!delivery.ok) return delivery.response;
 
   await recordConsoleConferenceAudit({
     fromAgentId: ctx.userId,
-    ...('to_agent_id' in body ? { toAgentId: body.to_agent_id } : { externalTarget: true }),
+    ...target.audit,
     consoleCallId: callId,
-    eventId: call.eventId,
-    requestId,
+    eventId: loaded.call.eventId,
+    requestId: delivery.requestId,
   });
 
   // Delivered; NOT confirmed. The scenario's own conference_joined /
@@ -152,13 +83,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   //
   // The phone number is never echoed back — the response names the KIND of target
   // accepted, so a response body cannot become a second copy of a dialable number.
-  return json(
-    {
-      conferencing: true,
-      request_id: requestId,
-      target: 'vox_username' in payload ? 'agent' : 'external',
-      ...('to_agent_id' in body ? { to_agent_id: body.to_agent_id } : {}),
-    },
+  return noStoreJson(
+    { conferencing: true, request_id: delivery.requestId, ...target.accepted },
     202,
   );
 }

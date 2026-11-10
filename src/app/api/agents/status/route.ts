@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
-
 import { requireConsoleAgent } from '@/lib/auth/console-agent';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
+import { readJsonBody } from '@/lib/http/read-json-body';
 import { agentStatusSchema } from '@/lib/validation/agent-console';
 
 // POST /api/agents/status  { "status": "ready|not_ready|dnd" }
@@ -18,29 +18,17 @@ import { agentStatusSchema } from '@/lib/validation/agent-console';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_BODY_BYTES = 4 * 1024; // a status body is tiny; reject anything larger
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
+const MAX_BODY_CHARS = 4 * 1024; // a status body is tiny; reject anything larger
 
 export async function POST(request: Request) {
   const auth = await requireConsoleAgent(request);
   if (!auth.ok) return json({ error: auth.error }, auth.status);
   const { ctx } = auth;
 
-  const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) return json({ error: 'בקשה גדולה מדי' }, 413);
+  const read = await readJsonBody(request, { maxSize: MAX_BODY_CHARS, measure: 'string-length' });
+  if (!read.ok) return read.response;
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  }
-
-  const result = agentStatusSchema.safeParse(parsed);
+  const result = agentStatusSchema.safeParse(read.value);
   if (!result.success) return json({ error: 'סטטוס לא תקין' }, 400);
 
   // Own-row upsert as the caller (RLS-scoped). agent_id is the authenticated user,

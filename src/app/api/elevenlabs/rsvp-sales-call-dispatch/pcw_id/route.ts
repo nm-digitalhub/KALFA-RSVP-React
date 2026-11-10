@@ -1,13 +1,5 @@
-import { NextResponse } from 'next/server';
-
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { verifyElevenLabsWebhook } from '@/lib/security/elevenlabs-webhook';
-import {
-  buildElevenLabsAnalysisRow,
-  EL_ANALYSIS_SALES_KIND,
-} from '@/lib/data/elevenlabs-webhook-intake';
-import { insertWebhookEvents } from '@/lib/data/webhooks';
-import { sendSlackAlert } from '@/lib/alerts/slack';
+import { EL_ANALYSIS_SALES_KIND } from '@/lib/data/elevenlabs-webhook-intake';
+import { receivePostCallWebhook } from '@/lib/elevenlabs/post-call-webhook';
 
 // POST /api/elevenlabs/rsvp-sales-call-dispatch/pcw_id
 //
@@ -55,83 +47,15 @@ import { sendSlackAlert } from '@/lib/alerts/slack';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Same sizing rationale as rsvp/update: ElevenLabs delivers from shared IPs,
-// so throttling a genuine delivery loses it forever — this only caps
-// unauthenticated junk-flood compute.
-const RATE = { limit: 300, windowMs: 60 * 1000 } as const;
-// The HMAC is over the WHOLE body, so it must all be read to verify.
-//
-// 256 KiB fits any post_call_transcription (the largest real one measured
-// 2026-09-01 was ~86 KB) and deliberately does NOT fit a post_call_audio
-// delivery, which carries the whole recording inline as base64 MP3 and arrives
-// `transfer-encoding: chunked` — no Content-Length to reject it on, so the body
-// would be materialised in memory before the cap could refuse it.
-//
-// `audio` was removed from the workspace webhook events on 2026-09-01, so none
-// is sent today. Raise this ONLY together with streaming the body straight to
-// storage; simply enlarging it buys a multi-megabyte allocation per call for
-// something that is then discarded.
-const MAX_BODY_BYTES = 256 * 1024;
-
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const resp = (status: number, body: string | null = null) =>
-  new NextResponse(body, { status, headers: NO_STORE });
-
-export async function POST(req: Request) {
-  // 1. Coarse flood guard (fail-closed), keyed by client IP.
-  const ip = getClientIp(req.headers.get.bind(req.headers));
-  if (!(await rateLimit(`el-sales-outcome:${ip}`, RATE)).allowed) return resp(429);
-
-  // 2. Body-size cap: Content-Length hint, then hard cap after read.
-  const declaredLen = Number(req.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) return resp(413);
-  const raw = await req.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return resp(413);
-
-  // 3. HMAC over the RAW bytes (before JSON.parse). Every failure reason —
-  //    no_secret (dark) / malformed_header / expired / bad_signature —
-  //    collapses to one uniform 401 with an empty body (no oracle).
-  const verified = await verifyElevenLabsWebhook(
-    raw,
-    req.headers.get('elevenlabs-signature'),
-    process.env.ELEVENLABS_SALES_WEBHOOK,
-  );
-  if (!verified.valid) return resp(401);
-
-  // 4. Store the raw delivery and answer. A signed-but-unparseable body, a non
-  //    post_call_transcription type, or a payload missing its conversation_id
-  //    all store NOTHING → 200 no-op. This endpoint is bound to FIVE workspace
-  //    usages (ConvAI Agent Settings + Alerting, Speech to Text, Flows, Voice
-  //    Library Removal), so unrelated event types are the common case here.
-  let row;
-  try {
-    // The SDK already parsed the verified body; a signed body that is not JSON arrives as undefined.
-    if (verified.event === undefined) return resp(200, 'ok');
-    row = buildElevenLabsAnalysisRow(verified.event, EL_ANALYSIS_SALES_KIND);
-  } catch {
-    return resp(200, 'ok');
-  }
-  if (!row) return resp(200, 'ok');
-
-  // 5. Persist-then-process. Storing the analysis AND resolving the stuck
-  //    attempt (the catch-all outcome-write path described above) both run in
-  //    the worker — see elevenlabs-analysis-processing.ts. Failure there is
-  //    retried locally and lands in /admin/webhooks with its error, instead of
-  //    depending on the provider retrying a delivery it will not retry after a
-  //    4xx and will auto-disable the webhook over.
-  //
-  //    The response is 200 either way, per the provider's integration guidance.
-  //    A failed insert raises a Slack alert rather than a status code.
-  try {
-    await insertWebhookEvents([row]);
-  } catch {
-    void sendSlackAlert({
-      level: 'error',
-      category: 'errors',
-      source: 'elevenlabs-sales-webhook',
-      title: 'שמירת אירוע ניתוח שיחת מכירה נכשלה',
-      fields: { conversation_id: row.message_id ?? '—' },
-    });
-  }
-  return resp(200, 'ok');
+export function POST(req: Request) {
+  // This endpoint is bound to FIVE workspace usages (ConvAI Agent Settings + Alerting, Speech to Text, Flows,
+  // Voice Library Removal), so unrelated event types — answered 200 and not stored — are the common case here.
+  // A stored delivery resolves the stuck attempt (the catch-all outcome-write path described above) in the
+  // worker, never on this request.
+  return receivePostCallWebhook(req, {
+    rateLimitKey: 'el-sales-outcome',
+    secret: process.env.ELEVENLABS_SALES_WEBHOOK,
+    eventKind: EL_ANALYSIS_SALES_KIND,
+    insertFailureAlert: { source: 'elevenlabs-sales-webhook', title: 'שמירת אירוע ניתוח שיחת מכירה נכשלה' },
+  });
 }

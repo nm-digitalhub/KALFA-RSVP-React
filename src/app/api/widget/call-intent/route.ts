@@ -1,5 +1,4 @@
-import { NextResponse } from 'next/server';
-
+import { noStoreJson as json } from '@/lib/http/no-store-json';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { sha256Hex } from '@/lib/security/token-compare';
 import {
@@ -39,12 +38,7 @@ import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const FLOOD_RATE = { limit: 30, windowMs: 60_000 } as const;
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
 
 const REFUSED = { ok: false as const };
 

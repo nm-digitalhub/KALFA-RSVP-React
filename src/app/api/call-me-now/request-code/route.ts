@@ -1,6 +1,5 @@
-import { NextResponse } from 'next/server';
-
 import { getT } from '@/i18n.server';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { requestOtp } from '@/lib/data/otp';
 import { CALL_ME_NOW_OTP_PURPOSE, callMeNowRequestCodeBodySchema } from '@/lib/validation/call-me-now';
@@ -30,17 +29,12 @@ import { CALL_ME_NOW_OTP_PURPOSE, callMeNowRequestCodeBodySchema } from '@/lib/v
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const MAX_BODY_BYTES = 512;
 // Looser than requestOtp's own 5/phone/hour (that is the real per-victim
 // cap) — this is the coarse per-IP flood guard against ROTATING destination
 // numbers from one source. Loose enough that a real visitor mistyping their
 // number twice never trips it.
 const FLOOD_RATE = { limit: 10, windowMs: 60_000 } as const;
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
 
 export async function POST(request: Request) {
   const ip = getClientIp(request.headers.get.bind(request.headers));

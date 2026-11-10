@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
-import { z } from 'zod';
-
 import { requireConsoleAgent } from '@/lib/auth/console-agent';
 import { signOneTimeKeyForAgent } from '@/lib/data/console-sdk-auth';
+import { noStoreJson as json } from '@/lib/http/no-store-json';
+import { readJsonBody } from '@/lib/http/read-json-body';
 import { rateLimit } from '@/lib/security/rate-limit';
+import { sdkOneTimeKeyBodySchema } from '@/lib/validation/sdk-one-time-key';
 
 // POST /api/agents/sdk-auth   body: { one_time_key }  →  { hash }
 //
@@ -23,28 +23,12 @@ import { rateLimit } from '@/lib/security/rate-limit';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const MAX_BODY_BYTES = 2_048;
-
-// Voximplant's key is an opaque token. Bounded and charset-restricted so a
-// hostile body cannot become a long or structured input to the hash.
-const bodySchema = z.strictObject({
-  one_time_key: z
-    .string()
-    .trim()
-    .min(8)
-    .max(256)
-    .regex(/^[A-Za-z0-9._~+/=-]+$/, 'one_time_key has unexpected characters'),
-});
+const MAX_BODY_CHARS = 2_048;
 
 // A signing request IS a login attempt. Bounded per agent so a stolen JWT
 // cannot be used to grind keys, and low enough to be meaningless for a real
 // client: an app that reconnects sanely signs a handful of times an hour.
 const RATE = { limit: 10, windowMs: 60_000 } as const;
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
 
 export async function POST(request: Request) {
   const auth = await requireConsoleAgent(request);
@@ -55,17 +39,10 @@ export async function POST(request: Request) {
     return json({ error: 'יותר מדי בקשות — נסו שוב בעוד רגע' }, 429);
   }
 
-  const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) return json({ error: 'בקשה גדולה מדי' }, 413);
+  const read = await readJsonBody(request, { maxSize: MAX_BODY_CHARS, measure: 'string-length' });
+  if (!read.ok) return read.response;
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return json({ error: 'גוף הבקשה אינו תקין' }, 400);
-  }
-
-  const result = bodySchema.safeParse(parsed);
+  const result = sdkOneTimeKeyBodySchema.safeParse(read.value);
   // The message is deliberately generic — echoing why a key was rejected tells a
   // prober about the format.
   if (!result.success) return json({ error: 'מפתח חד-פעמי אינו תקין' }, 400);
