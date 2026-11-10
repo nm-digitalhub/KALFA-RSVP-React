@@ -44,7 +44,6 @@ const APPROVED_WITH_TOOLS = new Set([
   'stitch-react-components',
   'stitch-react-native',
   'stitch-upload-to-stitch',
-  'supabase-schema-from-requirements',
   'taste-design',
   'zod-4',
   'zod-validation-utilities',
