@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server';
-
-import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { processMeetingOptOut } from '@/lib/data/callback-voice-processing';
 import { guardMeetingToolRequest } from '@/lib/voximplant/agent-tool-guard';
-import type { TablesInsert } from '@/lib/supabase/types';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { persistVoxInboxEvent } from '@/lib/voximplant/tool-inbox';
+import { okOrFalse, readToolRequest } from '@/lib/voximplant/tool-route';
 import { voxMeetingOptOutSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/mtg/tool/dnc/{token}
@@ -21,58 +20,36 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 4 * 1024;
 
-type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
-type Json = WebhookInboxInsert['payload'];
-
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardMeetingToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardMeetingToolRequest,
     scope: 'vox-mtg-dnc',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxMeetingOptOutSchema,
+    emptyBodyAsObject: true,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
-
-  let json: unknown;
-  try {
-    json = raw.trim() === '' ? {} : JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxMeetingOptOutSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
+  if (!input.ok) return input.response;
+  const { attemptId } = input;
 
   // One opt-out per attempt is enough — a repeat in the same call is a no-op
   // (same reasoning as the RSVP surface's agent-tool/dnc route).
   try {
-    const row: WebhookInboxInsert = {
-      provider: 'voximplant',
-      event_kind: 'mtg_dnc',
-      dedupe_key: `vox-mtg-dnc:${attemptId}`,
-      message_id: attemptId,
-      event_at: new Date().toISOString(),
-      payload: parsed.data as unknown as Json,
-    };
-    await insertWebhookEvents([row]);
+    await persistVoxInboxEvent({
+      eventKind: 'mtg_dnc',
+      dedupeKey: `vox-mtg-dnc:${attemptId}`,
+      attemptId,
+      payload: input.data,
+    });
   } catch {
-    return bad(500);
+    return emptyNoStore(500);
   }
 
-  let ok = false;
-  try {
-    ({ ok } = await processMeetingOptOut(attemptId));
-  } catch {
-    ok = false;
-  }
+  const ok = await okOrFalse(() => processMeetingOptOut(attemptId));
 
-  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
+  return jsonNoStore({ ok });
 }

@@ -1,15 +1,8 @@
-import { NextResponse } from 'next/server';
-
-import { insertWebhookEvents } from '@/lib/data/webhooks';
-import {
-  getCallAttemptByAccessToken,
-  recordCallbackRequest,
-  setElConversationId,
-} from '@/lib/data/call-attempts';
+import { recordCallbackRequest, setElConversationId } from '@/lib/data/call-attempts';
 import { advanceLegStatus } from '@/lib/data/console-monitor';
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { tokenFingerprint } from '@/lib/security/token-fingerprint';
-import type { TablesInsert } from '@/lib/supabase/types';
+import { guardAgentToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { emptyNoStore, okNoStore } from '@/lib/voximplant/no-store-response';
+import { persistVoxInboxEvent } from '@/lib/voximplant/tool-inbox';
 import {
   voxCallbackRequestSchema,
   voxCallbackSchema,
@@ -32,17 +25,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CB_RATE = { limit: 30, windowMs: 5 * 60 * 1000 } as const;
 const MAX_BODY_BYTES = 256 * 1024; // reject anything larger than a real transcript needs
-
-type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
-type Json = WebhookInboxInsert['payload'];
-
-// Explicit no-store on every response — the URL carries a bearer token
-// (force-dynamic only skips Next's cache, not downstream caches).
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
 
 export async function POST(
   req: Request,
@@ -50,40 +33,21 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  // Rate limit FAIL-CLOSED: a limiter trip rejects the callback.
-  const ip = getClientIp(req.headers.get.bind(req.headers));
-  const fp = token ? tokenFingerprint(token) : 'none';
-  if (!(await rateLimit(`vox-cb:${fp}:${ip}`, CB_RATE)).allowed) return bad(429);
-
-  // Reject oversized bodies before reading (Content-Length hint), then hard-cap.
-  const declaredLen = Number(req.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) return bad(413);
-
-  if (typeof token !== 'string' || token.length === 0 || token.length > 256) {
-    return bad(404);
-  }
-  let ref;
-  try {
-    ref = await getCallAttemptByAccessToken(token);
-  } catch {
-    // A real DB error must not reveal itself as anything but the generic 404.
-    return bad(404);
-  }
-  if (!ref) return bad(404);
-  // Reject an expired token (row's token_expires_at is the sole expiry source).
-  if (!ref.token_expires_at || Date.parse(ref.token_expires_at) <= Date.now()) {
-    return bad(404);
-  }
-  const attemptId = ref.id;
-
-  const raw = await req.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return bad(413);
+  // The shared cb-model guard: fail-closed rate limit → body-size caps → opaque
+  // per-call access token → expiry → capped body read. Every token failure
+  // (unknown, expired, a DB error) is the same generic 404.
+  const guard = await guardAgentToolRequest(req, token, {
+    scope: 'vox-cb',
+    maxBodyBytes: MAX_BODY_BYTES,
+  });
+  if (!guard.ok) return emptyNoStore(guard.status);
+  const { attemptId, raw } = guard;
 
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
-    return bad(400);
+    return emptyNoStore(400);
   }
 
   // schedule_callback (combination feature): handled OUT-OF-BAND — persisted
@@ -105,11 +69,11 @@ export async function POST(
         scheduleReq.data.callback_when_text,
         scheduleReq.data.callback_iso ?? null,
       );
-      if (!applied) return bad(404);
+      if (!applied) return emptyNoStore(404);
     } catch {
-      return bad(500); // never leak DB detail
+      return emptyNoStore(500); // never leak DB detail
     }
-    return new NextResponse('ok', { status: 200, headers: NO_STORE });
+    return okNoStore();
   }
 
   // Human-agent supervisor leg status (monitor / takeover): the RSVPAgent scenario
@@ -129,37 +93,34 @@ export async function POST(
     } catch {
       /* best-effort — never leak DB detail; the app also watches its own SDK leg */
     }
-    return new NextResponse('ok', { status: 200, headers: NO_STORE });
+    return okNoStore();
   }
 
   // strictObject rejects any field outside the verified contract.
   const parsed = voxCallbackSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
+  if (!parsed.success) return emptyNoStore(400);
   const body = parsed.data;
 
   // invitation_id (if present) MUST match the token's attempt id — it is a
   // sanity check, never the identity source. A mismatch = tampering → reject.
   if (typeof body.invitation_id === 'string' && body.invitation_id !== attemptId) {
-    return bad(400);
+    return emptyNoStore(400);
   }
 
   // Persist idempotently: UNIQUE(provider, dedupe_key) makes a re-delivered
   // (attempt, status) callback a no-op. message_id carries the TOKEN-verified
   // attempt id — the drain resolves identity from this, never from the payload.
   try {
-    const row: WebhookInboxInsert = {
-      provider: 'voximplant',
-      event_kind: 'call_result',
-      dedupe_key: `vox-cb:${attemptId}:${body.call_status}`,
-      message_id: attemptId,
-      event_at: new Date().toISOString(),
-      payload: body as unknown as Json,
-    };
-    await insertWebhookEvents([row]);
+    await persistVoxInboxEvent({
+      eventKind: 'call_result',
+      dedupeKey: `vox-cb:${attemptId}:${body.call_status}`,
+      attemptId,
+      payload: body,
+    });
   } catch {
     // Persist failed — return 500 (Voximplant only logs it; we did not lose a
     // stored callback because nothing was stored). Never leak DB detail.
-    return bad(500);
+    return emptyNoStore(500);
   }
 
   // ADDITIVE (second link vector): if the ElevenLabs-bridge scenario sent a
@@ -175,5 +136,5 @@ export async function POST(
   }
 
   // Stable, minimal ack. Processing + RSVP/billing happen in the webhook drain.
-  return new NextResponse('ok', { status: 200, headers: NO_STORE });
+  return okNoStore();
 }

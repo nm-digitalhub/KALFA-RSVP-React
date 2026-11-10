@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 import {
   alertForAccountCallbacks,
   getAccountCallbackTokenHash,
@@ -10,6 +8,7 @@ import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 import { safeTokenEqual } from '@/lib/security/token-compare';
 import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 import { normalizeAccountCallbackEnvelope } from '@/lib/validation/vox-payloads';
+import { emptyNoStore, okNoStore } from '@/lib/voximplant/no-store-response';
 
 // POST /api/voximplant/account-callback/{token}
 //
@@ -31,9 +30,6 @@ const RATE = { limit: 20, windowMs: 5 * 60 * 1000 } as const;
 const PULL_RATE = { limit: 2, windowMs: 60 * 1000 } as const;
 const MAX_BODY_BYTES = 64 * 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
@@ -43,29 +39,29 @@ export async function POST(
   // 1. Rate limit FAIL-CLOSED.
   const ip = getClientIp(req.headers.get.bind(req.headers));
   const fp = token ? tokenFingerprint(token) : 'none';
-  if (!(await rateLimit(`vox-acct-cb:${fp}:${ip}`, RATE)).allowed) return bad(429);
+  if (!(await rateLimit(`vox-acct-cb:${fp}:${ip}`, RATE)).allowed) return emptyNoStore(429);
 
   // 2. Body size cap (Content-Length hint, then hard cap after read).
   const declaredLen = Number(req.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) return bad(413);
+  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) return emptyNoStore(413);
 
   // 3. Token shape + constant-time hash compare. A DB error, an absent stored
   //    hash (unwired), or a mismatch all look identical: a generic 404.
   if (typeof token !== 'string' || token.length === 0 || token.length > 256) {
-    return bad(404);
+    return emptyNoStore(404);
   }
   let storedHash: string | null;
   try {
     storedHash = await getAccountCallbackTokenHash();
   } catch {
-    return bad(404);
+    return emptyNoStore(404);
   }
-  if (!safeTokenEqual(token, storedHash)) return bad(404);
+  if (!safeTokenEqual(token, storedHash)) return emptyNoStore(404);
 
   // 4. Read the (untrusted) body. A parse failure does NOT change the outcome —
   //    the payload is only a poke; identity is the verified token above.
   const raw = await req.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return bad(413);
+  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return emptyNoStore(413);
   let envelope: unknown = null;
   try {
     envelope = JSON.parse(raw);
@@ -95,5 +91,5 @@ export async function POST(
   // 6. Always 200 past the gates — Voximplant's retry behavior is undocumented
   //    and the callback carries no trusted data, so a non-2xx buys nothing and
   //    risks retry storms.
-  return new NextResponse('ok', { status: 200, headers: NO_STORE });
+  return okNoStore();
 }

@@ -1,9 +1,8 @@
-import { NextResponse } from 'next/server';
-
-import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { processSalesOptOut } from '@/lib/data/sales-voice-processing';
 import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
-import type { TablesInsert } from '@/lib/supabase/types';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { persistVoxInboxEvent } from '@/lib/voximplant/tool-inbox';
+import { okOrFalse, readToolRequest } from '@/lib/voximplant/tool-route';
 import { voxMeetingOptOutSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/sls/tool/dnc/{token}
@@ -18,56 +17,34 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 4 * 1024;
 
-type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
-type Json = WebhookInboxInsert['payload'];
-
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardSalesToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardSalesToolRequest,
     scope: 'vox-sls-dnc',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxMeetingOptOutSchema,
+    emptyBodyAsObject: true,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
-
-  let json: unknown;
-  try {
-    json = raw.trim() === '' ? {} : JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxMeetingOptOutSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
+  if (!input.ok) return input.response;
+  const { attemptId } = input;
 
   try {
-    const row: WebhookInboxInsert = {
-      provider: 'voximplant',
-      event_kind: 'sls_dnc',
-      dedupe_key: `vox-sls-dnc:${attemptId}`,
-      message_id: attemptId,
-      event_at: new Date().toISOString(),
-      payload: parsed.data as unknown as Json,
-    };
-    await insertWebhookEvents([row]);
+    await persistVoxInboxEvent({
+      eventKind: 'sls_dnc',
+      dedupeKey: `vox-sls-dnc:${attemptId}`,
+      attemptId,
+      payload: input.data,
+    });
   } catch {
-    return bad(500);
+    return emptyNoStore(500);
   }
 
-  let ok = false;
-  try {
-    ({ ok } = await processSalesOptOut(attemptId));
-  } catch {
-    ok = false;
-  }
+  const ok = await okOrFalse(() => processSalesOptOut(attemptId));
 
-  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
+  return jsonNoStore({ ok });
 }

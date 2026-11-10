@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
-
 import { processSalesEscalate } from '@/lib/data/sales-voice-processing';
 import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { okOrFalse, readToolRequest } from '@/lib/voximplant/tool-route';
 import { voxSalesEscalateSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/sls/tool/escalate/{token}
@@ -22,41 +22,23 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 2 * 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardSalesToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardSalesToolRequest,
     scope: 'vox-sls-escalate',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxSalesEscalateSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
+  if (!input.ok) return input.response;
 
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxSalesEscalateSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
-
-  let ok = false;
-  try {
-    ({ ok } = await processSalesEscalate(attemptId, parsed.data));
-  } catch {
-    ok = false;
-  }
+  const ok = await okOrFalse(() => processSalesEscalate(input.attemptId, input.data));
 
   // No live-transfer path in v1 — see file header. `ok` reflects whether the
   // queue notification itself succeeded; `transferred` is always false.
-  return NextResponse.json({ transferred: false, notified: ok }, { status: 200, headers: NO_STORE });
+  return jsonNoStore({ transferred: false, notified: ok });
 }

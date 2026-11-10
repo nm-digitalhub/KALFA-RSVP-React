@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { NextResponse } from 'next/server';
-
-import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { errorDetail } from '@/lib/error-detail';
 import { processCallRsvp } from '@/lib/data/call-result-processing';
 import { guardAgentToolRequest } from '@/lib/voximplant/agent-tool-guard';
-import type { TablesInsert } from '@/lib/supabase/types';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { persistVoxInboxEvent } from '@/lib/voximplant/tool-inbox';
+import { readToolRequest } from '@/lib/voximplant/tool-route';
 import { voxSaveRsvpSchema, voxSaveRsvpStatus } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/agent-tool/rsvp/{token}
@@ -28,9 +27,6 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 16 * 1024; // a save_rsvp body is tiny; reject anything larger
 
-type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
-type Json = WebhookInboxInsert['payload'];
-
 // D1 (value-hash dedupe): each DISTINCT answer is a distinct inbox row (a mid-call
 // correction persists as its own durable row and is processed after the earlier
 // one → the latest confirmed answer wins), while a re-send of the SAME values is a
@@ -41,12 +37,6 @@ function valueHash(status: string, adults: number, children: number): string {
     .digest('hex')
     .slice(0, 16);
 }
-
-// Token-bearing URL: explicit no-store on every response (config-layer block
-// on /api/voximplant/:path* is defense-in-depth, this is the primary control).
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
 
 // A failure in either stage is logged with its cause (errorDetail: the Supabase/
 // Postgres code behind the data layer's Hebrew message) and the attempt id — never
@@ -62,40 +52,28 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  const guard = await guardAgentToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardAgentToolRequest,
     scope: 'vox-rsvp',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxSaveRsvpSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
-
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxSaveRsvpSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
-  const body = parsed.data;
+  if (!input.ok) return input.response;
+  const { attemptId, data: body } = input;
   const status = voxSaveRsvpStatus(body);
 
   // Persist durably first (idempotent per distinct answer — D1 value-hash).
   try {
-    const row: WebhookInboxInsert = {
-      provider: 'voximplant',
-      event_kind: 'call_rsvp',
-      dedupe_key: `vox-rsvp:${attemptId}:${valueHash(status, body.adults, body.children)}`,
-      message_id: attemptId,
-      event_at: new Date().toISOString(),
-      payload: body as unknown as Json,
-    };
-    await insertWebhookEvents([row]);
+    await persistVoxInboxEvent({
+      eventKind: 'call_rsvp',
+      dedupeKey: `vox-rsvp:${attemptId}:${valueHash(status, body.adults, body.children)}`,
+      attemptId,
+      payload: body,
+    });
   } catch (error) {
     // Nothing stored and no drain behind it: this log line is the only record.
     logStageFailure('persist', attemptId, error);
-    return bad(500); // nothing stored — a non-200, which the scenario answers to the agent as 'error'
+    return emptyNoStore(500); // nothing stored — a non-200, which the scenario answers to the agent as 'error'
   }
 
   // Synchronous best-effort apply so the agent gets a TRUTHFUL confirmation.
@@ -123,12 +101,11 @@ export async function POST(
     applyStatus = 'queued';
   }
 
-  return NextResponse.json(
+  return jsonNoStore(
     {
       ok: applyStatus === 'saved',
       status: applyStatus,
       ...(reason ? { reason } : {}),
     },
-    { status: 200, headers: NO_STORE },
   );
 }

@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 import {
   recordSalesDispatchConcluded,
   setSalesAttemptElConversationId,
@@ -7,6 +5,8 @@ import {
 } from '@/lib/data/sales-call-attempts';
 import { applyCallOutcome } from '@/lib/data/callback-scheduling';
 import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { emptyNoStore, okNoStore } from '@/lib/voximplant/no-store-response';
+import { readToolRequest, recordTerminalReport } from '@/lib/voximplant/tool-route';
 import { voxSalesCallbackSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/sls/cb/{token}
@@ -30,10 +30,6 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 8 * 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 const NO_CONVERSATION_STATUSES = new Set(['no_answer', 'no_response', 'failed']);
 
 export async function POST(
@@ -42,41 +38,20 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  const guard = await guardSalesToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardSalesToolRequest,
     scope: 'vox-sls-cb',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxSalesCallbackSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
+  if (!input.ok) return input.response;
+  const { attemptId, data: body } = input;
 
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxSalesCallbackSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
-  const body = parsed.data;
-
-  try {
-    await recordSalesDispatchConcluded(
-      attemptId,
-      body.error_reason ?? body.call_status,
-      body.call_duration ?? null,
-    );
-  } catch {
-    return bad(500);
-  }
-
-  if (typeof body.el_conversation_id === 'string' && body.el_conversation_id.length > 0) {
-    try {
-      await setSalesAttemptElConversationId(attemptId, body.el_conversation_id);
-    } catch {
-      /* best-effort */
-    }
-  }
+  const recorded = await recordTerminalReport(attemptId, body, {
+    recordConcluded: recordSalesDispatchConcluded,
+    setElConversationId: setSalesAttemptElConversationId,
+  });
+  if (!recorded) return emptyNoStore(500);
 
   if (NO_CONVERSATION_STATUSES.has(body.call_status)) {
     try {
@@ -91,5 +66,5 @@ export async function POST(
     }
   }
 
-  return new NextResponse('ok', { status: 200, headers: NO_STORE });
+  return okNoStore();
 }

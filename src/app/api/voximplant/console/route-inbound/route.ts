@@ -1,8 +1,7 @@
-import { NextResponse, after } from 'next/server';
+import { after } from 'next/server';
 
 import { normalizePhone } from '@/lib/phone';
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
+import { rateLimit } from '@/lib/security/rate-limit';
 import { sendSlackAlert } from '@/lib/alerts/slack';
 import {
   computeQueueRingOrder,
@@ -27,6 +26,8 @@ import {
 import { checkInboundBalanceReserve } from '@/lib/data/voximplant-balance-cache';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { routeInboundBodySchema } from '@/lib/validation/console-calls';
+import { guardConsoleScenarioRequest } from '@/lib/voximplant/console-scenario-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 
 // POST /api/voximplant/console/route-inbound   called BY
 // ConsoleInbound.voxengine.js — gate BEFORE Call.answer(). ANY refusal here
@@ -53,17 +54,12 @@ import { routeInboundBodySchema } from '@/lib/validation/console-calls';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const MAX_BODY_BYTES = 1_024;
 // Coarse per-IP flood guard only — NOT the real per-CLI cap (that is a DB
 // count on console_call_pii.phone_e164, evaluated below). Loose: every
 // inbound call to this account hits this route once, from Voximplant's
 // shared infra IPs.
 const RATE = { limit: 120, windowMs: 60_000 } as const;
-
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
 
 const REJECT = { accept: false as const };
 
@@ -80,33 +76,14 @@ function withChannel(label: string | null, channel: 'pstn' | 'whatsapp' | undefi
 }
 
 export async function POST(request: Request) {
-  const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!(await rateLimit(`vox-console-route-inbound:${ip}`, RATE)).allowed) {
-    return json(REJECT, 429);
-  }
-
-  const declaredLen = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
-    return json(REJECT, 413);
-  }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json(REJECT, 413);
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(raw);
-  } catch {
-    return json(REJECT, 400);
-  }
-  const parsed = routeInboundBodySchema.safeParse(parsedJson);
-  if (!parsed.success) return json(REJECT, 400);
-  const body = parsed.data;
-
-  const expected = process.env.KALFA_CONSOLE_SECRET;
-  if (!expected) return json(REJECT, 503);
-  if (!safeTokenEqual(body.secret, sha256Hex(expected))) {
-    return json(REJECT, 401);
-  }
+  const guard = await guardConsoleScenarioRequest(request, {
+    scope: 'vox-console-route-inbound',
+    rate: RATE,
+    maxBodyBytes: MAX_BODY_BYTES,
+    schema: routeInboundBodySchema,
+  });
+  if (!guard.ok) return jsonNoStore(REJECT, guard.status);
+  const body = guard.data;
 
   const nowMs = Date.now();
   const normalizedCli = normalizePhone(body.cli); // null for withheld/unparsable CLI
@@ -153,7 +130,7 @@ export async function POST(request: Request) {
     perCliAnsweredLastHour = perCli;
   } catch {
     // Any measurement failure ⇒ fail closed (unknown is treated as capped).
-    return json(REJECT, 200);
+    return jsonNoStore(REJECT, 200);
   }
 
   // No hours condition: answering a call the consumer placed is never
@@ -179,8 +156,8 @@ export async function POST(request: Request) {
     // The owner's Slack was unusable. An alert that repeats on every
     // occurrence of a condition that is, by design, now permanent for the
     // rest of the day is not monitoring; it is noise that buries the next
-    // real alert. Reuses the existing rateLimit helper (already imported for
-    // the flood guard above) rather than inventing a second mechanism —
+    // real alert. Reuses the existing rateLimit helper (the one behind the
+    // flood guard above) rather than inventing a second mechanism —
     // limit:1 per hour, so the trip is still announced promptly, still
     // re-announced hourly while it persists, and the breaker itself is
     // completely unaffected (this gates only the notification).
@@ -213,7 +190,7 @@ export async function POST(request: Request) {
         });
       }
     }
-    return json(REJECT, 200);
+    return jsonNoStore(REJECT, 200);
   }
 
   // `identified` was resolved above (feeds the caps decision). callerMasked
@@ -269,7 +246,7 @@ export async function POST(request: Request) {
   // unidentified callers only — matching the fail-closed posture every other
   // gate in this route already takes.
   if (ringOrder.length === 0 && identified === null) {
-    return json(REJECT, 200);
+    return jsonNoStore(REJECT, 200);
   }
 
   let callId: string;
@@ -288,7 +265,7 @@ export async function POST(request: Request) {
     // Row creation failed — refuse rather than answer a call we cannot
     // account for (fail-closed on the same principle as every other gate
     // here: an unrecordable admission is treated as a non-admission).
-    return json(REJECT, 200);
+    return jsonNoStore(REJECT, 200);
   }
   if (queueId) void setConsoleCallQueue(callId, queueId); // best-effort label, never blocks the answer
 
@@ -353,7 +330,7 @@ export async function POST(request: Request) {
   // `display_hint` stays MASKED and stays exactly as it was: it feeds console_calls, a
   // stored, queryable record with a far wider audience than the one agent whose phone
   // is ringing right now. Different surface, different exposure, different field.
-  return json(
+  return jsonNoStore(
     {
       accept: true,
       ring_order: ringOrder,

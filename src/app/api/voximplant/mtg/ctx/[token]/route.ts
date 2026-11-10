@@ -1,11 +1,9 @@
-import { NextResponse } from 'next/server';
-
 import { getCallbackVoiceContextByAccessToken } from '@/lib/data/callback-request-attempts';
 import { getCompanyLegal } from '@/lib/data/company';
 import { getCallbackPolicy } from '@/lib/callbacks/policy-config';
 import { formatIsraelRelativeSpokenDate, formatIsraelSpokenClock } from '@/lib/date';
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { tokenFingerprint } from '@/lib/security/token-fingerprint';
+import { guardCallContextRequest } from '@/lib/voximplant/call-context-guard';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
 import { isTerminalCallbackStatus } from '@/lib/validation/admin';
 
 // GET /api/voximplant/mtg/ctx/{token}
@@ -23,11 +21,7 @@ import { isTerminalCallbackStatus } from '@/lib/validation/admin';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CTX_RATE = { limit: 12, windowMs: 5 * 60 * 1000 } as const;
-
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE });
+const notFound = () => emptyNoStore(404);
 
 /**
  * Stand-ins written when the system has a phone number and no name.
@@ -57,31 +51,17 @@ export async function GET(
 ) {
   const { token } = await params;
 
-  const ip = getClientIp(req.headers.get.bind(req.headers));
-  const fp = token ? tokenFingerprint(token) : 'none';
-  if (!(await rateLimit(`vox-mtg-ctx:${fp}:${ip}`, CTX_RATE)).allowed) {
-    return new NextResponse(null, { status: 429, headers: NO_STORE });
-  }
-
   // Strict shape-guard (review recommendation, tighter than the RSVP ctx
   // precedent's length-only check): the new tokens are always exactly 32 hex
-  // characters (randomBytes(16).toString('hex')), so a malformed candidate
-  // can be rejected before any DB call.
-  if (typeof token !== 'string' || !/^[0-9a-f]{32}$/.test(token)) {
-    return notFound();
-  }
-
-  let ctx;
-  try {
-    ctx = await getCallbackVoiceContextByAccessToken(token);
-  } catch {
-    // A real DB error must not reveal itself as anything but the generic 404.
-    return notFound();
-  }
-  if (!ctx) return notFound();
-
-  // Reject an expired token.
-  if (Date.parse(ctx.attempt.token_expires_at) <= Date.now()) return notFound();
+  // characters (randomBytes(16).toString('hex')), so `hex32` rejects a
+  // malformed candidate before any DB call.
+  const guard = await guardCallContextRequest(req, token, {
+    scope: 'vox-mtg-ctx',
+    tokenShape: 'hex32',
+    lookup: getCallbackVoiceContextByAccessToken,
+  });
+  if (!guard.ok) return emptyNoStore(guard.status);
+  const { ctx } = guard;
 
   // Freshness re-verification (review finding B3, and the design note already
   // in the meeting-booking plan §7): reconcileCallbacksWithCalendar can
@@ -154,7 +134,7 @@ export async function GET(
     ? `מדבר/ת עם ${leadName}?`
     : 'התקשרת אלינו קודם ולא הצלחנו לענות — נוח לך לדבר עכשיו?';
 
-  return NextResponse.json(
+  return jsonNoStore(
     {
       lead_name: leadName,
       opening_line: openingLine,
@@ -203,6 +183,5 @@ export async function GET(
       kalfa_correlation_id: ctx.attempt.id,
       kalfa_attempt_token: ctx.attempt.id,
     },
-    { headers: NO_STORE },
   );
 }

@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
-
 import {
   recordCallbackDispatchConcluded,
   setCallbackAttemptElConversationId,
 } from '@/lib/data/callback-request-attempts';
 import { guardMeetingToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { emptyNoStore, okNoStore } from '@/lib/voximplant/no-store-response';
+import { readToolRequest, recordTerminalReport } from '@/lib/voximplant/tool-route';
 import { voxMeetingCallbackSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/mtg/cb/{token}
@@ -28,51 +28,26 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 8 * 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardMeetingToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardMeetingToolRequest,
     scope: 'vox-mtg-cb',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxMeetingCallbackSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
+  if (!input.ok) return input.response;
+  const { attemptId, data: body } = input;
 
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
+  const recorded = await recordTerminalReport(attemptId, body, {
+    recordConcluded: recordCallbackDispatchConcluded,
+    setElConversationId: setCallbackAttemptElConversationId,
+  });
+  if (!recorded) return emptyNoStore(500);
 
-  const parsed = voxMeetingCallbackSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
-  const body = parsed.data;
-
-  try {
-    await recordCallbackDispatchConcluded(
-      attemptId,
-      body.error_reason ?? body.call_status,
-      body.call_duration ?? null,
-    );
-  } catch {
-    return bad(500);
-  }
-
-  if (typeof body.el_conversation_id === 'string' && body.el_conversation_id.length > 0) {
-    try {
-      await setCallbackAttemptElConversationId(attemptId, body.el_conversation_id);
-    } catch {
-      /* best-effort — never leak DB detail; dispatch_status is already recorded */
-    }
-  }
-
-  return new NextResponse('ok', { status: 200, headers: NO_STORE });
+  return okNoStore();
 }

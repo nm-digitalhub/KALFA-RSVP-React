@@ -1,7 +1,3 @@
-import { NextResponse } from 'next/server';
-
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import {
   consoleWakeEnabled,
   findOnShiftAgentVoxUsernames,
@@ -9,6 +5,8 @@ import {
   recordConsoleWakeRetryAudit,
 } from '@/lib/data/console-calls';
 import { routeInboundRetryBodySchema } from '@/lib/validation/console-calls';
+import { guardConsoleScenarioRequest } from '@/lib/voximplant/console-scenario-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 
 // POST /api/voximplant/console/route-inbound-retry   called BY
 // ConsoleInbound.voxengine.js's ringNext, ONCE, only after the original
@@ -51,7 +49,6 @@ import { routeInboundRetryBodySchema } from '@/lib/validation/console-calls';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const MAX_BODY_BYTES = 1_024;
 // Same coarse per-IP flood guard shape as route-inbound — at most one retry
 // call per in-progress inbound call, so this is far looser than needed in
@@ -60,40 +57,20 @@ const RATE = { limit: 120, windowMs: 60_000 } as const;
 
 const EMPTY = { ring_order: [] as string[] };
 
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 export async function POST(request: Request) {
-  const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!(await rateLimit(`vox-console-route-inbound-retry:${ip}`, RATE)).allowed) {
-    return json(EMPTY, 200);
-  }
+  // A rate-limit trip is answered 200 with the empty ring, like every other
+  // refusal state on this route (see the header); the remaining gate failures
+  // keep the guard's own status.
+  const guard = await guardConsoleScenarioRequest(request, {
+    scope: 'vox-console-route-inbound-retry',
+    rate: RATE,
+    maxBodyBytes: MAX_BODY_BYTES,
+    schema: routeInboundRetryBodySchema,
+  });
+  if (!guard.ok) return jsonNoStore(EMPTY, guard.reason === 'rate_limited' ? 200 : guard.status);
+  const body = guard.data;
 
-  const declaredLen = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
-    return json(EMPTY, 413);
-  }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json(EMPTY, 413);
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(raw);
-  } catch {
-    return json(EMPTY, 400);
-  }
-  const parsed = routeInboundRetryBodySchema.safeParse(parsedJson);
-  if (!parsed.success) return json(EMPTY, 400);
-  const body = parsed.data;
-
-  const expected = process.env.KALFA_CONSOLE_SECRET;
-  if (!expected) return json(EMPTY, 503);
-  if (!safeTokenEqual(body.secret, sha256Hex(expected))) {
-    return json(EMPTY, 401);
-  }
-
-  if (!(await consoleWakeEnabled())) return json(EMPTY, 200);
+  if (!(await consoleWakeEnabled())) return jsonNoStore(EMPTY, 200);
 
   let ringOrder: string[];
   try {
@@ -135,10 +112,10 @@ export async function POST(request: Request) {
       ringOrder.push(username);
     }
   } catch {
-    return json(EMPTY, 200); // fail toward "nobody new", never a hard error the scenario must handle
+    return jsonNoStore(EMPTY, 200); // fail toward "nobody new", never a hard error the scenario must handle
   }
 
   void recordConsoleWakeRetryAudit({ consoleCallId: body.call_id, foundCount: ringOrder.length });
 
-  return json({ ring_order: ringOrder }, 200);
+  return jsonNoStore({ ring_order: ringOrder }, 200);
 }

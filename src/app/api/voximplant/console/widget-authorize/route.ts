@@ -1,23 +1,17 @@
-import { NextResponse } from 'next/server';
-
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import {
-  computeRingOrder,
   consoleWidgetEnabled,
   countAnsweredWidgetToday,
   countConcurrentAnsweredWidget,
-  findRoutableAgentVoxUsernames,
-  updateConsoleCallStatus,
   verifyDialToken,
   WIDGET_DAILY_CALL_CAP,
   WIDGET_DAILY_SPEND_CAP_USD,
   WIDGET_ESTIMATED_COST_PER_CALL_USD,
   WIDGET_MAX_CONCURRENCY,
 } from '@/lib/data/console-calls';
-import { checkInboundBalanceReserve } from '@/lib/data/voximplant-balance-cache';
-import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { widgetAuthorizeBodySchema } from '@/lib/validation/console-calls';
+import { authorizeConsoleRing } from '@/lib/voximplant/console-ring-authorize';
+import { guardConsoleScenarioRequest } from '@/lib/voximplant/console-scenario-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 
 // POST /api/voximplant/console/widget-authorize   body: { secret, token }
 //   → { ok: true, ring_order, call_id } | { ok: false }
@@ -49,72 +43,26 @@ import { widgetAuthorizeBodySchema } from '@/lib/validation/console-calls';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const MAX_BODY_BYTES = 1_024;
 // Coarse per-IP flood guard only (NOT a security control — Voximplant's
 // scenarios call from a small, shared, provider-side IP range) — identical
 // rationale and numbers to the sibling authorize/route.ts.
 const RATE = { limit: 120, windowMs: 60_000 } as const;
 
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 const REFUSED = { ok: false as const };
 
 export async function POST(request: Request) {
-  const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!(await rateLimit(`vox-widget-authorize:${ip}`, RATE)).allowed) {
-    return json(REFUSED, 429);
-  }
+  const guard = await guardConsoleScenarioRequest(request, {
+    scope: 'vox-widget-authorize',
+    rate: RATE,
+    maxBodyBytes: MAX_BODY_BYTES,
+    schema: widgetAuthorizeBodySchema,
+  });
+  if (!guard.ok) return jsonNoStore(REFUSED, guard.status);
+  const body = guard.data;
 
-  const declaredLen = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
-    return json(REFUSED, 413);
-  }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json(REFUSED, 413);
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(raw);
-  } catch {
-    return json(REFUSED, 400);
-  }
-  const parsed = widgetAuthorizeBodySchema.safeParse(parsedJson);
-  if (!parsed.success) return json(REFUSED, 400);
-
-  const expected = process.env.KALFA_CONSOLE_SECRET;
-  if (!expected) return json(REFUSED, 503);
-  if (!safeTokenEqual(parsed.data.secret, sha256Hex(expected))) {
-    return json(REFUSED, 401);
-  }
-
-  const verified = await verifyDialToken(parsed.data.token, 'wt');
-  if (!verified.ok) return json(REFUSED, 200);
-
-  const nowMs = Date.now();
-  let flagEnabled: boolean;
-  let liveCallsEnabled: boolean;
-  let globalConcurrentWidget: number;
-  let answeredToday: number;
-  let balanceOk: boolean;
-  try {
-    const [flag, vconfig, concurrent, today, balance] = await Promise.all([
-      consoleWidgetEnabled(),
-      getVoximplantConfig(),
-      countConcurrentAnsweredWidget(),
-      countAnsweredWidgetToday(nowMs),
-      checkInboundBalanceReserve(nowMs),
-    ]);
-    flagEnabled = flag;
-    liveCallsEnabled = !!vconfig?.liveCallsEnabled;
-    globalConcurrentWidget = concurrent;
-    answeredToday = today;
-    balanceOk = balance.ok;
-  } catch {
-    return json(REFUSED, 200);
-  }
+  const verified = await verifyDialToken(body.token, 'wt');
+  if (!verified.ok) return jsonNoStore(REFUSED, 200);
 
   // perIpCallsLastHour is intentionally NOT re-checked here: it already
   // gated admission at call-intent (mint time), and by definition this
@@ -125,35 +73,24 @@ export async function POST(request: Request) {
   // are what CAN meaningfully change in the gap, so those are what get
   // re-checked here, same as authorize/route.ts's own live-dial-gate
   // re-check. The actual thresholds are the SAME exported constants
-  // evaluateWidgetCallCaps uses (WIDGET_MAX_CONCURRENCY etc.) — restated
-  // inline rather than calling evaluateWidgetCallCaps itself only because
-  // that function requires a perIpCallsLastHour input this route has no
-  // fresh value for; duplicating the four-line comparison is cheaper and
-  // safer than threading a fake 0 through a function whose name promises a
-  // real per-visitor check.
-  if (!flagEnabled || !liveCallsEnabled || !balanceOk) return json(REFUSED, 200);
-  if (globalConcurrentWidget >= WIDGET_MAX_CONCURRENCY) return json(REFUSED, 200);
-  const estSpendUsd = answeredToday * WIDGET_ESTIMATED_COST_PER_CALL_USD;
-  if (answeredToday >= WIDGET_DAILY_CALL_CAP || estSpendUsd >= WIDGET_DAILY_SPEND_CAP_USD) {
-    return json(REFUSED, 200);
-  }
+  // evaluateWidgetCallCaps uses (WIDGET_MAX_CONCURRENCY etc.) — passed to the
+  // shared ring gate rather than calling evaluateWidgetCallCaps itself only
+  // because that function requires a perIpCallsLastHour input this route has
+  // no fresh value for, and threading a fake 0 through a function whose name
+  // promises a real per-visitor check would be worse.
+  const ring = await authorizeConsoleRing({
+    callId: verified.callId,
+    flagEnabled: consoleWidgetEnabled,
+    countConcurrentAnswered: countConcurrentAnsweredWidget,
+    countAnsweredToday: countAnsweredWidgetToday,
+    caps: {
+      maxConcurrency: WIDGET_MAX_CONCURRENCY,
+      dailyCallCap: WIDGET_DAILY_CALL_CAP,
+      dailySpendCapUsd: WIDGET_DAILY_SPEND_CAP_USD,
+      estimatedCostPerCallUsd: WIDGET_ESTIMATED_COST_PER_CALL_USD,
+    },
+  });
+  if (!ring.ok) return jsonNoStore(REFUSED, 200);
 
-  let routable: string[];
-  try {
-    routable = await findRoutableAgentVoxUsernames();
-  } catch {
-    routable = []; // fail toward "no agent" — still ok:true with an empty ring, never a hard refuse (as route-inbound does for a known caller)
-  }
-  const ringOrder = computeRingOrder(routable, answeredToday);
-
-  // Best-effort status bump — same reasoning as authorize/route.ts: this is
-  // immediately followed by the scenario ringing agents, so "ringing" is
-  // real progress even if the scenario's own /event report is lost.
-  try {
-    await updateConsoleCallStatus({ callId: verified.callId, status: 'ringing', onlyIfLive: true });
-  } catch {
-    /* best-effort */
-  }
-
-  return json({ ok: true, ring_order: ringOrder, call_id: verified.callId }, 200);
+  return jsonNoStore({ ok: true, ring_order: ring.ringOrder, call_id: verified.callId }, 200);
 }

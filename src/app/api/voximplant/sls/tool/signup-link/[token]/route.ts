@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 import {
   claimSalesOutcome,
   getSalesRequestForAttempt,
@@ -13,6 +11,8 @@ import { getWhatsAppConfig } from '@/lib/data/outreach-config';
 import { sendWhatsAppMarketingTemplate } from '@/lib/whatsapp/client';
 import { getAppOrigin } from '@/lib/url';
 import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { readToolRequest } from '@/lib/voximplant/tool-route';
 import { voxSalesSignupLinkSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/sls/tool/signup-link/{token}
@@ -59,35 +59,23 @@ export const dynamic = 'force-dynamic';
 const MAX_BODY_BYTES = 2 * 1024;
 const SALES_SIGNUP_MESSAGE_KEY = 'sales_signup_link';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardSalesToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardSalesToolRequest,
     scope: 'vox-sls-signup-link',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxSalesSignupLinkSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
-
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxSalesSignupLinkSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
+  if (!input.ok) return input.response;
+  const { attemptId } = input;
 
   const ref = await getSalesRequestForAttempt(attemptId);
-  if (!ref) return bad(404);
+  if (!ref) return emptyNoStore(404);
 
   // ?ref=<attemptId> — a plain UUID, not a credential (grants no access to
   // anything by itself; only correlates a later signup back to this call).
@@ -109,7 +97,7 @@ export async function POST(
   let waFailureCode: string | undefined;
 
   // 1. WhatsApp attempt — only with consent AND a real, active template.
-  if (parsed.data.wa_consent) {
+  if (input.data.wa_consent) {
     try {
       // Template + variables from the shared resolver (routes + Meta mirror +
       // variable rows): body {{1}} = lead.full_name, URL-button suffix =
@@ -199,7 +187,7 @@ export async function POST(
   // accepted via SMS, so a silent WhatsApp failure is never lost even when
   // the customer still got their link some other way.
   await recordSalesLinkSent(attemptId, {
-    waConsentConfirmedAt: parsed.data.wa_consent ? nowIso : undefined,
+    waConsentConfirmedAt: input.data.wa_consent ? nowIso : undefined,
     waMessageId,
     waDeliveryStatus: waFailureStatus,
     waDeliveryErrorCode: waFailureCode,
@@ -209,7 +197,7 @@ export async function POST(
   if (!accepted) {
     // Neither channel confirmed — no outcome claim. The agent's own
     // error-handling branch (§1) calls notify_owner + log_outcome next.
-    return NextResponse.json({ accepted: false }, { status: 200, headers: NO_STORE });
+    return jsonNoStore({ accepted: false });
   }
 
   try {
@@ -224,5 +212,5 @@ export async function POST(
     // an admin via the row's own dispatch/finish state.
   }
 
-  return NextResponse.json({ accepted: true }, { status: 200, headers: NO_STORE });
+  return jsonNoStore({ accepted: true });
 }

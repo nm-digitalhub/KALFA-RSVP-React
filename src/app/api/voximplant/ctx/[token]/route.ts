@@ -1,11 +1,9 @@
-import { NextResponse } from 'next/server';
-
 import { celebrantsTextFor } from '@/lib/data/celebrant-display';
 import { EVENT_TYPE_LABELS } from '@/lib/data/event-labels';
 import { getCallContextByAccessToken, TERMINAL_STATUSES } from '@/lib/data/call-attempts';
 import { formatIsraelSpokenDate, formatIsraelTime } from '@/lib/date';
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { tokenFingerprint } from '@/lib/security/token-fingerprint';
+import { guardCallContextRequest } from '@/lib/voximplant/call-context-guard';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
 
 // GET /api/voximplant/ctx/{token}
 //
@@ -22,18 +20,13 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CTX_RATE = { limit: 12, windowMs: 5 * 60 * 1000 } as const;
-
 // The ONE shared terminal set (incl. 'handed_off'), never a local copy: a copy here
 // once missed 'handed_off', so a handed-off call kept serving guest context.
 const TERMINAL: ReadonlySet<string> = new Set(TERMINAL_STATUSES);
 
-// Explicit no-store on EVERY response: the success body carries guest-facing data
-// behind a bearer token in the URL — `force-dynamic` only skips Next's own cache,
-// it does not forbid downstream caches.
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE });
+// Every response is explicitly no-store (see no-store-response.ts): the success
+// body carries guest-facing data behind a bearer token in the URL.
+const notFound = () => emptyNoStore(404);
 
 // Speech form of the celebrants text. The shared display composer returns
 // "X — לכבוד Y" for parents-kind events (brit/britah) — a page-title artifact:
@@ -144,28 +137,15 @@ export async function GET(
 ) {
   const { token } = await params;
 
-  const ip = getClientIp(req.headers.get.bind(req.headers));
-  const fp = token ? tokenFingerprint(token) : 'none';
-  if (!(await rateLimit(`vox-ctx:${fp}:${ip}`, CTX_RATE)).allowed) {
-    return new NextResponse(null, { status: 429, headers: NO_STORE });
-  }
-
-  if (typeof token !== 'string' || token.length === 0 || token.length > 256) {
-    return notFound();
-  }
-
-  let ctx;
-  try {
-    ctx = await getCallContextByAccessToken(token);
-  } catch {
-    // A real DB error must not reveal itself as anything but the generic 404.
-    return notFound();
-  }
-  if (!ctx) return notFound();
-
-  // Reject an expired token (the row's token_expires_at is the sole expiry source
-  // now that the bearer is the opaque access token, not a self-describing JWT).
-  if (Date.parse(ctx.attempt.token_expires_at) <= Date.now()) return notFound();
+  // Rate limit → token shape → row lookup → expiry (the shared ctx guard). Past
+  // the rate limit every refusal is the same generic 404.
+  const guard = await guardCallContextRequest(req, token, {
+    scope: 'vox-ctx',
+    tokenShape: 'opaque',
+    lookup: getCallContextByAccessToken,
+  });
+  if (!guard.ok) return emptyNoStore(guard.status);
+  const { ctx } = guard;
 
   // The call must be for an ACTIVE event and an attempt that has not already
   // reached a terminal state (a ctx fetch on a finished call is anomalous).
@@ -186,7 +166,7 @@ export async function GET(
   // Still leaks nothing else from the guest/contact record.
   const guestName = (ctx.guestFullName ?? '').trim().replace(/\s+/g, ' ');
 
-  return NextResponse.json(
+  return jsonNoStore(
     {
       guest_name: guestName,
       event_name: nameSpeechForm(ctx.event.name),
@@ -267,6 +247,5 @@ export async function GET(
         ctx.event.venue_name,
       ]),
     },
-    { headers: NO_STORE },
   );
 }

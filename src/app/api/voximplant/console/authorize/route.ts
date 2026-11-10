@@ -1,10 +1,8 @@
-import { NextResponse } from 'next/server';
-
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import { linkConsoleCallSession, updateConsoleCallStatus, verifyDialToken } from '@/lib/data/console-calls';
 import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 import { consoleAuthorizeBodySchema } from '@/lib/validation/console-calls';
+import { guardConsoleScenarioRequest } from '@/lib/voximplant/console-scenario-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 
 // POST /api/voximplant/console/authorize   called BY ConsoleDial.voxengine.js
 // (handleOutbound) — body: { secret, token, session_id? }. This is the
@@ -27,50 +25,26 @@ import { consoleAuthorizeBodySchema } from '@/lib/validation/console-calls';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const MAX_BODY_BYTES = 1_024;
 // Coarse per-IP flood guard only (NOT a security control — Voximplant's
 // scenarios call from a small, shared, provider-side IP range). Loose enough
 // that legitimate concurrent calls never trip it.
 const RATE = { limit: 120, windowMs: 60_000 } as const;
 
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 const REFUSED = { ok: false as const };
 
 export async function POST(request: Request) {
-  const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!(await rateLimit(`vox-console-authorize:${ip}`, RATE)).allowed) {
-    return json(REFUSED, 429);
-  }
+  const guard = await guardConsoleScenarioRequest(request, {
+    scope: 'vox-console-authorize',
+    rate: RATE,
+    maxBodyBytes: MAX_BODY_BYTES,
+    schema: consoleAuthorizeBodySchema,
+  });
+  if (!guard.ok) return jsonNoStore(REFUSED, guard.status);
+  const body = guard.data;
 
-  const declaredLen = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
-    return json(REFUSED, 413);
-  }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json(REFUSED, 413);
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(raw);
-  } catch {
-    return json(REFUSED, 400);
-  }
-  const parsed = consoleAuthorizeBodySchema.safeParse(parsedJson);
-  if (!parsed.success) return json(REFUSED, 400);
-
-  // Fail-closed if the shared secret is unset — never an open gate.
-  const expected = process.env.KALFA_CONSOLE_SECRET;
-  if (!expected) return json(REFUSED, 503);
-  if (!safeTokenEqual(parsed.data.secret, sha256Hex(expected))) {
-    return json(REFUSED, 401);
-  }
-
-  const verified = await verifyDialToken(parsed.data.token, 'ct');
-  if (!verified.ok || !verified.phone) return json(REFUSED, 200);
+  const verified = await verifyDialToken(body.token, 'ct');
+  if (!verified.ok || !verified.phone) return jsonNoStore(REFUSED, 200);
 
   // Link the session DIRECTLY, before any of the caps checks below can
   // refuse — so the row is correlatable for the rest of this call's /event
@@ -83,9 +57,9 @@ export async function POST(request: Request) {
   // systems and cannot be atomic — see consoleAuthorizeBodySchema's header).
   // Absent means "the still-old scenario is calling": skip the link and fall
   // back to the pre-existing tier resolution, exactly as before this feature.
-  if (typeof parsed.data.session_id === 'number') {
+  if (typeof body.session_id === 'number') {
     try {
-      await linkConsoleCallSession(verified.callId, parsed.data.session_id);
+      await linkConsoleCallSession(verified.callId, body.session_id);
     } catch {
       /* best-effort — see comment above */
     }
@@ -99,7 +73,7 @@ export async function POST(request: Request) {
   // that can meaningfully change in the ~seconds between mint and dial.)
   const vconfig = await getVoximplantConfig();
   if (!vconfig || !vconfig.liveCallsEnabled || !vconfig.callerId) {
-    return json(REFUSED, 200);
+    return jsonNoStore(REFUSED, 200);
   }
 
   // Best-effort status bump: authorize succeeding is immediately followed by
@@ -123,7 +97,7 @@ export async function POST(request: Request) {
   // It exists because the disclosure ConsoleDial plays before bridging says the
   // call is "מטעם בעלי האירוע בנוגע לאישור הגעה" — true of a guest_service dial,
   // false of a manual one, and the scenario had no way to tell them apart.
-  return json(
+  return jsonNoStore(
     { ok: true, phone: verified.phone, callerid: vconfig.callerId, kind: verified.kind ?? null },
     200,
   );

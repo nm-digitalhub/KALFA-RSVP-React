@@ -1,7 +1,6 @@
-import { NextResponse } from 'next/server';
-
 import { listPackageOffers } from '@/lib/data/campaigns';
 import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
 
 // POST /api/voximplant/sls/tool/pricing/{token}
 //
@@ -25,12 +24,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
-const unavailable = () =>
-  NextResponse.json({ available: false }, { status: 200, headers: NO_STORE });
+const unavailable = () => jsonNoStore({ available: false });
 
 export async function POST(
   req: Request,
@@ -42,7 +36,7 @@ export async function POST(
     scope: 'vox-sls-pricing',
     maxBodyBytes: MAX_BODY_BYTES,
   });
-  if (!guard.ok) return bad(guard.status);
+  if (!guard.ok) return emptyNoStore(guard.status);
 
   let offers: Awaited<ReturnType<typeof listPackageOffers>>;
   try {
@@ -56,7 +50,7 @@ export async function POST(
   }
   if (offers.length === 0) return unavailable();
 
-  return NextResponse.json(
+  return jsonNoStore(
     {
       available: true,
       packages: offers.map((offer) => ({
@@ -68,6 +62,5 @@ export async function POST(
         includes: offer.includes,
       })),
     },
-    { status: 200, headers: NO_STORE },
   );
 }

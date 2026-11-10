@@ -1,10 +1,9 @@
-import { NextResponse } from 'next/server';
-
-import { insertWebhookEvents } from '@/lib/data/webhooks';
 import { processOwnerNote } from '@/lib/data/call-result-processing';
 import { guardAgentToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { persistVoxInboxEvent } from '@/lib/voximplant/tool-inbox';
+import { readToolRequest } from '@/lib/voximplant/tool-route';
 import { ownerNoteHash } from '@/lib/voximplant/agent-tool-hash';
-import type { TablesInsert } from '@/lib/supabase/types';
 import { voxNotifyOwnerSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/agent-tool/note/{token}
@@ -23,53 +22,32 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 8 * 1024;
 
-type WebhookInboxInsert = TablesInsert<'webhook_inbox'>;
-type Json = WebhookInboxInsert['payload'];
-
-// Token-bearing URL: explicit no-store on every response (config-layer block
-// on /api/voximplant/:path* is defense-in-depth, this is the primary control).
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardAgentToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardAgentToolRequest,
     scope: 'vox-note',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxNotifyOwnerSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
-
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxNotifyOwnerSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
-  const body = parsed.data;
+  if (!input.ok) return input.response;
+  const { attemptId, data: body } = input;
 
   // Distinct notes in the same call are distinct rows; an exact resend is a no-op.
   const noteHash = ownerNoteHash(body);
   try {
-    const row: WebhookInboxInsert = {
-      provider: 'voximplant',
-      event_kind: 'call_owner_note',
-      dedupe_key: `vox-note:${attemptId}:${noteHash}`,
-      message_id: attemptId,
-      event_at: new Date().toISOString(),
-      payload: body as unknown as Json,
-    };
-    await insertWebhookEvents([row]);
+    await persistVoxInboxEvent({
+      eventKind: 'call_owner_note',
+      dedupeKey: `vox-note:${attemptId}:${noteHash}`,
+      attemptId,
+      payload: body,
+    });
   } catch {
-    return bad(500);
+    return emptyNoStore(500);
   }
 
   // The business outcome travels in the body, apart from the HTTP status:
@@ -86,8 +64,7 @@ export async function POST(
     status = 'queued';
   }
 
-  return NextResponse.json(
+  return jsonNoStore(
     { ok: status === 'recorded', status },
-    { status: 200, headers: NO_STORE },
   );
 }

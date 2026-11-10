@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
-
 import { processSalesScheduleCallback } from '@/lib/data/sales-voice-processing';
 import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { okOrFalse, readToolRequest } from '@/lib/voximplant/tool-route';
 import { voxRequestRescheduleSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/sls/tool/schedule/{token}
@@ -17,39 +17,21 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 8 * 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardSalesToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardSalesToolRequest,
     scope: 'vox-sls-schedule',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxRequestRescheduleSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
+  if (!input.ok) return input.response;
 
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
+  const ok = await okOrFalse(() => processSalesScheduleCallback(input.attemptId, input.data));
 
-  const parsed = voxRequestRescheduleSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
-
-  let ok = false;
-  try {
-    ({ ok } = await processSalesScheduleCallback(attemptId, parsed.data));
-  } catch {
-    ok = false;
-  }
-
-  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
+  return jsonNoStore({ ok });
 }

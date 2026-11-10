@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
-
 import { claimSalesOutcome } from '@/lib/data/sales-call-attempts';
 import { applyCallOutcome } from '@/lib/data/callback-scheduling';
 import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { readToolRequest } from '@/lib/voximplant/tool-route';
 import { voxSalesLogOutcomeSchema } from '@/lib/validation/voximplant';
 import type { CallOutcome } from '@/lib/validation/admin';
 
@@ -30,54 +30,42 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 2 * 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardSalesToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardSalesToolRequest,
     scope: 'vox-sls-log-outcome',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxSalesLogOutcomeSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
-
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxSalesLogOutcomeSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
+  if (!input.ok) return input.response;
+  const { attemptId } = input;
 
   let claimed;
   try {
     claimed = await claimSalesOutcome(attemptId);
   } catch {
-    return bad(500);
+    return emptyNoStore(500);
   }
   // Already claimed (send_signup_link already wrote 'completed', or a
   // duplicate log_outcome call in the same conversation) — not an error,
   // just a no-op, matching every other claim-guarded tool in this codebase.
   if (!claimed) {
-    return NextResponse.json({ ok: false, already_recorded: true }, { status: 200, headers: NO_STORE });
+    return jsonNoStore({ ok: false, already_recorded: true });
   }
 
   const outcome: CallOutcome =
-    parsed.data.outcome === 'escalated_to_human' ? 'needs_followup' : parsed.data.outcome;
+    input.data.outcome === 'escalated_to_human' ? 'needs_followup' : input.data.outcome;
 
   try {
     await applyCallOutcome(claimed.callbackRequestId, outcome);
   } catch {
-    return bad(500);
+    return emptyNoStore(500);
   }
 
-  return NextResponse.json({ ok: true }, { status: 200, headers: NO_STORE });
+  return jsonNoStore({ ok: true });
 }

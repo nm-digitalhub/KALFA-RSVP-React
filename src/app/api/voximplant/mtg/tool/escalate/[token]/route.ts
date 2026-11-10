@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
-
 import { processMeetingEscalate } from '@/lib/data/callback-voice-processing';
 import { guardMeetingToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { okOrFalse, readToolRequest } from '@/lib/voximplant/tool-route';
 import { voxMeetingEscalateSchema } from '@/lib/validation/voximplant';
 
 // POST /api/voximplant/mtg/tool/escalate/{token}
@@ -20,39 +20,21 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 4 * 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
 
-  const guard = await guardMeetingToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardMeetingToolRequest,
     scope: 'vox-mtg-escalate',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxMeetingEscalateSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
+  if (!input.ok) return input.response;
 
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
+  const ok = await okOrFalse(() => processMeetingEscalate(input.attemptId, input.data));
 
-  const parsed = voxMeetingEscalateSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
-
-  let ok = false;
-  try {
-    ({ ok } = await processMeetingEscalate(attemptId, parsed.data));
-  } catch {
-    ok = false;
-  }
-
-  return NextResponse.json({ ok }, { status: 200, headers: NO_STORE });
+  return jsonNoStore({ ok });
 }

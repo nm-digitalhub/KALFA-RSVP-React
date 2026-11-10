@@ -1,7 +1,5 @@
-import { NextResponse, after } from 'next/server';
+import { after } from 'next/server';
 
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { safeTokenEqual, sha256Hex } from '@/lib/security/token-compare';
 import {
   findConsoleCallForEvent,
   mapEndedReasonToStatus,
@@ -13,6 +11,8 @@ import {
   updateConsoleCallStatus,
 } from '@/lib/data/console-calls';
 import { consoleEventBodySchema } from '@/lib/validation/console-calls';
+import { guardConsoleScenarioRequest } from '@/lib/voximplant/console-scenario-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 
 // POST /api/voximplant/console/event   called BY the console scenarios'
 // reportEvent() (ConsoleDial, ConsoleInbound and ConsoleCallMeNow .voxengine.js).
@@ -31,47 +31,23 @@ import { consoleEventBodySchema } from '@/lib/validation/console-calls';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 const MAX_BODY_BYTES = 4_096;
 // Coarse per-IP flood guard only — see authorize/route.ts's identical note.
 // Looser than authorize: a single live call can emit several events
 // (started/ringing/connected/ended, sometimes transfer_*).
 const RATE = { limit: 300, windowMs: 60_000 } as const;
 
-function json(body: unknown, status: number) {
-  return NextResponse.json(body, { status, headers: NO_STORE });
-}
-
 const ACK = { ok: true } as const;
 
 export async function POST(request: Request) {
-  const ip = getClientIp(request.headers.get.bind(request.headers));
-  if (!(await rateLimit(`vox-console-event:${ip}`, RATE)).allowed) {
-    return json(ACK, 429);
-  }
-
-  const declaredLen = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
-    return json(ACK, 413);
-  }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return json(ACK, 413);
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(raw);
-  } catch {
-    return json(ACK, 400);
-  }
-  const parsed = consoleEventBodySchema.safeParse(parsedJson);
-  if (!parsed.success) return json(ACK, 400);
-  const body = parsed.data;
-
-  const expected = process.env.KALFA_CONSOLE_SECRET;
-  if (!expected) return json(ACK, 503);
-  if (!safeTokenEqual(body.secret, sha256Hex(expected))) {
-    return json(ACK, 401);
-  }
+  const guard = await guardConsoleScenarioRequest(request, {
+    scope: 'vox-console-event',
+    rate: RATE,
+    maxBodyBytes: MAX_BODY_BYTES,
+    schema: consoleEventBodySchema,
+  });
+  if (!guard.ok) return jsonNoStore(ACK, guard.status);
+  const body = guard.data;
 
   // Internal (agent↔agent) legs are deliberately NOT tracked as a
   // console_calls row in V1: the scenario's internal branch never sends the
@@ -86,7 +62,7 @@ export async function POST(request: Request) {
   // attributable.)
   if (body.call_kind === 'internal') {
     console.log(`[console/event] internal ${body.event} session=${body.session_id}`);
-    return json(ACK, 202);
+    return jsonNoStore(ACK, 202);
   }
 
   let callId: string | null;
@@ -98,13 +74,13 @@ export async function POST(request: Request) {
       callId: body.call_kind === 'inbound' ? body.call_id : undefined,
     });
   } catch {
-    return json(ACK, 202); // best-effort — never fail the ack over a lookup error
+    return jsonNoStore(ACK, 202); // best-effort — never fail the ack over a lookup error
   }
   if (!callId) {
     console.log(
       `[console/event] unresolved ${body.call_kind} ${body.event} session=${body.session_id}`,
     );
-    return json(ACK, 202);
+    return jsonNoStore(ACK, 202);
   }
 
   try {
@@ -297,5 +273,5 @@ export async function POST(request: Request) {
     // Best-effort — see module header.
   }
 
-  return json(ACK, 202);
+  return jsonNoStore(ACK, 202);
 }

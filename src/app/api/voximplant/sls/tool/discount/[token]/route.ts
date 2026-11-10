@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
-
 import { applyAgentDiscount } from '@/lib/data/agent-benefits';
 import { getSalesRequestForAttempt } from '@/lib/data/sales-call-attempts';
 import { guardSalesToolRequest } from '@/lib/voximplant/agent-tool-guard';
+import { jsonNoStore } from '@/lib/voximplant/no-store-response';
+import { readToolRequest } from '@/lib/voximplant/tool-route';
 import { normalizePhone } from '@/lib/phone';
 import { voxSalesDiscountSchema } from '@/lib/validation/voximplant';
 
@@ -27,10 +27,6 @@ export const dynamic = 'force-dynamic';
 
 const MAX_BODY_BYTES = 2 * 1024;
 
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const bad = (status: number) => new NextResponse(null, { status, headers: NO_STORE });
-
 const NO_OFFER = { offer: null, options: [] as never[] };
 
 export async function POST(
@@ -39,22 +35,14 @@ export async function POST(
 ) {
   const { token } = await params;
 
-  const guard = await guardSalesToolRequest(req, token, {
+  const input = await readToolRequest(req, token, {
+    guard: guardSalesToolRequest,
     scope: 'vox-sls-discount',
     maxBodyBytes: MAX_BODY_BYTES,
+    schema: voxSalesDiscountSchema,
   });
-  if (!guard.ok) return bad(guard.status);
-  const { attemptId, raw } = guard;
-
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return bad(400);
-  }
-
-  const parsed = voxSalesDiscountSchema.safeParse(json);
-  if (!parsed.success) return bad(400);
+  if (!input.ok) return input.response;
+  const { attemptId } = input;
 
   // The benefit targets the CALLBACK REQUEST'S phone (the number the call was made to) — resolved
   // from the attempt row, never from the body. An unnormalizable phone cannot hold an assignment
@@ -63,7 +51,7 @@ export async function POST(
   const request = await getSalesRequestForAttempt(attemptId);
   const phoneE164 = request ? normalizePhone(request.phone) : null;
   if (!phoneE164) {
-    return NextResponse.json(NO_OFFER, { status: 200, headers: NO_STORE });
+    return jsonNoStore(NO_OFFER);
   }
 
   let answer;
@@ -71,7 +59,7 @@ export async function POST(
     answer = await applyAgentDiscount({
       callAttemptId: attemptId,
       phoneE164,
-      objectionReason: parsed.data.objection_reason,
+      objectionReason: input.data.objection_reason,
     });
   } catch (err) {
     // Nothing was promised: the module answers no_offer for every expected failure, so a throw is
@@ -80,19 +68,18 @@ export async function POST(
       attemptId,
       kind: err instanceof Error ? err.name : typeof err,
     });
-    return NextResponse.json(NO_OFFER, { status: 200, headers: NO_STORE });
+    return jsonNoStore(NO_OFFER);
   }
 
   if (answer.status === 'no_offer') {
-    return NextResponse.json(NO_OFFER, { status: 200, headers: NO_STORE });
+    return jsonNoStore(NO_OFFER);
   }
 
-  return NextResponse.json(
+  return jsonNoStore(
     {
       offer: answer.offer,
       options: answer.options,
       expires_at: answer.expiresAt,
     },
-    { status: 200, headers: NO_STORE },
   );
 }

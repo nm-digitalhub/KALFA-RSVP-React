@@ -1,9 +1,7 @@
-import { NextResponse } from 'next/server';
-
 import { getSalesVoiceContextByAccessToken } from '@/lib/data/sales-call-attempts';
 import { getCompanyLegal } from '@/lib/data/company';
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
-import { tokenFingerprint } from '@/lib/security/token-fingerprint';
+import { guardCallContextRequest } from '@/lib/voximplant/call-context-guard';
+import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
 
 // ⚠️ STAGE-0 PROBE — see the block at the bottom of this file for the full
 // rationale. '' is the production value: the key is then omitted entirely.
@@ -20,11 +18,7 @@ const STAGE0_FIRST_MESSAGE_PROBE = '';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const CTX_RATE = { limit: 12, windowMs: 5 * 60 * 1000 } as const;
-
-const NO_STORE = { 'Cache-Control': 'no-store' } as const;
-
-const notFound = () => new NextResponse(null, { status: 404, headers: NO_STORE });
+const notFound = () => emptyNoStore(404);
 
 export async function GET(
   req: Request,
@@ -32,25 +26,13 @@ export async function GET(
 ) {
   const { token } = await params;
 
-  const ip = getClientIp(req.headers.get.bind(req.headers));
-  const fp = token ? tokenFingerprint(token) : 'none';
-  if (!(await rateLimit(`vox-sls-ctx:${fp}:${ip}`, CTX_RATE)).allowed) {
-    return new NextResponse(null, { status: 429, headers: NO_STORE });
-  }
-
-  if (typeof token !== 'string' || !/^[0-9a-f]{32}$/.test(token)) {
-    return notFound();
-  }
-
-  let ctx;
-  try {
-    ctx = await getSalesVoiceContextByAccessToken(token);
-  } catch {
-    return notFound();
-  }
-  if (!ctx) return notFound();
-
-  if (Date.parse(ctx.attempt.token_expires_at) <= Date.now()) return notFound();
+  const guard = await guardCallContextRequest(req, token, {
+    scope: 'vox-sls-ctx',
+    tokenShape: 'hex32',
+    lookup: getSalesVoiceContextByAccessToken,
+  });
+  if (!guard.ok) return emptyNoStore(guard.status);
+  const { ctx } = guard;
 
   // Freshness re-verification — same reasoning as mtg/ctx's own comment: a
   // reschedule between dispatch and connect must degrade to the identical
@@ -79,7 +61,7 @@ export async function GET(
     // values rather than blocking the whole call.
   }
 
-  return NextResponse.json(
+  return jsonNoStore(
     {
       prospect_name: prospectName,
       note_text: ctx.request.note ?? '',
@@ -130,6 +112,5 @@ export async function GET(
         ? { first_message_override: STAGE0_FIRST_MESSAGE_PROBE }
         : {}),
     },
-    { headers: NO_STORE },
   );
 }
