@@ -18,9 +18,6 @@ import { isTerminalCallbackStatus } from '@/lib/validation/admin';
 // be able to distinguish "token doesn't exist" from "appointment changed
 // underneath it" from "briefly down".
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const notFound = () => emptyNoStore(404);
 
 /**

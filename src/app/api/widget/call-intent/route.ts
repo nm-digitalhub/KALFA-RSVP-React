@@ -35,9 +35,6 @@ import { getVoximplantConfig } from '@/lib/data/voximplant-config';
 // backed count below, not the real per-visitor cap itself (that's
 // evaluateWidgetCallCaps's perIpCallsLastHour, DB-backed, tight).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const FLOOD_RATE = { limit: 30, windowMs: 60_000 } as const;
 
 const REFUSED = { ok: false as const };

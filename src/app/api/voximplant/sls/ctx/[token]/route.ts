@@ -15,9 +15,6 @@ const STAGE0_FIRST_MESSAGE_PROBE = '';
 // authorization. READ-ONLY. Every failure path returns the IDENTICAL generic
 // 404, same public-rsvp-sentinel discipline as the meeting-booking surface.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const notFound = () => emptyNoStore(404);
 
 export async function GET(

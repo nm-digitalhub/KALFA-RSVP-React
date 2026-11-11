@@ -22,9 +22,6 @@ import { voxSalesDiscountSchema } from '@/lib/validation/voximplant';
 // and keeps accepting the legacy { tier, amount_or_pct } during the deploy window; an HTTP
 // failure maps to its "not configured" result, so a broken server never invents a discount.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 2 * 1024;
 
 const NO_OFFER = { offer: null, options: [] as never[] };

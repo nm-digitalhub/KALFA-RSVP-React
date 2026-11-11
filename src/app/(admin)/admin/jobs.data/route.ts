@@ -18,8 +18,6 @@ import { BASE_PATH, proxyToDashboard } from '@/lib/pgboss/dashboard-proxy';
 // full method set for the dashboard's own mutations, which all live under
 // /admin/jobs/**.
 
-export const dynamic = 'force-dynamic';
-
 async function proxy(request: NextRequest): Promise<Response> {
   return proxyToDashboard(request, `${BASE_PATH}.data`);
 }

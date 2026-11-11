@@ -2,15 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `server-only` throws outside Next's server runtime — stub it (repo convention).
 vi.mock('server-only', () => ({}));
+// The cache itself is Next's ('use cache' is a build-time directive: under Vitest the function simply runs). What
+// this file pins is what the function declares to it, what it returns, and that a failed read is never a value the
+// cache could keep.
+vi.mock('next/cache', () => ({ cacheLife: vi.fn(), cacheTag: vi.fn() }));
+vi.mock('next/server', () => ({ connection: vi.fn(async () => undefined) }));
 vi.mock('@/lib/supabase/admin', () => ({ createAdminClient: vi.fn() }));
+
+import { cacheLife, cacheTag } from 'next/cache';
+import { connection } from 'next/server';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createMockSupabase } from '@/test/supabase-mock';
 import { BASELINE_ADMIN_CONFIG } from './cookie-consent-config';
-import {
-  __resetCookieConsentPublicConfigCacheForTests,
-  getCookieConsentPublicConfig,
-} from './admin-config';
+import { COOKIE_CONSENT_CONFIG_TAG, getCookieConsentPublicConfig } from './admin-config';
 
 const ROW = {
   cookie_consent_enabled: true,
@@ -28,7 +33,6 @@ function wireAdmin(result: { data: unknown; error: unknown }): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  __resetCookieConsentPublicConfigCacheForTests();
 });
 
 describe('getCookieConsentPublicConfig', () => {
@@ -57,18 +61,26 @@ describe('getCookieConsentPublicConfig', () => {
     expect(cfg.revisionBump).toBe(0);
   });
 
-  it('caches successful reads (no second DB round-trip within the TTL)', async () => {
+  it('declares its lifetime and the tag the admin actions expire', async () => {
     wireAdmin({ data: ROW, error: null });
     await getCookieConsentPublicConfig();
-    await getCookieConsentPublicConfig();
-    expect(createAdminClient).toHaveBeenCalledTimes(1);
+    expect(cacheLife).toHaveBeenCalledWith('minutes');
+    expect(cacheTag).toHaveBeenCalledWith(COOKIE_CONSENT_CONFIG_TAG);
+    // A successful read is a cacheable value: it must not be marked request-time.
+    expect(connection).not.toHaveBeenCalled();
   });
 
-  it('does NOT cache a failed read (recovers on the next call)', async () => {
-    wireAdmin({ data: null, error: { message: 'db down' } });
-    const first = await getCookieConsentPublicConfig();
-    expect(first).toEqual(BASELINE_ADMIN_CONFIG);
-    await getCookieConsentPublicConfig();
+  it.each([
+    ['the database answers with an error', { data: null, error: { message: 'db down' } }],
+    ['the settings row is missing', { data: null, error: null }],
+  ])('a failed read (%s) is the baseline for this request only, and the next call reads again', async (_label, result) => {
+    wireAdmin(result);
+    expect(await getCookieConsentPublicConfig()).toEqual(BASELINE_ADMIN_CONFIG);
+    // Request-time, so the baseline is never part of a prerendered page.
+    expect(connection).toHaveBeenCalledTimes(1);
+
+    wireAdmin({ data: ROW, error: null });
+    expect((await getCookieConsentPublicConfig()).revisionBump).toBe(2);
     expect(createAdminClient).toHaveBeenCalledTimes(2);
   });
 
@@ -81,5 +93,6 @@ describe('getCookieConsentPublicConfig', () => {
     expect(cfg.enabled).toBe(true);
     expect(cfg.analyticsEnabled).toBe(true);
     expect(cfg.marketingEnabled).toBe(true);
+    expect(connection).toHaveBeenCalledTimes(1);
   });
 });

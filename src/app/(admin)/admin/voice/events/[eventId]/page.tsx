@@ -44,6 +44,10 @@ import {
 import type { StackedBarSegment } from '../../_meters';
 import { StatusDonut } from '../../_donut';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Per-request memoization of the event fetch, so generateMetadata and the page
 // body share ONE query. Supabase reads are not `fetch`, so Next's automatic
 // request memoization does not apply — the generate-metadata docs prescribe

@@ -7,6 +7,10 @@ import { PageHeading } from '../../_components';
 import { OfferForm } from '../offer-form';
 import { createOfferAction } from '../actions';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'הצעה חדשה' };
 
 // Admin: create a new offer (personal-coupons D14). The form posts to createOfferAction, which

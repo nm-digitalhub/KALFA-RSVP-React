@@ -12,9 +12,6 @@ import { voxRequestRescheduleSchema } from '@/lib/validation/voximplant';
 // falls back to a plain apology if this returns ok:false (§1's error-
 // handling section).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 8 * 1024;
 
 export async function POST(

@@ -11,8 +11,11 @@ import { cn } from '@/lib/utils';
 
 import { ProgressDots } from './progress-dots';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'בקשות גישה לשולחן עבודה' };
-export const dynamic = 'force-dynamic';
 
 // The owner's read-only list of every remote-desktop request. There is nothing to press here by design: deciding
 // happens in the server terminal, and the page says so. Owner-only (the gate is inside both data calls).

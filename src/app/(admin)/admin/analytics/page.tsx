@@ -40,10 +40,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { CONSENT_REVISION } from '@/lib/consent/cookie-consent-config';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Admin GA4 dashboard. Server component end-to-end except the trend chart and
 // the refresh timer; every GA4 call happens in the DAL behind requirePlatformStaff +
 // hasPlatformPermission('view_customer_data') + the safe-config gate.
-export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'אנליטיקת אתר' };
 

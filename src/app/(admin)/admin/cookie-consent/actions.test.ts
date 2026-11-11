@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The actions are built from src/lib/safe-action.ts, which is `server-only`.
 vi.mock('server-only', () => ({}));
-vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn(), updateTag: vi.fn() }));
 vi.mock('next/navigation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('next/navigation')>();
   return { ...actual };
@@ -15,7 +15,7 @@ vi.mock('@/lib/data/admin/cookie-consent', () => ({
 }));
 vi.mock('@/lib/alerts/slack', () => ({ sendSlackAlert: vi.fn() }));
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, updateTag } from 'next/cache';
 import {
   updateCookieConsentEnabled,
   updateCookieConsentAnalyticsEnabled,
@@ -49,6 +49,8 @@ describe('updateCookieConsentEnabledAction', () => {
     expect(updateCookieConsentEnabled).toHaveBeenCalledWith(true);
     expect(result?.data?.notice).toContain('הופעל');
     expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
+    // The cached read of the config is expired too, so the next request reads the new value.
+    expect(updateTag).toHaveBeenCalledWith('cookie-consent-config');
     expect(sendSlackAlert).toHaveBeenCalledWith(
       expect.objectContaining({ level: 'info', category: 'security' }),
     );
@@ -68,6 +70,7 @@ describe('updateCookieConsentEnabledAction', () => {
     expect(result?.data?.notice).toContain('לא בוצע שינוי');
     expect(sendSlackAlert).not.toHaveBeenCalled();
     expect(revalidatePath).not.toHaveBeenCalled();
+    expect(updateTag).not.toHaveBeenCalled();
   });
 
   it('propagates a NEXT_REDIRECT from the DAL instead of returning { error }', async () => {
@@ -76,6 +79,7 @@ describe('updateCookieConsentEnabledAction', () => {
       updateCookieConsentEnabledAction({}, fd({ cookie_consent_enabled: 'on' })),
     ).rejects.toBe(NEXT_REDIRECT);
     expect(revalidatePath).not.toHaveBeenCalled();
+    expect(updateTag).not.toHaveBeenCalled();
   });
 
   it('returns a safe Hebrew error and does not audit/invalidate on a real failure', async () => {
@@ -83,6 +87,7 @@ describe('updateCookieConsentEnabledAction', () => {
     const result = await updateCookieConsentEnabledAction({}, fd({ cookie_consent_enabled: 'on' }));
     expect(result?.serverError).toBe('עדכון מתג ההסכמה נכשל. נסו שוב.');
     expect(revalidatePath).not.toHaveBeenCalled();
+    expect(updateTag).not.toHaveBeenCalled();
     expect(sendSlackAlert).not.toHaveBeenCalled();
   });
 });
@@ -141,6 +146,8 @@ describe('bumpCookieConsentRevisionAction', () => {
     const result = await bumpCookieConsentRevisionAction({}, fd({}));
     expect(result?.data?.notice).toContain('9');
     expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
+    // The cached read of the config is expired too, so the next request reads the new value.
+    expect(updateTag).toHaveBeenCalledWith('cookie-consent-config');
   });
 
   it('returns a safe error on failure without invalidating', async () => {
@@ -148,5 +155,6 @@ describe('bumpCookieConsentRevisionAction', () => {
     const result = await bumpCookieConsentRevisionAction({}, fd({}));
     expect(result?.serverError).toBe('עדכון מספר הגרסה נכשל. נסו שוב.');
     expect(revalidatePath).not.toHaveBeenCalled();
+    expect(updateTag).not.toHaveBeenCalled();
   });
 });

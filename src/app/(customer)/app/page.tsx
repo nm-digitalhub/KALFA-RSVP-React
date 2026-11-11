@@ -6,6 +6,10 @@ import { buttonVariants } from '@/components/ui/button';
 import { listEvents } from '@/lib/data/events';
 import { cn } from '@/lib/utils';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // The only state this route ever renders is the welcome screen — every other
 // case is a server-side redirect that never paints.
 export const metadata: Metadata = { title: 'ברוכים הבאים' };

@@ -49,6 +49,10 @@ import { cn } from '@/lib/utils';
 import { Badge, formatCurrency, formatDateTime } from '../../_components';
 import { ResolveForm, type MoneyOutcome } from './resolve-form';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'בקשת ביטול' };
 
 const LIST_PATH = '/admin/cancellations';

@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, updateTag } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { zfd } from 'zod-form-data';
 
@@ -12,6 +12,7 @@ import {
   type ToggleOutcome,
 } from '@/lib/data/admin/cookie-consent';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { COOKIE_CONSENT_CONFIG_TAG } from '@/lib/consent/admin-config';
 import { actionClient, returnUserError } from '@/lib/safe-action';
 
 // Broad, sitewide invalidation — deliberate exception to the usual narrow
@@ -19,7 +20,11 @@ import { actionClient, returnUserError } from '@/lib/safe-action';
 // the cookie-consent config is read by the ROOT layout and affects every
 // route in the app. See plans/cookie-consent-admin-control.md §9. Skipped on
 // a no-op toggle (below) — nothing changed, so there is nothing to refresh.
+//
+// updateTag expires the cached read of the config itself (getCookieConsentPublicConfig is a `'use cache'` function
+// tagged with it), so the next request reads the new value instead of the cached one.
 function revalidateEverywhere(): void {
+  updateTag(COOKIE_CONSENT_CONFIG_TAG);
   revalidatePath('/', 'layout');
 }
 

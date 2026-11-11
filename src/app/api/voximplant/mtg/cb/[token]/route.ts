@@ -23,9 +23,6 @@ import { voxMeetingCallbackSchema } from '@/lib/validation/voximplant';
 // (voximplant-reconcile.ts) already alerts on a pre-terminal row stuck past
 // 15m, which is the correct backstop for exactly this failure mode.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 8 * 1024;
 
 export async function POST(

@@ -28,9 +28,6 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // infrequent by nature; a tight cap costs a real client nothing) and audited
 // (best-effort, non-PII — identifiers only).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_CHARS = 4 * 1024; // a shift body is tiny; reject anything larger
 const RATE = { limit: 20, windowMs: 60_000 } as const;
 

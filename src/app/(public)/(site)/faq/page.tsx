@@ -15,6 +15,10 @@ import {
 } from '@/lib/faq/page-model';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Title and description are declared once and reused for the Open Graph
 // block — the share preview and the search snippet must not drift apart.
 export async function generateMetadata(): Promise<Metadata> {
@@ -38,7 +42,6 @@ export async function generateMetadata(): Promise<Metadata> {
 // Content is DB-backed (admin-editable, /admin/faq) and the price card and
 // pricing tokens read the packages on sale at render time — render per-request,
 // same reasoning as /contact and /terms.
-export const dynamic = 'force-dynamic';
 
 // Presentational only (icon + short eyebrow label above each section's H2)
 // — not business content, so it lives here rather than in

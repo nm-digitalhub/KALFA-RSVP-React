@@ -31,9 +31,6 @@ import { rateLimit } from '@/lib/security/rate-limit';
 // handful of times per call, and a tight cap costs a real client nothing while
 // bounding a wedged client that polls it.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const RATE = { limit: 60, windowMs: 60_000 } as const;
 
 export async function GET(request: Request) {

@@ -19,9 +19,6 @@ import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
 // number. `contact_quota` is the number of contacts the campaign may approach,
 // whether or not they answer (agreement v6 §3).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1024;
 
 const unavailable = () => jsonNoStore({ available: false });

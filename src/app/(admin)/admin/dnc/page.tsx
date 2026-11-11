@@ -5,6 +5,10 @@ import { getRegistryConnectionStatus, listCallDnc } from '@/lib/data/admin/call-
 import { PageHeading, firstParam, parsePageParam } from '../_components';
 import { DncClient, type DncTab } from './dnc-client';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'חסימת שיחות (DNC)' };
 
 const TABS: readonly DncTab[] = ['check', 'local', 'status'];

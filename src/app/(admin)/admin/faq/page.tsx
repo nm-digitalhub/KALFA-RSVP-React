@@ -6,6 +6,10 @@ import { buildProtectedPricingMandatorySentence } from '@/lib/faq/page-model';
 import { PageHeading } from '../_components';
 import { FaqCatalogEditor } from './faq-catalog-editor';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'שאלות נפוצות' };
 
 // Admin: content editor for the public /faq page — FAQ copy is admin-managed

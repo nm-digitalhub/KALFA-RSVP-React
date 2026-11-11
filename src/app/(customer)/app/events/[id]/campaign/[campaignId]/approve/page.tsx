@@ -5,6 +5,10 @@ import { notFound, redirect } from 'next/navigation';
 import { getCampaign } from '@/lib/data/campaigns';
 import { requireOwnedEvent } from '@/lib/data/events';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'אישור תנאי החבילה' };
 
 // The terms are approved INSIDE the setup flow (/setup, the "אישור תנאי החבילה" step),

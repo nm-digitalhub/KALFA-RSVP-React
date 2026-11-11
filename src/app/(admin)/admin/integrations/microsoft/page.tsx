@@ -8,6 +8,10 @@ import { checkMicrosoftHealth, type MicrosoftHealth } from '@/lib/microsoft/heal
 import { PageHeading } from '../../_components';
 import { MicrosoftStatusCard } from './microsoft-status-card';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'Microsoft 365 — אינטגרציות' };
 
 const sectionClass = 'space-y-3';

@@ -17,9 +17,6 @@ import { emptyNoStore, jsonNoStore } from '@/lib/voximplant/no-store-response';
 // scenario needs. Never returns phone, rsvp_token, org id, or any other internal
 // data.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 // The ONE shared terminal set (incl. 'handed_off'), never a local copy: a copy here
 // once missed 'handed_off', so a handed-off call kept serving guest context.
 const TERMINAL: ReadonlySet<string> = new Set(TERMINAL_STATUSES);

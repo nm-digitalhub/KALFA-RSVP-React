@@ -54,6 +54,10 @@ import { GroupsManager } from './groups-manager';
 import { GuestRowActions } from './guest-row-actions';
 import { ContactStatusCell } from './contact-status-cell';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Webhook-driven state (Meta WhatsApp): meaningful op_status OUTCOMES (see
 // HIDDEN_OP_STATUS) and latest delivery. Returns null when there is nothing to
 // show, so the table cell can fold to "—" and the mobile card can omit the row

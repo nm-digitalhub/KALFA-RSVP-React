@@ -39,9 +39,6 @@ import { rateLimit } from '@/lib/security/rate-limit';
 // useless. The owner asked for exactly that. Staff-gated by requireConsoleAgent;
 // numbers are never logged.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const RATE = { limit: 60, windowMs: 60_000 } as const;
 
 /** How far back the queue looks. */

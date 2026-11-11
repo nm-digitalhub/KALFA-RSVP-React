@@ -7,6 +7,10 @@ import { getDashboardCounts } from '@/lib/data/admin/dashboard';
 import { describeActivity, recentActivity } from '@/lib/data/admin/activity';
 import { PageHeading, EmptyState, formatDateTime } from './_components';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'סקירה' };
 
 // Admin dashboard: headline counts (each links to its section) plus the most

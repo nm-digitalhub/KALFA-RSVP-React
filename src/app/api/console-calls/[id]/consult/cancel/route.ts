@@ -18,9 +18,6 @@ import { recordConsoleConsultAudit } from '@/lib/data/console-calls';
 // there can already be stale by the time this arrives; the scenario is
 // authoritative).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireManageVoiceAgent(request);
   if (!auth.ok) return auth.response;

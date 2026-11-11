@@ -11,6 +11,10 @@ import { formatIsraelDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
 import { sortEventsForList } from './event-list-sort';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'האירועים שלי' };
 
 // The single action each card offers, per event status (entry-routing plan §7).

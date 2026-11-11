@@ -33,9 +33,6 @@ import { deviceTelemetryBatchSchema } from '@/lib/validation/agent-console';
 // answers 503, which the app treats as "stop trying for a while" rather than as
 // an error worth retrying.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_CHARS = 64 * 1024;
 
 // 40 requests/minute × 50 events each is a hard ceiling of 2,000 lines a minute

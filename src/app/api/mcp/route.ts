@@ -11,8 +11,6 @@ import { getMcpTokenVerifier, grantedOwnerAgentPermissions } from '@/lib/owner-a
 import { isAllowedMcpOrigin, mcpResourceUrl } from './auth';
 import { createMcpServer } from './tools';
 
-export const runtime = 'nodejs';
-
 // Every request: Origin check → Supabase OAuth access token (requireBearerAuth:
 // a missing/invalid token gets 401 + WWW-Authenticate with resource_metadata,
 // so the client can discover Supabase Auth) → the caller's platform

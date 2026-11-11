@@ -7,9 +7,6 @@ import { getProfile } from '@/lib/data/profiles';
 import { startCardcomPurchase, type CardcomStartOutcome } from '@/lib/payments/cardcom-purchase';
 import { guardCampaignRoute, noStoreJson } from '@/lib/payments/cardcom-routes';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 // Opens a CardCom Open Fields session for the package purchase (docs/superpowers/plans/2026-10-07-cardcom-pilot-plan.md,
 // 4.3). The buyer's browser calls it with fetch from the payment page; the answer is JSON and carries only the
 // LowProfileId the Open Fields form needs — never a URL, a credential or the price.

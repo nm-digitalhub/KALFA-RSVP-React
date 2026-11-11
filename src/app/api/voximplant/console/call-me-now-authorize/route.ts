@@ -54,9 +54,6 @@ import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 // admission at /api/call-me-now/verify, and this token exists only because
 // that check passed a few seconds ago for this exact call.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1_024;
 // Coarse per-IP flood guard only (NOT a security control — Voximplant's
 // scenarios call from a small, shared, provider-side IP range) — identical

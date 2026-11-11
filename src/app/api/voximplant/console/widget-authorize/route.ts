@@ -40,9 +40,6 @@ import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 // first point in the widget flow a ring order is meaningful, matching
 // route-inbound's own timing (computed at admission, not before).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1_024;
 // Coarse per-IP flood guard only (NOT a security control — Voximplant's
 // scenarios call from a small, shared, provider-side IP range) — identical

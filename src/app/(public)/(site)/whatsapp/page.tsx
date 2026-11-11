@@ -11,6 +11,10 @@ import { buildFaqJsonLd, faqJsonLdScript } from '@/lib/faq/json-ld';
 import { getT } from '@/i18n.server';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Public page for the WhatsApp channel — the one channel term with measurable
 // and RISING search demand ("אישורי הגעה בוואטסאפ").
 //

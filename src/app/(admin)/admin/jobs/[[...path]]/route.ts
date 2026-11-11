@@ -11,8 +11,6 @@ import { BASE_PATH, proxyToDashboard } from '@/lib/pgboss/dashboard-proxy';
 // the shared proxy. The dashboard is pure HTTP (SSR + polling, no WebSocket or
 // SSE), so a streaming Response proxy is sufficient.
 
-export const dynamic = 'force-dynamic';
-
 async function proxy(
   request: NextRequest,
   ctx: { params: Promise<{ path?: string[] }> },

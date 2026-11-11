@@ -46,6 +46,10 @@ import { closeEventAction } from './campaign/campaign-actions';
 import { CancellationRequestForm } from './cancellation-request-form';
 import { createCancellationRequestAction } from './actions';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Israel calendar date (dd.mm.yyyy) — never the raw ISO/UTC slice, which shows
 // the wrong day for early-morning IL times (01:00 IDT is 22:00Z the day before).
 // Adds the wall-clock time only when one is actually set (legacy date-only

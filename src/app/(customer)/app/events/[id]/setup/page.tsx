@@ -39,6 +39,10 @@ import { PackageChoiceForm, type PackageChoiceBenefit } from '../package-choice-
 import { SetupConfirmForm } from '../setup-confirm-form';
 import { SetupShell } from '../setup-shell';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'הקמת אישורי הגעה' };
 
 // The ONE place the setup flow happens: the steps on top, and the current step's

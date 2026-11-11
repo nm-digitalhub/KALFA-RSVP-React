@@ -12,6 +12,10 @@ import { buildBreadcrumbJsonLd, jsonLdScript } from '@/lib/seo/breadcrumb-json-l
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 import { getAppOrigin } from '@/lib/url';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Public "about" page — the trust/identity page search engines and AI answer
 // engines look for (E-E-A-T) (plans/seo-exposure-plan-2026-09-27.md).
 //
@@ -45,7 +49,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 // Reads the company settings per request, like /terms and /privacy.
-export const dynamic = 'force-dynamic';
 
 const doesItems = (t: TFunction<'public'>): readonly { title: string; d: string }[] => [
   {

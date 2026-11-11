@@ -14,10 +14,13 @@ import { GuestShell } from '@/components/guest/guest-shell';
 
 import { inviteImageUrlOrNull } from '../../invite-image-url';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Always render per-request: the response is guest-specific and must never be
 // cached or prerendered. Response headers (no-store, no-referrer) are set for
 // `/r/:token*` in next.config.
-export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getT('public');

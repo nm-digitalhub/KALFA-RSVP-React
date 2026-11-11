@@ -3,6 +3,10 @@ import { getCompanyLegal } from '@/lib/data/company';
 import { LegalShell, LegalSection } from '../_legal';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Title and description are declared once and reused for the Open Graph
 // block — the share preview and the search snippet must not drift apart.
 const TITLE = 'תקנון ותנאי שירות';
@@ -21,7 +25,6 @@ export const metadata: Metadata = {
 
 // Render per-request so the page always reflects the current company/legal config
 // (e.g. the warranty wording) edited in /admin — instead of being baked at build.
-export const dynamic = 'force-dynamic';
 
 // Public terms of service (beta.kalfa.me/terms). Hebrew, RTL, reads company
 // identity from config. Legal wording per Consumer Protection Law §14ג —

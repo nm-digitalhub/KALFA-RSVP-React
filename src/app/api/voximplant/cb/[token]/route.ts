@@ -22,9 +22,6 @@ import {
 // received/processed/failed states + retry, so a processing failure never loses
 // the callback. Mirrors src/app/api/webhooks/whatsapp/route.ts.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 256 * 1024; // reject anything larger than a real transcript needs
 
 export async function POST(

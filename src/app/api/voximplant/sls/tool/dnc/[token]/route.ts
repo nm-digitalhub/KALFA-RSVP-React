@@ -12,9 +12,6 @@ import { voxMeetingOptOutSchema } from '@/lib/validation/voximplant';
 // registered tools", same schema/behavior). PERSIST-THEN-PROCESS, same real
 // spam-law weight as agent-tool/dnc and mtg/tool/dnc.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 4 * 1024;
 
 export async function POST(

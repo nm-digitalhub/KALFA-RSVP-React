@@ -15,9 +15,6 @@ import { voxMeetingOptOutSchema } from '@/lib/validation/voximplant';
 // via event_kind='mtg_dnc', its OWN drain case, so this can never touch
 // call_attempts/RSVP/billing processing code (plan §7's isolation requirement).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 4 * 1024;
 
 export async function POST(

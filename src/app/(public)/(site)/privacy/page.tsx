@@ -8,6 +8,10 @@ import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { LegalShell, LegalSection, CategoryStatusBadge } from '../_legal';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Title and description are declared once and reused for the Open Graph
 // block — the share preview and the search snippet must not drift apart.
 const TITLE = 'מדיניות פרטיות';
@@ -26,7 +30,6 @@ export const metadata: Metadata = {
 
 // Render per-request so the page always reflects the current company/legal config
 // edited in /admin — instead of being baked at build.
-export const dynamic = 'force-dynamic';
 
 // Public privacy policy (beta.kalfa.me/privacy). Hebrew, RTL, reads company
 // identity from config. Legal wording per Privacy Protection Law §11 +

@@ -1,6 +1,6 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, updateTag } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 import { returnValidationErrors } from 'next-safe-action';
 import { z } from 'zod';
@@ -26,6 +26,7 @@ import {
 import { updateChannelMetadata } from '@/lib/data/admin/channel-catalog';
 import { updateSendPolicy } from '@/lib/data/admin/integrations/send-policy';
 import { sendSlackAlert } from '@/lib/alerts/slack';
+import { CALL_ME_NOW_WIDGET_TAG } from '@/lib/data/call-me-now-public-config';
 import { ruleIdAssignmentError, type RuleIdClaim } from '@/lib/validation/admin';
 import type { VoximplantRulesResult } from '@/lib/data/admin/voximplant-channel';
 import { actionClient, returnUserError } from '@/lib/safe-action';
@@ -161,6 +162,8 @@ export const updateVoximplantChannelAction = actionClient
       return returnUserError('עדכון הגדרות הערוץ נכשל. נסו שוב.');
     }
 
+    // The call-me-now routing rule is saved by this form, and the marketing layout reads it through a cached function.
+    updateTag(CALL_ME_NOW_WIDGET_TAG);
     revalidateAll(VOXIMPLANT, INDEX);
     return { notice: 'הגדרות הערוץ נשמרו' };
   });

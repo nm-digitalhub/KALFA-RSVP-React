@@ -31,7 +31,6 @@ import {
 // No guest data is involved and nothing here is request-dependent, so the
 // response is prerendered — GET handlers are dynamic by default (same note as
 // src/app/llms.txt/route.ts).
-export const dynamic = 'force-static';
 
 export function GET(): Response {
   return new Response(buildTemplateCsv(), {

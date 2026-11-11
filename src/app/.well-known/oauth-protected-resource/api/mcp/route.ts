@@ -4,8 +4,6 @@ import { NextResponse } from 'next/server';
 import { mcpResourceUrl } from '@/app/api/mcp/auth';
 import { supabaseAuthServerMetadata } from '@/lib/owner-agent/mcp/oauth';
 
-export const runtime = 'nodejs';
-
 // RFC 9728 Protected Resource Metadata for /api/mcp: names Supabase Auth as the
 // Authorization Server. The 401 from /api/mcp points here (WWW-Authenticate
 // resource_metadata=…), and an MCP client follows it to Supabase's own RFC 8414

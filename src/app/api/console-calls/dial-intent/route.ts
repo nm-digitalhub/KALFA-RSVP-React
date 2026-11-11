@@ -36,9 +36,6 @@ import { dialIntentBodySchema } from '@/lib/validation/console-calls';
 //   9. concurrency (live console_calls < 2)
 //   10. create console_calls + pii row, mint dial token, audit log
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 2_048;
 
 export async function POST(request: Request) {

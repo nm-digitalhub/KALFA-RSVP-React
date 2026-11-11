@@ -7,9 +7,6 @@ import { settleCardcomSession } from '@/lib/payments/cardcom-settle';
 import { guardCampaignRoute, noStoreJson } from '@/lib/payments/cardcom-routes';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 // The buyer's browser calls this when the Open Fields form says it submitted (or errored) — docs/superpowers/plans/
 // 2026-10-07-cardcom-pilot-plan.md, 4.6. It does NOT report an outcome: the browser's word, and the iframe's "HandleSubmit"
 // message, are worth nothing. It only asks the server to find out from CardCom (settleCardcomSession), and then starts the

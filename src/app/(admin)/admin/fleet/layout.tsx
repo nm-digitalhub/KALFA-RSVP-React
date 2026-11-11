@@ -5,6 +5,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { listFleetConversations } from '@/lib/data/admin/fleet';
 import { ConversationList } from './conversation-list';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'פניות סוכנים' };
 
 // /admin/fleet as a messaging app (plans/fleet-messaging-redesign-2026-09-27.md):

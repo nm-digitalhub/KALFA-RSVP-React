@@ -25,9 +25,6 @@ import { voxSalesCallbackSchema } from '@/lib/validation/voximplant';
 // and voximplant-reconcile.ts already alerts on a pre-terminal row stuck
 // past its window.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 8 * 1024;
 
 const NO_CONVERSATION_STATUSES = new Set(['no_answer', 'no_response', 'failed']);

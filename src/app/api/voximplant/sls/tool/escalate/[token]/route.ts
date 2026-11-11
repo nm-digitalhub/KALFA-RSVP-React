@@ -17,9 +17,6 @@ import { voxSalesEscalateSchema } from '@/lib/validation/voximplant';
 // contact_messages/Slack queue notify_owner uses — never silently
 // pretending a handoff happened.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 2 * 1024;
 
 export async function POST(

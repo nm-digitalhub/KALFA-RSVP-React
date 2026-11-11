@@ -5,6 +5,10 @@ import { getT } from '@/i18n.server';
 import { getEventTypeContent } from '@/lib/marketing/event-types';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Copy lives in the catalogue (src/lib/marketing/event-types.ts) so the four
 // event-type pages can be compared side by side; the markup lives once in
 // EventTypePage. The brand is appended by the root layout's title.template.

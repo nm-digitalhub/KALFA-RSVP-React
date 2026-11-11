@@ -29,9 +29,6 @@ import { postCommandToSession } from '@/lib/voximplant/session-command';
 // plus manage_voice at the route. The human's identity is read from the SESSION,
 // never the body — an agent can only ever attach their OWN leg.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ callAttemptId: string }> },

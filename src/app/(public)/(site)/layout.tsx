@@ -5,6 +5,10 @@ import { SiteHeader } from '@/components/site/site-header';
 import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { getCallMeNowWidgetEnabled } from '@/lib/data/call-me-now-public-config';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // URL-neutral route group for the public MARKETING pages (home, contact,
 // legal). Exists so consent-gated analytics can mount here without ever
 // reaching the sibling guest token surfaces (/r /g /ty /join) — guests are

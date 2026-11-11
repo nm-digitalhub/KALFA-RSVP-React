@@ -16,9 +16,6 @@ import { recordConsoleConsultAudit } from '@/lib/data/console-calls';
 // carries the target vox_username directly (no dependency on consult_started
 // having already landed) — see /api/voximplant/console/event.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireManageVoiceAgent(request);
   if (!auth.ok) return auth.response;

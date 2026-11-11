@@ -8,6 +8,10 @@ import { getT } from '@/i18n.server';
 import { CallbackForm, ContactForm } from './inquiry-forms';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Title and description are declared once and reused for the Open Graph
 // block — the share preview and the search snippet must not drift apart.
 export async function generateMetadata(): Promise<Metadata> {
@@ -29,7 +33,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 // Session-aware (prefill for signed-in customers) → render per-request.
-export const dynamic = 'force-dynamic';
 
 // Public contact-and-support page. One page serves both audiences: anonymous
 // prospects (pre-sales) and signed-in customers (support) — the audience is

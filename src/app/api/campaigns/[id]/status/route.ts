@@ -40,9 +40,6 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // design D23). activateCampaign transitions only `paused → active`, so this route
 // cannot widen it even if it tried.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const uuidSchema = z.uuid();
 const bodySchema = z.strictObject({ action: z.enum(['activate', 'pause']) });
 

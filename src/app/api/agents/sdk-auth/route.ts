@@ -20,9 +20,6 @@ import { sdkOneTimeKeyBodySchema } from '@/lib/validation/sdk-one-time-key';
 // The username is NOT read from the body. It is resolved from the Bearer
 // session, so an agent can only ever sign for their own identity.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_CHARS = 2_048;
 
 // A signing request IS a login attempt. Bounded per agent so a stolen JWT

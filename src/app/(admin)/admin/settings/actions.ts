@@ -2,10 +2,11 @@
 
 import { z } from 'zod';
 import { zfd } from 'zod-form-data';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, updateTag } from 'next/cache';
 import { unstable_rethrow } from 'next/navigation';
 
 import { updateAppSettings, setExchangeConnectionMode } from '@/lib/data/admin/settings';
+import { CALL_ME_NOW_WIDGET_TAG } from '@/lib/data/call-me-now-public-config';
 import { actionClient, returnUserError } from '@/lib/safe-action';
 import { appSettingsSchema } from '@/lib/validation/admin';
 
@@ -43,6 +44,8 @@ export const updateSettingsAction = actionClient
       returnUserError('עדכון ההגדרות נכשל. נסו שוב.');
     }
 
+    // The call-me-now switch is one of these settings, and the marketing layout reads it through a cached function.
+    updateTag(CALL_ME_NOW_WIDGET_TAG);
     revalidatePath('/admin/settings');
     return { notice: 'ההגדרות נשמרו' };
   });

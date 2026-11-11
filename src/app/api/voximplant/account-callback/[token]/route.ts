@@ -21,9 +21,6 @@ import { emptyNoStore, okNoStore } from '@/lib/voximplant/no-store-response';
 // The route is DARK until an admin wires it: with no stored token hash every
 // request is a generic 404. Mirrors the cb route's fail-closed posture.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const RATE = { limit: 20, windowMs: 5 * 60 * 1000 } as const;
 // A separate, tight limiter on the verified PULL so a callback flood cannot turn
 // into a GetAccountInfo flood (per-process; resets on redeploy — documented).

@@ -12,8 +12,11 @@ import { stationStatesFor, type RdpDisplayStatus } from '@/lib/rdp-access/status
 import { AccessTrack } from '../../access-track';
 import { Badge, type BadgeVariant } from '../../../_components';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'פרטי בקשת גישה' };
-export const dynamic = 'force-dynamic';
 
 // One request, read-only: where it stands on the track, the facts, and the audit timeline in the order it happened.
 // Owner-only (the gate is inside the data call). Nothing here changes anything: deciding, denying and revoking

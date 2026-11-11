@@ -27,8 +27,6 @@ const TOKEN_RE = /^[0-9a-f]{32}$/;
 // hammering one link) and per IP alone (one client probing many tokens).
 const GIFT_ICS_RATE = { limit: 30, windowMs: 60_000 };
 
-export const dynamic = 'force-dynamic';
-
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!TOKEN_RE.test(token)) return new Response(null, { status: 404 });

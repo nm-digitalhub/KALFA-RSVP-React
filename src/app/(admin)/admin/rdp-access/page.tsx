@@ -17,10 +17,13 @@ import { isOutcome, OutcomeNotice } from './outcome-notice';
 import { PendingPanel } from './pending-panel';
 import { RequestForm } from './request-form';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: PAGE_TITLE };
 
 // The state is per signed-in person and changes while the page is open (the owner answers, the window ends).
-export const dynamic = 'force-dynamic';
 
 // A person's own remote-desktop access: ask for it, wait for the owner, download the connection file, end it.
 // The permission gate lives in getMyRdpAccessState (and in every action and the file route); the page only draws

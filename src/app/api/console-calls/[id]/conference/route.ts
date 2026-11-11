@@ -36,9 +36,6 @@ import { consoleConferenceBodySchema } from '@/lib/validation/console-calls';
 // this route only validates, resolves, and delivers. 2xx here means
 // DELIVERED, never "joined".
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1024;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {

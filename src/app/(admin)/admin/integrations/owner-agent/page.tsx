@@ -24,6 +24,10 @@ import { NumberPicker } from './number-picker';
 import { OwnerAgentDailyCapForm, OwnerAgentSwitch } from './owner-agent-settings-forms';
 import { ReportsPanel } from './reports-panel';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'סוכן WhatsApp לבעלים — אינטגרציות' };
 
 // The owner WhatsApp business-data agent, stage 2 of plans/owner-whatsapp-agent-plan.md:

@@ -1,5 +1,6 @@
 import 'server-only';
-import { cache } from 'react';
+import { cacheLife, cacheTag } from 'next/cache';
+import { connection } from 'next/server';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -10,11 +11,10 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // the layout: this runs on EVERY anonymous marketing page render, and that
 // function is a bare per-call DB round trip (correct for the API route, which
 // must never serve a stale flag when it is about to place a real PSTN call).
-// A marketing page has the opposite trade-off — a few seconds of staleness on
+// A marketing page has the opposite trade-off — a minute of staleness on
 // a widget's visibility costs nothing, an extra DB round trip per visitor
-// costs real latency. So this mirrors admin-config.ts's proven two-layer
-// shape exactly: a module-level TTL cache (survives across requests in this
-// process) plus React `cache()` (dedupes within a single request).
+// costs real latency. So the read is cached by Next (`'use cache'`, docs:
+// api-reference/directives/use-cache) the same way getCookieConsentPublicConfig is.
 //
 // SERVICE-ROLE client for the same reason getCookieConsentPublicConfig uses
 // one: this runs for anonymous visitors with no session, and app_settings is
@@ -32,35 +32,41 @@ import { createAdminClient } from '@/lib/supabase/admin';
 // itself (uncached) alongside consent, availability, caps and the routing-rule
 // id before anything dials. Someone POSTing the API directly with the widget
 // hidden still gets refused there.
-const CACHE_TTL_MS = 20_000;
-let processCache: { value: boolean; at: number } | null = null;
+// Expired by the two admin actions that change what it reads: the feature switch (/admin/settings) and the routing
+// rule (/admin/integrations/voximplant).
+export const CALL_ME_NOW_WIDGET_TAG = 'call-me-now-widget';
 
-export const getCallMeNowWidgetEnabled = cache(async (): Promise<boolean> => {
-  const now = Date.now();
-  if (processCache && now - processCache.at < CACHE_TTL_MS) return processCache.value;
+// Throws on a failed read, for the reason readCookieConsentConfig does: a cached function stores what it returns.
+async function readCallMeNowWidgetEnabled(): Promise<boolean> {
+  'use cache';
+  cacheLife('minutes');
+  cacheTag(CALL_ME_NOW_WIDGET_TAG);
 
-  let enabled = false;
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('app_settings')
+    .select('console_call_me_now_enabled, voximplant_call_me_now_rule_id')
+    .eq('id', true)
+    .maybeSingle();
+  if (error || !data) throw new Error('call-me-now widget config could not be read');
+
+  // BOTH conditions, not just the flag: without a bound routing rule the
+  // verify route refuses structurally (its /^\d+$/ guard), so showing the
+  // widget then would again be a form that always fails. The two pieces of
+  // config that make the feature real are the same two that make it
+  // visible.
+  return (
+    data.console_call_me_now_enabled === true &&
+    /^\d+$/.test(String(data.voximplant_call_me_now_rule_id ?? ''))
+  );
+}
+
+export async function getCallMeNowWidgetEnabled(): Promise<boolean> {
   try {
-    const admin = createAdminClient();
-    const { data, error } = await admin
-      .from('app_settings')
-      .select('console_call_me_now_enabled, voximplant_call_me_now_rule_id')
-      .eq('id', true)
-      .maybeSingle();
-    // BOTH conditions, not just the flag: without a bound routing rule the
-    // verify route refuses structurally (its /^\d+$/ guard), so showing the
-    // widget then would again be a form that always fails. The two pieces of
-    // config that make the feature real are the same two that make it
-    // visible.
-    if (!error && data) {
-      enabled =
-        data.console_call_me_now_enabled === true &&
-        /^\d+$/.test(String(data.voximplant_call_me_now_rule_id ?? ''));
-    }
+    return await readCallMeNowWidgetEnabled();
   } catch {
-    enabled = false;
+    // Fails closed for THIS request only; connection() keeps the "off" of a failed read out of any prerendered page.
+    await connection();
+    return false;
   }
-
-  processCache = { value: enabled, at: now };
-  return enabled;
-});
+}

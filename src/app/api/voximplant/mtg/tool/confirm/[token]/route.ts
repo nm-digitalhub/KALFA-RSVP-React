@@ -13,9 +13,6 @@ import { voxConfirmMeetingSchema } from '@/lib/validation/voximplant';
 // side effect, so a synchronous call is both simpler and sufficient (see
 // callback-voice-processing.ts's module comment for the full reasoning).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 4 * 1024;
 
 export async function POST(

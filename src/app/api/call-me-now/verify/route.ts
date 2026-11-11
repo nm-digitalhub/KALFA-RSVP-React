@@ -71,9 +71,6 @@ import { CALL_ME_NOW_OTP_PURPOSE, callMeNowVerifyBodySchema } from '@/lib/valida
 // feature flag) and voximplant_call_me_now_rule_id (the ConsoleCallMeNow
 // routing rule).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 512;
 const FLOOD_RATE = { limit: 10, windowMs: 60_000 } as const;
 const START_TIMEOUT_MS = 25_000; // matches outreach-calls.ts's own StartScenarios timeout

@@ -35,9 +35,6 @@ import { postCommandToSession } from '@/lib/voximplant/session-command';
 // lives only for the call's duration — a terminal attempt (or one with no handle)
 // is rejected with 409, which is exactly the state the app's 409 branch expects.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_CHARS = 8 * 1024;
 
 export async function POST(

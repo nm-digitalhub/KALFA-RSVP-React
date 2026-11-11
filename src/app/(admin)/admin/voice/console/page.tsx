@@ -4,6 +4,10 @@ import { createClient } from '@/lib/supabase/server';
 import { PageHeading } from '../../_components';
 import { ConsolePhoneDev } from './_console-client';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Stage-2 dev surface for the browser call-center: agent login only, zero
 // telephony. Gate = console-agent membership itself (mirrors /api/agents/
 // sdk-auth: being able to log in as yourself IS the membership — manage_voice

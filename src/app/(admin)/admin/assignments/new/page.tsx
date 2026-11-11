@@ -13,6 +13,10 @@ import { formatIsraelDate } from '@/lib/date';
 import { PageHeading, formatCurrency } from '../../_components';
 import { AssignForm } from './assign-form';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'הקצאת הטבה' };
 
 // Staff assign (admin-panel ג.1–ג.3, spec §8): a two-step flow. Step 1 resolves the

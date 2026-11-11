@@ -31,9 +31,6 @@ import { rateLimit } from '@/lib/security/rate-limit';
 // own phone with a stranger's name from a brit. Staff-gated by requireConsoleAgent,
 // the same gate every other agent route uses. Numbers are never logged.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const RATE = { limit: 60, windowMs: 60_000 } as const;
 
 /** Matches the app's HistoryRange values; 90 is the outer bound we will serve. */

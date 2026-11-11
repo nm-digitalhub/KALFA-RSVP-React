@@ -1,5 +1,6 @@
 import 'server-only';
-import { cache } from 'react';
+import { cacheLife, cacheTag } from 'next/cache';
+import { connection } from 'next/server';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { BASELINE_ADMIN_CONFIG, type CookieConsentAdminConfig } from './cookie-consent-config';
@@ -24,48 +25,49 @@ import { BASELINE_ADMIN_CONFIG, type CookieConsentAdminConfig } from './cookie-c
 // for a legally-required consent mechanism whose absence has its own
 // consequences. See plans/cookie-consent-admin-control.md §6.1.
 //
-// Two cache layers: a module-level TTL cache (mirrors alerts-config.ts,
-// survives across requests within this process) PLUS React's `cache()`
-// (dedupes the DB round trip WITHIN one request — root layout and the
-// (site)/customer-app layouts that mount GoogleAnalyticsGated all call this).
-const CACHE_TTL_MS = 20_000;
-let processCache: { value: CookieConsentAdminConfig; at: number } | null = null;
+// Cached by Next (docs: api-reference/directives/use-cache), not by hand: a `'use cache'` function with an explicit
+// lifetime and a tag.
+//   - `minutes` (revalidate after 1 minute, expire after 1 hour): long enough to be part of a prerendered page, and it
+//     bounds how long a change made OUTSIDE the admin screen (SQL, a migration) can go unseen.
+//   - the tag is expired by every admin action that changes the config (updateTag, read-your-own-writes), so a change
+//     made in /admin/cookie-consent is seen by the very next request.
+export const COOKIE_CONSENT_CONFIG_TAG = 'cookie-consent-config';
 
-export const getCookieConsentPublicConfig = cache(
-  async (): Promise<CookieConsentAdminConfig> => {
-    const now = Date.now();
-    if (processCache && now - processCache.at < CACHE_TTL_MS) return processCache.value;
+// Throws instead of returning the baseline on a failed read, because a cached function stores what it RETURNS: a
+// baseline returned from here would be served as the config for the whole lifetime. A throw stores nothing (the
+// default handler's set() discards an errored entry — next/dist/server/lib/cache-handlers/default.js, 16.4.5).
+async function readCookieConsentConfig(): Promise<CookieConsentAdminConfig> {
+  'use cache';
+  cacheLife('minutes');
+  cacheTag(COOKIE_CONSENT_CONFIG_TAG);
 
-    try {
-      const admin = createAdminClient();
-      const { data, error } = await admin
-        .from('app_settings')
-        .select(
-          'cookie_consent_enabled, cookie_consent_analytics_enabled, cookie_consent_marketing_enabled, cookie_consent_revision_bump',
-        )
-        .eq('id', true)
-        .maybeSingle();
-      if (error || !data) return BASELINE_ADMIN_CONFIG; // do NOT cache a failure — allow recovery
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('app_settings')
+    .select(
+      'cookie_consent_enabled, cookie_consent_analytics_enabled, cookie_consent_marketing_enabled, cookie_consent_revision_bump',
+    )
+    .eq('id', true)
+    .maybeSingle();
+  if (error || !data) throw new Error('cookie-consent config could not be read');
 
-      const row = data;
-      const value: CookieConsentAdminConfig = {
-        enabled: row.cookie_consent_enabled !== false,
-        analyticsEnabled: row.cookie_consent_analytics_enabled !== false,
-        marketingEnabled: row.cookie_consent_marketing_enabled !== false,
-        revisionBump:
-          typeof row.cookie_consent_revision_bump === 'number'
-            ? row.cookie_consent_revision_bump
-            : 0,
-      };
-      processCache = { value, at: now };
-      return value;
-    } catch {
-      return BASELINE_ADMIN_CONFIG;
-    }
-  },
-);
+  return {
+    enabled: data.cookie_consent_enabled !== false,
+    analyticsEnabled: data.cookie_consent_analytics_enabled !== false,
+    marketingEnabled: data.cookie_consent_marketing_enabled !== false,
+    revisionBump:
+      typeof data.cookie_consent_revision_bump === 'number' ? data.cookie_consent_revision_bump : 0,
+  };
+}
 
-/** Test-only: clear the in-process cache so each test starts clean. */
-export function __resetCookieConsentPublicConfigCacheForTests(): void {
-  processCache = null;
+export async function getCookieConsentPublicConfig(): Promise<CookieConsentAdminConfig> {
+  try {
+    return await readCookieConsentConfig();
+  } catch {
+    // The baseline of a failed read belongs to THIS request only. connection() keeps it out of any prerendered
+    // page, so a database hiccup during a build or a revalidation is never frozen into a page; the next request
+    // reads again.
+    await connection();
+    return BASELINE_ADMIN_CONFIG;
+  }
 }

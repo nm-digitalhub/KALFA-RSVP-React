@@ -26,8 +26,6 @@ import { tokenFingerprint } from '@/lib/security/token-fingerprint';
 // per-token bucket keeps the page's read rate.
 const RSVP_ICS_IP_RATE = { limit: 30, windowMs: 60_000 };
 
-export const dynamic = 'force-dynamic';
-
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!looksLikeRsvpToken(token)) return new Response(null, { status: 404 });

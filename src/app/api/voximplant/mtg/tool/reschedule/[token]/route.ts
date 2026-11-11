@@ -17,9 +17,6 @@ import { voxRequestRescheduleSchema } from '@/lib/validation/voximplant';
 // different outcome (or was separately escalated) — worse than a clean
 // synchronous failure.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 4 * 1024;
 
 export async function POST(

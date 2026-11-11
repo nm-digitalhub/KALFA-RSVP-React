@@ -28,9 +28,6 @@ import { rdpGatewayCheckBodySchema } from '@/lib/validation/rdp-access';
 // The Bearer secret is RDPGW_CHECK_SECRET. Removing it (or any other gateway variable) switches the whole
 // feature off: this route answers 503 and no tunnel opens. That is the app-side kill switch.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const REFUSED = { allow: false as const };
 // Coarse flood guard only, NOT a security control (the call comes from one local process).
 const RATE = { limit: 600, windowMs: 60_000 } as const;

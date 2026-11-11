@@ -20,9 +20,6 @@ import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 //
 // Never logged: the body (it carries the buyer's name, phone, e-mail and ID), tokens, credentials. Ids only.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 // Far above anything CardCom sends (a few KB), far below anything worth parsing.
 const MAX_BODY_BYTES = 10_000;
 // Per client address. Generous on purpose: CardCom's retries and a busy minute must never be turned away, while a flood

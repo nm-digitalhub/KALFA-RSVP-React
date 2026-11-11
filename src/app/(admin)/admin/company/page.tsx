@@ -3,6 +3,10 @@ import { getCompanySettings } from '@/lib/data/admin/settings';
 import { PageHeading } from '../_components';
 import { CompanyForm } from './company-form';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'פרטי חברה' };
 
 const sectionClass = 'space-y-4 rounded-lg border border-border bg-card p-5';

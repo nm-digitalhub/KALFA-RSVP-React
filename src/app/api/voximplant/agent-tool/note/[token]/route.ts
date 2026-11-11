@@ -17,9 +17,6 @@ import { voxNotifyOwnerSchema } from '@/lib/validation/voximplant';
 // PERSIST-THEN-PROCESS like the sibling tools: durable inbox row + synchronous
 // best-effort write so the agent's "אעביר לבעלי השמחה" is truthful.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 8 * 1024;
 
 export async function POST(

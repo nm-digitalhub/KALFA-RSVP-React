@@ -44,9 +44,6 @@ import { createAdminClient } from '@/lib/supabase/admin';
 //        return `already_dispatched` on a re-dial. A manual dial takes a unique index
 //        allocated in the database (below) so re-dialling the same guest is allowed.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const uuid = z.uuid();
 const bodySchema = z.strictObject({ guest_id: z.uuid() });
 

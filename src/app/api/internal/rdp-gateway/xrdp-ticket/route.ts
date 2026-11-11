@@ -25,9 +25,6 @@ import { xrdpTicketCheckBodySchema } from '@/lib/validation/rdp-access';
 //
 // The ticket is a credential until it expires. It is never logged, and never echoed back.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const REFUSED = { allow: false as const };
 // Coarse flood guard only, NOT a security control (the call comes from one local process).
 const RATE = { limit: 120, windowMs: 60_000 } as const;

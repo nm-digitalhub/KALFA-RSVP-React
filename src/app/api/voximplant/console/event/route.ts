@@ -28,9 +28,6 @@ import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 // resolve to their pre-created console_calls row via
 // findConsoleCallForEvent() and update it per event type.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 4_096;
 // Coarse per-IP flood guard only — see authorize/route.ts's identical note.
 // Looser than authorize: a single live call can emit several events

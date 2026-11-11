@@ -23,9 +23,6 @@ import { recordConsoleConferenceAudit } from '@/lib/data/console-calls';
 // Auth mirrors every other live-call console route: requireConsoleAgent (Bearer +
 // staff) + manage_voice.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireManageVoiceAgent(request);
   if (!auth.ok) return auth.response;

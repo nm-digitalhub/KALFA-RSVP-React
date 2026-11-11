@@ -12,6 +12,10 @@ import { getCookieConsentPublicConfig } from '@/lib/consent/admin-config';
 import { getAppOrigin } from '@/lib/url';
 import { OPEN_GRAPH_BASE } from '@/lib/seo/open-graph';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Heebo is the primary font (Hebrew + Latin) and drives shadcn's --font-sans.
 const heebo = Heebo({
   subsets: ['hebrew', 'latin'],
@@ -58,21 +62,6 @@ export async function generateMetadata(): Promise<Metadata> {
     twitter: { card: 'summary_large_image' },
   };
 }
-
-// Bounds staleness (to at most this many seconds) for any route that would
-// otherwise be statically frozen at build time — the static auth pages
-// (src/app/auth/**: forgot-password, signup/success) have no dynamic API usage
-// today and are the actual risk;
-// every other surface is already forced dynamic for unrelated reasons (home
-// via getUser()→cookies(); /contact /terms /cookies /privacy and the guest
-// token routes via their own `dynamic = 'force-dynamic'`; customer/admin via
-// cookies() in their layouts). See plans/cookie-consent-admin-control.md §9
-// for the full reasoning (Next.js 16.3, cacheComponents NOT enabled — the
-// classic model applies, confirmed against node_modules/next/dist/docs).
-// `revalidatePath('/', 'layout')` in every admin write
-// (src/app/(admin)/admin/cookie-consent/actions.ts) gives near-immediate
-// invalidation on top of this backstop.
-export const revalidate = 20;
 
 export default async function RootLayout({
   children,

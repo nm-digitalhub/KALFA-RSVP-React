@@ -1,9 +1,5 @@
 // src/app/api/hermes/teams/route.ts
 
-export const runtime = 'nodejs';
-
-export const dynamic = 'force-dynamic';
-
 const HERMES_ENDPOINT = 'http://127.0.0.1:3978/api/messages';
 
 export async function POST(request: Request): Promise<Response> {

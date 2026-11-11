@@ -43,9 +43,6 @@ import { consoleConsultBodySchema } from '@/lib/validation/console-calls';
 // (Bearer + staff) + manage_voice (the call-floor authority, not per-agent
 // ownership).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1024;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {

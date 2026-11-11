@@ -78,6 +78,11 @@ const nextConfig: NextConfig = {
   // Server Action" and webpack chunk (`require is not a function`) errors until
   // a restart. `next start` (pm2) leaves NEXT_DIST_DIR unset → always uses
   // `.next`; the deploy script atomically swaps the freshly built dir in.
+  // Cache Components (docs: config/next-config-js/cacheComponents). Nothing is cached unless a function says
+  // 'use cache'; uncached data and request-time APIs run on every request. Partial Prefetching is adopted as its
+  // own step after this one, so it is off explicitly (unset logs a warning).
+  cacheComponents: true,
+  partialPrefetching: false,
   distDir: DIST_DIR,
   typescript: { tsconfigPath: buildTsconfigPath() },
   // The vhost HOME above us is itself a git project with its own lockfile

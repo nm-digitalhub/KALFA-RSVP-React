@@ -51,9 +51,6 @@ import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 // Binding rule 1494687 to the ConsoleInbound scenario is separate from this
 // route. Nothing here flips inbound_calls_enabled or binds the rule.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1_024;
 // Coarse per-IP flood guard only — NOT the real per-CLI cap (that is a DB
 // count on console_call_pii.phone_e164, evaluated below). Loose: every

@@ -45,9 +45,6 @@ type IncomingValue = IncomingWebhook['schemas']['IncomingMessageValueGeneral'];
 // itself is persisted below exactly as before. With no number chosen (the
 // default) nothing below differs from before it.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 // Meta timestamps are unix SECONDS as strings → ISO, or null if absent/garbage.
 function tsToIso(ts: string | undefined): string | null {
   if (!ts) return null;

@@ -6,6 +6,10 @@ import { getQueueMemberIds, listAllConsoleAgents, listQueuesForAdmin } from '@/l
 import { PageHeading } from '../../_components';
 import { QueuesClient } from './queues-client';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'מחלקות — מוקד שיחות AI' };
 
 // Admin management surface for department queues. NOT SmartQueue — a plain

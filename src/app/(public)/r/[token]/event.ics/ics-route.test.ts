@@ -18,7 +18,9 @@ describe('/r/[token]/event.ics route', () => {
     expect(source).toMatch(/rateLimit\(`rsvp:ics:\$\{fp\}:\$\{ip\}`, RSVP_READ_RATE\)/);
     expect(source).toMatch(/rateLimit\(`rsvp:ics:ip:\$\{ip\}`/);
     expect(source).not.toMatch(/rateLimit\(`rsvp:ics:\$\{token\}/);
-    expect(source).toMatch(/export const dynamic = 'force-dynamic'/);
+    // Per-request by construction (Cache Components): the handler reads the request, and nothing in it is cached.
+    expect(source).toMatch(/await headers\(\)/);
+    expect(source).not.toMatch(/['"]use cache/);
   });
 
   it('reads only view.event.* and answers every failure with a bare 404', () => {

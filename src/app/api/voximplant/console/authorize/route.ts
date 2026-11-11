@@ -22,9 +22,6 @@ import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 // live calls are still enabled a few seconds later. DNC/consent/quiet-hours
 // are not re-run here — see the live-dial gate below.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1_024;
 // Coarse per-IP flood guard only (NOT a security control — Voximplant's
 // scenarios call from a small, shared, provider-side IP range). Loose enough

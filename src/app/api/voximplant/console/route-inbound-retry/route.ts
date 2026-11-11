@@ -46,9 +46,6 @@ import { jsonNoStore } from '@/lib/voximplant/no-store-response';
 // on beyond parsing this body, so refusal states are distinguished by an
 // empty array, never a non-200 the scenario would have to special-case.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1_024;
 // Same coarse per-IP flood guard shape as route-inbound — at most one retry
 // call per in-progress inbound call, so this is far looser than needed in

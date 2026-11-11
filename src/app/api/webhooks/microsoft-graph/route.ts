@@ -18,9 +18,6 @@ import { webhookClientState } from '@/lib/microsoft/subscriptions';
 //
 // Never log the payload, the sender, or the client state.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 /**
  * Graph validates a notification URL by POSTing to it with a `validationToken`
  * query parameter and requiring that exact string back as text/plain within 10

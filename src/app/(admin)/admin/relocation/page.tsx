@@ -15,13 +15,16 @@ import {
 } from './_panels';
 import { AutoRefreshToggle } from '../_auto-refresh-toggle';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'העברת דומיין' };
 
 // Force-dynamic: renders the live `.relocation-state.json` written by the CLI
 // wizard (npm run relocate) on every request — never statically optimized.
 // Valid while cacheComponents is off (see the design doc's installed-docs
 // citations); same shape as /admin/debug.
-export const dynamic = 'force-dynamic';
 
 // Read-only progress window for the relocation wizard
 // (docs/relocation-wizard-design-2026-08-23.md §4). Gated to the PLATFORM

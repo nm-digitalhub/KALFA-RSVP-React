@@ -15,9 +15,6 @@ import { voxMeetingEscalateSchema } from '@/lib/validation/voximplant';
 // ישירות") — never a bespoke channel. No queue: this is a synchronous insert,
 // matching how the public forms themselves write (they are not queued either).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 4 * 1024;
 
 export async function POST(

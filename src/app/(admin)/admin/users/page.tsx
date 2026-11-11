@@ -6,6 +6,10 @@ import { listAllUsers } from '@/lib/data/admin/users';
 
 import { PageHeading, EmptyState, Badge, Pagination, parsePageParam } from '../_components';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'משתמשים' };
 
 // Admin user management — list of all platform users (search by name, email,

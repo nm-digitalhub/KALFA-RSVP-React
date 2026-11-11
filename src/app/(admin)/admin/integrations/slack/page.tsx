@@ -9,6 +9,10 @@ import { PageHeading, parsePageParam } from '../../_components';
 import { AlertsClient } from './alerts-client';
 import { AlertsHistory } from './alerts-history';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'Slack — אינטגרציות' };
 
 // Slack is the operational alerting channel: the connection, who gets @-mentioned,

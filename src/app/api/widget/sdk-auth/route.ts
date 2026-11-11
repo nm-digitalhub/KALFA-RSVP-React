@@ -24,9 +24,6 @@ import { sdkOneTimeKeyBodySchema } from '@/lib/validation/sdk-one-time-key';
 // WIDGET_VOX_PASSWORD unset) — same fail-closed shape as route-inbound's
 // `if (!expected) return json(REJECT, 503)` for KALFA_CONSOLE_SECRET.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_CHARS = 2_048;
 
 // Tighter than the agent route's 10/min (per-user, post-auth): this has no

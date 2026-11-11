@@ -10,7 +10,6 @@ import { getAppOrigin } from '@/lib/url';
 
 // Content depends only on APP_ORIGIN — prerender it (GET handlers are not
 // static by default, unlike the robots/sitemap metadata routes).
-export const dynamic = 'force-static';
 
 export async function GET(): Promise<Response> {
   const origin = await getAppOrigin();

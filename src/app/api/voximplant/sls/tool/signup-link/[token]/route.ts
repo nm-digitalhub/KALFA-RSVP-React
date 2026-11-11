@@ -53,9 +53,6 @@ import { voxSalesSignupLinkSchema } from '@/lib/validation/voximplant';
 // actual Meta rejection reason is visible on the row instead of requiring
 // live re-instrumentation to diagnose.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 2 * 1024;
 const SALES_SIGNUP_MESSAGE_KEY = 'sales_signup_link';
 

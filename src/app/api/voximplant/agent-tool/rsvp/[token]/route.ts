@@ -22,9 +22,6 @@ import { voxSaveRsvpSchema, voxSaveRsvpStatus } from '@/lib/validation/voximplan
 // the agent (which only claims "נרשם" on ok:true). A sync failure still leaves the
 // durable row for the drain, so the RSVP is never lost.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 16 * 1024; // a save_rsvp body is tiny; reject anything larger
 
 // D1 (value-hash dedupe): each DISTINCT answer is a distinct inbox row (a mid-call

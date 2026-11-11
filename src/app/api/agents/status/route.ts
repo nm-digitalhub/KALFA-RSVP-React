@@ -15,9 +15,6 @@ import { agentStatusSchema } from '@/lib/validation/agent-console';
 // caller-scoped client, so RLS (agent_status_upsert_own / _update_own) enforces
 // agent_id = auth.uid() at the database — the route never trusts a client id.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_CHARS = 4 * 1024; // a status body is tiny; reject anything larger
 
 export async function POST(request: Request) {

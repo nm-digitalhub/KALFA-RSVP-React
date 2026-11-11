@@ -35,9 +35,6 @@ import { consoleTransferBodySchema } from '@/lib/validation/console-calls';
 // not per-agent ownership — same model as /monitor and /agent-command, which
 // let any manage_voice holder act on any live call).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 1024;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {

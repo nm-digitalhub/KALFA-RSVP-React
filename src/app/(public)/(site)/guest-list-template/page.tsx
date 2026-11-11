@@ -17,6 +17,10 @@ import {
 } from '@/lib/guests/import-template';
 import { pageOpenGraph } from '@/lib/seo/open-graph';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Public landing page for the downloadable guest-list template.
 //
 // The columns and sample rows below are rendered FROM the template module, not

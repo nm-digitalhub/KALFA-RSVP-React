@@ -44,9 +44,6 @@ import { receivePostCallWebhook } from '@/lib/elevenlabs/post-call-webhook';
 // — just a different secret, since this is a different webhook_id. A signature
 // failure returns a uniform 401 (no oracle).
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export function POST(req: Request) {
   // This endpoint is bound to FIVE workspace usages (ConvAI Agent Settings + Alerting, Speech to Text, Flows,
   // Voice Library Removal), so unrelated event types — answered 200 and not stored — are the common case here.

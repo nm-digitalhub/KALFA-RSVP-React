@@ -11,9 +11,6 @@ import { voxNotifyOwnerSchema } from '@/lib/validation/voximplant';
 // missed follow-up, not a spam-law exposure) — same discipline as
 // callback-voice-processing.ts's processMeetingEscalate.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 8 * 1024;
 
 export async function POST(

@@ -25,9 +25,6 @@ import type { CallOutcome } from '@/lib/validation/admin';
 // transcript and this route's discount_tier_applied-shaped extensibility,
 // not as a second call_outcome enum value.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 2 * 1024;
 
 export async function POST(

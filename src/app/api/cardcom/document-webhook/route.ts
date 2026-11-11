@@ -24,9 +24,6 @@ import { getClientIp, rateLimit } from '@/lib/security/rate-limit';
 //   413 / 429  too large, or an address that is flooding the route;
 //   500  it could not be stored right now — CardCom posts again.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 // A report with document lines and card data is a few KB; this leaves room for long documents.
 const MAX_BODY_BYTES = 64_000;
 const RATE = { limit: 120, windowMs: 60_000 } as const;

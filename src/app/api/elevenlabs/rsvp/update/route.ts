@@ -15,9 +15,6 @@ import { receivePostCallWebhook } from '@/lib/elevenlabs/post-call-webhook';
 // a 30-min replay is harmless (no mutation, DB no-op). Dark until
 // ELEVENLABS_WEBHOOK is set AND the ElevenLabs post_call_webhook_id is wired.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export function POST(req: Request) {
   return receivePostCallWebhook(req, {
     rateLimitKey: 'el-rsvp-update',

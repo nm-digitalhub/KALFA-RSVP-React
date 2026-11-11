@@ -26,9 +26,6 @@ import { CALL_ME_NOW_OTP_PURPOSE, callMeNowRequestCodeBodySchema } from '@/lib/v
 // rate-limits and looks up per (phone, purpose), so another purpose could never
 // interfere with or count against this one for the same phone.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 const MAX_BODY_BYTES = 512;
 // Looser than requestOtp's own 5/phone/hour (that is the real per-victim
 // cap) — this is the coarse per-IP flood guard against ROTATING destination

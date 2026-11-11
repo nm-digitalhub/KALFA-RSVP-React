@@ -4,6 +4,10 @@ import { requirePlatformPermission } from '@/lib/auth/dal';
 import { PageHeading } from '../_components';
 import { SupportClient } from './support-client';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 export const metadata: Metadata = { title: 'תמיכת לקוחות' };
 
 // Dedicated, READ-ONLY customer-support surface. Gated on the

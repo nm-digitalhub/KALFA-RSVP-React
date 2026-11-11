@@ -2,6 +2,10 @@ import type { Metadata } from 'next';
 
 import { OAuthConsent } from '@/components/oauth-consent';
 
+// TODO: Cache Components adoption. Refactor this route so this opt-out can be removed.
+// See: https://nextjs.org/docs/app/guides/migrating-to-cache-components
+export const instant = false;
+
 // Supabase OAuth 2.1 server authorization path (Dashboard → Authentication →
 // OAuth Server → Authorization Path = /oauth/consent). Supabase Auth sends the
 // user here with ?authorization_id=… after validating the client's request.

@@ -29,9 +29,6 @@ import { postCommandToSession } from '@/lib/voximplant/session-command';
 // asynchronous and confirmation arrives as the ordinary terminal callback on the
 // attempt row. Callers should watch the row, not this response.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ callAttemptId: string }> },
