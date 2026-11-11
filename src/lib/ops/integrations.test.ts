@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The integrations panel's status row, and the two things it must never do:
 // load a credential to print a tick, and conflate "not configured" with "switched
 // off".

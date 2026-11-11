@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { Editor } from '@tiptap/core';
 import { describe, expect, it } from 'vitest';
 

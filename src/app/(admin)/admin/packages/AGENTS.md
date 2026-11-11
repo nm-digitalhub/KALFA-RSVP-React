@@ -57,8 +57,8 @@ For `includes` the line count must not change. Do not run it in tests: they mock
 
 ## Tests
 
-Colocated `*.test.ts(x)`. Pages render with `renderToStaticMarkup` in Node; client components
-opt into `// @vitest-environment jsdom` and supply rules through `PlatformAbilityProvider`.
+Colocated `*.test.ts(x)`. Every test file runs in jsdom (`vitest.config.mts`); pages render with
+`renderToStaticMarkup`, and client components supply rules through `PlatformAbilityProvider`.
 Page and action tests mock `@/lib/auth/platform-ability` and the DAL.
 
 ```bash

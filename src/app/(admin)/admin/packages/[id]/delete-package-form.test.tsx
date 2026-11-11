@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react';
 import type { RawRuleOf } from '@casl/ability';
 import { afterEach, describe, expect, it, vi } from 'vitest';

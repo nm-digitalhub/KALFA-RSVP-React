@@ -1,10 +1,11 @@
-import { fileURLToPath } from 'node:url';
+import react from '@vitejs/plugin-react';
+import tsconfigPaths from 'vite-tsconfig-paths';
 import { defineConfig } from 'vitest/config';
 
-// Unit tests run in a Node environment. Most testable logic is server-side
-// (Zod schemas, ownership filtering, auth helpers). A component or hook test is
-// a `.test.tsx` file that opts into a DOM with a `// @vitest-environment jsdom`
-// first line and renders with @testing-library/react.
+// The setup of the Next.js Vitest guide (node_modules/next/dist/docs/01-app/02-guides/testing/vitest.md):
+// `plugins: [tsconfigPaths(), react()]` and `environment: 'jsdom'`. tsconfigPaths resolves the `@/*` alias from
+// tsconfig.json, so no alias is declared here. Every test file gets a DOM by default; a file that must run without
+// one says so with a `// @vitest-environment node` first line.
 //
 // TZ is pinned so a test suite full of dates gives the same answer on any
 // machine. Without it the runner inherits the host, and a scheduling test that
@@ -53,8 +54,9 @@ import { defineConfig } from 'vitest/config';
 // here to make a test pass — pinning one state in the config also means the
 // other state is never tested, and a kill-switch has two real states.
 export default defineConfig({
+  plugins: [tsconfigPaths(), react()],
   test: {
-    environment: 'node',
+    environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
     env: { TZ: 'Asia/Jerusalem', NODE_ENV: 'test' },
     // Persist transformed modules across runs. Vitest's own diagnostic asked for
@@ -75,10 +77,5 @@ export default defineConfig({
     // module. The cache lives in `node_modules/.vitest-cache`, so a reinstall
     // clears it and git never sees it.
     fsModuleCache: true,
-  },
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-    },
   },
 });
