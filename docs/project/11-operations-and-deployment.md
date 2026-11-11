@@ -8,6 +8,11 @@
 (`pm2 jlist`, `/etc/nginx/conf.d/beta-proxy.conf`, `package.json`, קוד המקור).
 היכן שהמקור הוא ידע תפעולי מצטבר ולא קובץ — הדבר מסומן במפורש.
 
+עדכון חלקי 2026-11-11: נמדדו מחדש ועודכנו מספר התורים, רשימת תהליכי pm2, ה-stack המקומי של
+Supabase (§6.1), מספר המיגרציות, מצב הבדיקות (§7), תיקיית `scripts/` (§8, כולל סקריפטי SUMIT), הסליקה
+ב-§11 (CardCom ו-SUMIT) וקובץ ה-ecosystem (§12).
+סעיפים שלא נמדדו מחדש באותו יום נשארו כפי שהיו, ובהם §5 (משתני סביבה), §10 ושאר §11.
+
 ---
 
 ## 1. טופולוגיה כללית
@@ -21,14 +26,14 @@ nginx  — /etc/nginx/conf.d/beta-proxy.conf
    │    proxy_pass → http://127.0.0.1:3002
    ▼
 pm2 "kalfa-beta"  — next start -H 127.0.0.1 -p 3002   (Next.js 16, webpack build)
-pm2 "kalfa-worker" — node worker/start.mjs → dist/worker.cjs (pg-boss, 33 queues: outreach, webhooks, sweeps)
+pm2 "kalfa-worker" — node worker/start.mjs → dist/worker.cjs (pg-boss, 42 queues: outreach, webhooks, sweeps)
    │
    ▼
 Supabase (PostgreSQL + Auth, פרויקט חי מקושר, region ap-south-1)
 ```
 
 שני התהליכים רצים תחת המשתמש `kalfa.me`, עם `cwd` בתיקיית הריפו
-`/var/www/vhosts/kalfa.me/beta`.
+`/var/www/vhosts/kalfa.me/beta`. לצדם רצים באותו pm2 תהליכים נוספים (§2.1).
 
 ---
 
@@ -40,8 +45,15 @@ Supabase (PostgreSQL + Auth, פרויקט חי מקושר, region ap-south-1)
 
 | process | script | args | interpreter |
 |---|---|---|---|
-| `kalfa-beta` | `node_modules/.bin/next` | `start -H 127.0.0.1 -p 3002` | — |
+| `kalfa-beta` | `node_modules/next/dist/bin/next` | `start -H 127.0.0.1 -p 3002` | `/usr/bin/node` |
 | `kalfa-worker` | `worker/start.mjs` (env + bundle-integrity gate, then loads `dist/worker.cjs`) | — | `/usr/bin/node` (Node 26.13.0); `kill_timeout: 45000` so `boss.stop` (30s grace) completes |
+
+תהליכים נוספים באותו pm2 (נמדד ב-`pm2 jlist`, 2026-11-11), שמסמך זה אינו מתעד לעומק:
+`kalfa-pgboss-ui`, `kalfa-fleet` (`.claude/fleet/bin/scheduler.mjs`), `kalfa-ops-agent` (`ops/probe-server.mjs`),
+`kalfa-filebrowser`, `kalfa-owner-agent` (`dist/owner-agent.cjs`, `kill_timeout: 330000`), `kalfa-site`
+(Next.js מתיקיית `httpdocs`, פורט 3000), ושני מודולי pm2: `pm2-server-monit` ו-`pm2-logrotate`.
+ב-`ecosystem.config.cjs` מוגדרים שישה: `kalfa-beta`, `kalfa-worker`, `kalfa-pgboss-ui`, `kalfa-fleet`,
+`kalfa-ops-agent` ו-`kalfa-filebrowser`. ל-`kalfa-owner-agent` קובץ משלו, `ecosystem.owner-agent.config.cjs`.
 
 האפליקציה מאזינה **רק** על `127.0.0.1:3002` — אין חשיפה ישירה לאינטרנט;
 כל התעבורה עוברת דרך nginx. פקודות pm2 נוחות מוגדרות ב-`package.json`:
@@ -100,9 +112,9 @@ proxy_busy_buffers_size 64k;
   כשל בשורה אחת לא חוסם את השאר, ולעולם לא נרשם payload ללוג).
 - Arm/Sweep עצמי-מרפא: תזמון אידמפוטנטי דרך deterministic job ids.
 
-תורים (מוגדרים ב-`src/lib/queue/queues.ts`, 33 נכון ל-8.9.2026): ליבת ה-outreach
+תורים (מוגדרים ב-`src/lib/queue/queues.ts`, 42 נכון ל-11.11.2026, ועוד 6 ב-`RETIRED_QUEUES`): ליבת ה-outreach
 (`outreach-arm`, `outreach-step`, `outreach-call-request`, `outreach-dead`;
-`outreach-sweeper` הוסר ב-30.9.2026, ראו `RETIRED_QUEUES`), `webhook-process`, ועוד ~27 תורי sweep/cron (thank-you, פניות,
+`outreach-sweeper` הוסר ב-30.9.2026, ראו `RETIRED_QUEUES`), `webhook-process`, ועוד 37 תורי sweep/cron ותורים מונעי-אירוע (thank-you, פניות,
 callbacks, Voximplant, ארכיון, SEO ועוד — הרשימה המלאה בקובץ). תזמוני cron:
 `arm` כל דקה; `webhook` מתעורר מיד בכל שמירה ל-`webhook_inbox` (`nudgeWebhookProcessing`, 30.9.2026) ו-cron כל 5 דקות כרשת ביטחון; שאר ה-crons מתועדים ב-`worker/main.ts`.
 דגימה (polling): תורי cron נדגמים כל 10–30 שניות, תורים מונעי-אירוע כל 2 שניות
@@ -310,12 +322,17 @@ mismatch. התאוששות: להריץ `npm run deploy` מחדש (לא restart �
 
 הריפו מקושר (`supabase link`) לפרויקט ה-**חי** `kalfa-event-magic`
 ב-region `ap-south-1` (עדות לקישור: `supabase/.temp/project-ref`,
-`linked-project.json`). **אין** סביבת Supabase לוקאלית בשימוש — כל פעולה
-היא מול ה-DB החי, ולכן כל שינוי סכימה דורש אישור מפורש מראש.
+`linked-project.json`). כל שינוי סכימה ב-DB החי דורש אישור מפורש מראש.
+
+לצד הפרויקט החי רץ **stack מקומי** של Supabase (`supabase start`; קונטיינרי `supabase_*_beta`, נמדד רצים
+ב-2026-11-11). מאז CLI v3 הוא יעד ברירת המחדל של פקודה בלי `--remote` (§6.3). הוא משמש את חבילת האינטגרציה
+המקומית (19 קובצי `*.local-it.test.ts`, דרך `scripts/integration/run-local.sh`) ואת בדיקות ה-E2E של Playwright
+(3 קובצי spec ב-`tests/`); שתיהן קוראות את פרטי החיבור מ-`supabase status` בלבד ומסרבות לכל יעד שאינו
+`127.0.0.1:54322` / `http://127.0.0.1:54321`.
 
 ### 6.2 מיגרציות
 
-- `supabase/migrations/` מכילה 46 קובצי SQL (נכון ל-2026-07-02).
+- `supabase/migrations/` מכילה 409 קובצי SQL (נכון ל-2026-11-11; 46 ב-2026-07-02).
 - **חשוב:** תיקיית המיגרציות **חלקית** — סכימת הבסיס חיה רק ב-DB
   (הפרויקט קושר לפרויקט קיים). לכן `db push` עיוור מסוכן; runbook
   ה-multi-tenancy (§6.4) מורה במפורש להחיל קבצים בודדים בתוך טרנזקציה.
@@ -396,16 +413,21 @@ npm run test        # vitest run
 npm run build       # next build --webpack אל .next-verify (לא נוגע ב-.next החי)
 ```
 
-מצב הבדיקות (הורץ ואומת 2026-07-02):
+מצב הבדיקות (הורץ ואומת 2026-11-11, `npm run test`, Vitest 5.1.0):
 
 ```text
-Test Files  52 passed (52)
-     Tests  576 passed (576)
-  Duration  ~3.2s
+Test Files  707 passed | 26 skipped (733)
+     Tests  12593 passed | 2 expected fail | 228 skipped (12823)
+  Duration  190.01s
 ```
 
-הבדיקות הן unit tests בסביבת Node (`vitest.config.ts`:
-`environment: 'node'`, `include: ['src/**/*.test.ts']`, alias `@` → `src`),
+הקבצים שדולגו הם בדיקות שרצות רק מול ה-stack המקומי (§6.1) ומדלגות בלי `OUTREACH_DB_IT`. משך הריצה היה
+66.48 שניות באותו יום לפני המעבר ל-`environment: 'jsdom'`; הקמת הסביבה היא 73% מזמן הריצה החדש.
+
+הבדיקות הן unit tests לפי מדריך Vitest של Next.js (`vitest.config.mts`:
+`plugins: [tsconfigPaths(), react()]`, `environment: 'jsdom'`,
+`include: ['src/**/*.test.{ts,tsx}']`; ה-alias `@` → `src` נקרא מ-`tsconfig.json`;
+קובץ שחייב לרוץ בלי DOM פותח ב-`// @vitest-environment node`),
 ומכסות בעיקר לוגיקת שרת: סכימות Zod, שכבת data, מודולי SUMIT/WhatsApp,
 rate-limit ועוד.
 
@@ -420,7 +442,8 @@ rate-limit ועוד.
 
 ## 8. תיקיית `scripts/`
 
-נכון ל-2026-07-02 התיקייה (untracked ב-Git) מכילה שני סקריפטים תפעוליים:
+נכון ל-2026-11-11 התיקייה מנוהלת ב-Git (121 קבצים במעקב, 89 פריטים ברמה העליונה). סעיף זה מתעד רק שניים
+מהסקריפטים התפעוליים שבה, ושניהם במעקב:
 
 ### 8.1 `scripts/kalfa-preflight.sh`
 
@@ -446,12 +469,12 @@ untracked וארכיון `untracked-files.tar.gz` שלהם, ומניפסט `SHA2
 
 ### 8.3 כלי בדיקה של SUMIT
 
-**לא קיימים** סקריפטי בדיקה של SUMIT ב-`scripts/` נכון למועד כתיבת המסמך.
-תיעוד האינטגרציה, ה-PoC וההתנהגות המאומתת של SUMIT נמצא ב-
-`docs/sumit-payments-implementation.md` ו-`docs/sumit-response-capture-and-audit.md`.
-אם קיימו בעבר סקריפטי בדיקה אד-הוק — הם אינם בריפו; כל כלי כזה, אם ישוחזר,
-הוא **כלי PoC/בדיקה לאדמין בלבד** (מבצע חיובים אמיתיים מול SUMIT) ואינו
-חלק מזרימת הייצור.
+נכון ל-2026-11-11 יש ב-`scripts/` עשרה סקריפטי `sumit-*.ts`: `sumit-charge-token`, `sumit-crm-list-customers`,
+`sumit-crm-list-folders`, `sumit-crm-list-holds`, `sumit-crm-probe`, `sumit-customer-search-probe`,
+`sumit-doc-getdetails`, `sumit-health`, `sumit-payment-get` ו-`sumit-probe-endpoints`. הם **כלי בדיקה לאדמין
+בלבד** ואינם חלק מזרימת הייצור; `sumit-charge-token` קורא ל-`chargeRaw`, כלומר מבצע חיוב אמיתי מול SUMIT.
+תיעוד המודל הקודם של האינטגרציה נמצא ב-`docs/sumit-payments-implementation.md` וב-
+`docs/sumit-response-capture-and-audit.md`.
 
 ---
 
@@ -509,16 +532,26 @@ untracked וארכיון `untracked-files.tar.gz` שלהם, ומניפסט `SHA2
 עם service-role (שרת בלבד). ה-worker מתחבר ל-Postgres ישירות דרך
 ה-session pooler (§3.3). מיגרציות וכלים — §6.
 
-### SUMIT (סליקה וחשבוניות)
+### CardCom (סליקת רכישת החבילה)
 
-ספק הסליקה הישראלי (`api.sumit.co.il`) — charge / authorize (J5 hold) /
-capture, כולל הפקת מסמכים ושליחתם במייל. הקוד ב-`src/lib/sumit/`
-(`charge.ts`, `authorize.ts`, `capture.ts`, `raw-charge.ts`,
-`safe-preview.ts`). `CompanyID` ומפתח ה-API מגיעים מ-`app_settings`
-(שדות `sumit_company_id`, `sumit_api_public_key`, `sumit_api_key`).
-עיקרי התנהגות מאומתים: `Status` הוא enum (0/1/2), reconciliation דרך
-`Customer.ExternalIdentifier`, ו-CitizenID לעולם לא נשמר. תיעוד מלא:
-`docs/sumit-payments-implementation.md`, `docs/sumit-response-capture-and-audit.md`.
+נכון ל-2026-11-11 CardCom היא חברת הסליקה היחידה לרכישת חבילה במחיר קבוע
+(`src/lib/payments/provider.ts`, `cardcomTakesPurchase`): הרכישה סגורה כל עוד מתג CardCom כבוי, ועל מסוף
+הבדיקה של CardCom היא פתוחה רק לאדמין (או לשרת שרץ מול DB מקומי). הקוד ב-`src/lib/cardcom/` וב-
+`src/lib/payments/` (`cardcom-purchase.ts`, `cardcom-refund.ts`); ההגדרות מנוהלות במסך
+`/admin/integrations/cardcom`.
+
+### SUMIT
+
+מודל ה-J5 (authorize / hold ואז capture) **הוסר**: הקבצים `authorize.ts`, `capture.ts` ו-`safe-preview.ts`
+אינם קיימים עוד ב-`src/lib/sumit/` (נמדד 2026-11-11). מה שנשאר בתיקייה: `charge.ts` (`chargeSumit`),
+`raw-charge.ts` (`chargeRaw`), `status.ts`, `health.ts` + `run-health-check.ts`, `probe.ts`, והלקוח המחולל
+(`generated/`, `orval/`). נכון לאותו יום אין ב-`src/` או ב-`worker/` קוד שקורא ל-`chargeSumit`, ו-`chargeRaw`
+נקרא רק מ-`scripts/sumit-charge-token.ts`. השימושים הפעילים: בדיקת חיות יומית (`sumit-health-check`,
+04:30 שעון ישראל, קריאה בלבד) והמסך `/admin/integrations/sumit`, ושאילתת קריאה-בלבד לרשימת התשלומים
+(`probe.ts`) לאדמין שמכריע פעולת תשלום שהסתיימה ב-`review`.
+`CompanyID` ומפתח ה-API מגיעים מ-`app_settings` (שדות `sumit_company_id`, `sumit_api_public_key`,
+`sumit_api_key`). reconciliation דרך `Customer.ExternalIdentifier`. המסמכים
+`docs/sumit-payments-implementation.md` ו-`docs/sumit-response-capture-and-audit.md` מתארים את המודל הקודם.
 
 ### Meta WABA (WhatsApp Cloud API)
 
@@ -560,11 +593,12 @@ IONOS Exchange. קונפיגורציה ב-`app_settings`: `email_enabled`, `smtp
 
 - ערכי `.env.local` לא נקראו (בכוונה) — אומתו **שמות** בלבד; דרישת
   ה-session pooler ל-worker (§3.3) היא ידע תפעולי מאומת-בעבר, לא קריאת ערך.
-- הגדרת pm2 נשמרת ב-dump (`~/.pm2/dump.pm2`) — אין קובץ `ecosystem.config`
-  בריפו; שחזור אחרי reboot מסתמך על `pm2 resurrect`/startup של pm2
+- הגדרת pm2 מוגדרת ב-`ecosystem.config.cjs` שבריפו (קיים, נמדד 2026-11-11; ראו §4.2) ונשמרת גם
+  ב-dump (`~/.pm2/dump.pm2`); שחזור אחרי reboot מסתמך על `pm2 resurrect`/startup של pm2
   (מנגנון ה-startup עצמו לא אומת במסגרת מסמך זה).
 - אזהרת ה-`server_name conflict` של Plesk תועדה כקוסמטית על סמך הערת
   הקונפיגורציה וניסיון תפעולי; לא הופעל `nginx -T` מלא בסשן זה.
-- סקריפטי בדיקה של SUMIT אינם קיימים ב-`scripts/` (§8.3) — תועד ההיעדר.
+- סקריפטי הבדיקה של SUMIT ב-`scripts/` (§8.3) נמנו לפי שם הקובץ בלבד; תוכנם לא נקרא, חוץ מהקריאה
+  ל-`chargeRaw` ב-`sumit-charge-token.ts`.
 - `region ap-south-1` ושם הפרויקט `kalfa-event-magic` — מידע תפעולי מוכר;
   קובץ `supabase/.temp/linked-project.json` מאשר קישור אך תוכנו לא צוטט כאן.
