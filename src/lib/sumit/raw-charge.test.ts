@@ -117,7 +117,7 @@ describe('chargeRaw', () => {
     const body = sentBodyOf(f);
     // SUMIT rejects a saved-token charge without Type ("Type should be set to
     // CreditCard or DirectDebit", Status 1 — verified live 2026-07-01), so the
-    // PaymentMethod must carry Type:1 (CreditCard), mirroring capture.ts. Expiry
+    // PaymentMethod must carry Type:1 (CreditCard), as the deleted J5 capture.ts did. Expiry
     // and CitizenID are omitted here (not passed) — dropped by JSON.stringify.
     expect(body.PaymentMethod).toEqual({
       CreditCard_Token: 'saved-abc',
@@ -126,7 +126,7 @@ describe('chargeRaw', () => {
     expect('SingleUseToken' in body).toBe(false);
   });
 
-  it('sends expiry + CitizenID alongside the saved token (route B — mirrors capture.ts)', async () => {
+  it('sends expiry + CitizenID alongside the saved token (route B)', async () => {
     const f = vi.fn(
       async () =>
         new Response(JSON.stringify({ Data: { DocumentID: 3 } }), {
@@ -149,8 +149,9 @@ describe('chargeRaw', () => {
     });
     const body = sentBodyOf(f);
     // SUMIT validates the expiry/CitizenID structurally alongside the token
-    // (verified live); omitting them fails on missing expiry. This is the exact
-    // PaymentMethod shape captureHeldCardSumit() sends in production.
+    // (verified live); omitting them fails on missing expiry. This is the
+    // PaymentMethod shape the J5 capture sent (captureHeldCardSumit, in capture.ts,
+    // deleted 2026-10-11 with the pay-per-result model).
     expect(body.PaymentMethod).toEqual({
       CreditCard_Token: 'saved-abc',
       CreditCard_ExpirationMonth: 7,
@@ -182,10 +183,9 @@ describe('chargeRaw', () => {
       externalId: 'p',
     });
     const body = sentBodyOf(f);
-    // ABSENT, not null: capture.ts does not send the key at all, and the POC
-    // must put the same body on the wire as the production path it exists to
-    // predict. The business is an עוסק פטור: no VAT field, company default
-    // balances the document.
+    // ABSENT, not null: the deleted J5 capture.ts did not send the key at all, and
+    // the POC puts the same body on the wire. The business is an עוסק פטור: no VAT
+    // field, company default balances the document.
     expect('VATRate' in body).toBe(false);
     expect('VATIncluded' in body).toBe(false); // עוסק פטור — company default, same as production
   });

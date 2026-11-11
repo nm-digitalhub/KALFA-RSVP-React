@@ -18,14 +18,15 @@ export interface SumitRawChargeParams {
   // Required alongside savedCardToken (verified live 2026-07-01; swagger.json's
   // own field descriptions confirm expiry + CitizenID accompany a CreditCard
   // PaymentMethod — CitizenID is conditional per-issuer in the spec, and IS
-  // required for Israeli-issued cards). Mirrors capture.ts's PaymentMethod exactly.
+  // required for Israeli-issued cards). The same PaymentMethod the J5 capture sent
+  // (capture.ts, deleted 2026-10-11 with the pay-per-result model).
   savedCardExpMonth?: number;
   savedCardExpYear?: number;
   savedCardCitizenId?: string;
   // CreditCard_CVV — "Required when CVV is required by credit company"
   // (swagger.json field description), i.e. conditional per issuer, not global.
-  // Production capture.ts sends a token charge WITHOUT it and is verified live,
-  // so it stays optional here; the POC carries it for the issuers that do ask,
+  // The J5 capture (capture.ts, since deleted) sent a token charge WITHOUT it and was
+  // verified live, so it stays optional here; the POC carries it for the issuers that do ask,
   // and for reproducing a decline that turns out to be a missing CVV.
   // NEVER logged. `sentBody` echoes PaymentMethod as sent, so a caller that
   // passes this must not print `sentBody` (scripts/sumit-charge-token.ts does
@@ -57,9 +58,9 @@ export interface SumitRawChargeParams {
    * negative "קרדיט" row) gets exercised against the LIVE gateway before it is
    * trusted on a customer charge.
    *
-   * Unlike capture.ts this does NOT reconcile against `amount`: the whole point
-   * of the POC is to send a deliberately-chosen body and see what SUMIT does
-   * with it, including a combination the production guard would refuse. SUMIT
+   * This does NOT reconcile the rows against `amount` (the deleted J5 capture.ts
+   * did): the whole point of the POC is to send a deliberately-chosen body and see
+   * what SUMIT does with it, including a combination that guard refused. SUMIT
    * charges the sum of these rows, so `amount` is ignored when they are present.
    */
   lines?: RawChargeLine[];
@@ -118,27 +119,26 @@ export async function chargeRaw(p: SumitRawChargeParams): Promise<SumitRawResult
   if (p.savedCardToken) {
     // Type:1 (CreditCard) is REQUIRED — a saved-token charge without it returns
     // Status 1 "Type should be set to CreditCard or DirectDebit" (verified live
-    // 2026-07-01). Expiry + CitizenID accompany the token, mirroring the
-    // production capture.ts PaymentMethod exactly (the caller must supply all
-    // three; scripts/sumit-charge-token.ts requires them as env vars).
+    // 2026-07-01). Expiry + CitizenID accompany the token, as in the PaymentMethod
+    // of the deleted J5 capture.ts (the caller must supply all three;
+    // scripts/sumit-charge-token.ts requires them as env vars).
     body.PaymentMethod = {
       CreditCard_Token: p.savedCardToken,
       CreditCard_ExpirationMonth: p.savedCardExpMonth,
       CreditCard_ExpirationYear: p.savedCardExpYear,
       CreditCard_CitizenID: p.savedCardCitizenId,
       // Omitted entirely when absent — an explicit null is a DIFFERENT body to
-      // the one production sends.
+      // the one the J5 capture sent.
       ...(p.savedCardCvv ? { CreditCard_CVV: p.savedCardCvv } : {}),
       Type: 1,
     };
   } else {
     body.SingleUseToken = p.ogToken;
   }
-  // No VATIncluded, as in production. VATRate is sent ONLY when the operator
-  // typed one. The business is an עוסק פטור: production (authorize.ts / capture.ts) sends no VAT fields at all and
-  // lets the company default balance the document. An absent field stays
-  // absent, exactly as in production — otherwise a POC result does not predict
-  // production behaviour.
+  // No VATIncluded. VATRate is sent ONLY when the operator typed one. The business
+  // is an עוסק פטור: the J5 modules (authorize.ts / capture.ts, deleted 2026-10-11)
+  // sent no VAT fields at all and let the company default balance the document. An
+  // absent field stays absent, so the body matches what those charges sent.
   if (p.vatRate && p.vatRate.trim() !== '') {
     const rate = parseFloat(p.vatRate);
     if (Number.isFinite(rate)) body.VATRate = rate;

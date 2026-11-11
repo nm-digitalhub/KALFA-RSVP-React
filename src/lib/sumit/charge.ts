@@ -8,8 +8,8 @@ const SUMIT_CHARGE_URL = 'https://api.sumit.co.il/billing/payments/charge/';
 
 // The /billing/payments/charge/ request body, keyed by SUMIT's own swagger
 // (types.generated.ts) so a misspelled or invented field fails `tsc`.
-// chargeSumit and capture.ts type their body with
-// `satisfies SumitChargeRequestBody`.
+// chargeSumit types its body with `satisfies SumitChargeRequestBody` (so did the
+// J5 capture.ts, deleted 2026-10-11 with the pay-per-result model).
 //
 // Three fields are re-declared, because the generated types cannot be assigned
 // as-is:
@@ -104,7 +104,7 @@ const SUMIT_CHARGE_TIMEOUT_MS = 60_000;
 //     method, which an upgrade or a refund needs (the spec: "Avoids generating credit card token and saving it on the
 //     customer payment method. Defaults to False").
 //
-// Outcomes (the same split as authorize.ts / capture.ts, via the shared status classifier):
+// Outcomes (read through the status classifier, status.ts):
 //   - SumitDeclinedError: SUMIT refused the request, or the issuer refused the payment (ValidPayment false). Nothing
 //     was charged; retrying is safe.
 //   - SumitNetworkError: anything else — the network, a non-2xx answer, an unreadable body, a timeout, a status we do

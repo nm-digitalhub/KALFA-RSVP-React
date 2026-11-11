@@ -14,16 +14,11 @@ import 'server-only';
 // keep is an open question. Nothing here depends on either: the shapes below are read
 // from the spec, not generated from it.)
 //
-// The live API does not restrict itself to that. authorize.ts and capture.ts each
-// already carried the same three-way test, written from what came back in practice:
-// a NUMBER (0/1/2), that STRING, or an OBJECT with `IsError`. Three copies of one
-// rule is how the fourth copy ends up subtly different, so the rule lives here.
-//
-// ⚠️ NOT YET WIRED INTO authorize.ts AND capture.ts. They keep their own inline copies
-// for now: they are live money code with tests around them, and swapping their decline
-// logic is a change that deserves its own review rather than riding along with a
-// settings page. Their copies and this module must agree — if you change one, change
-// all of them.
+// The live API does not restrict itself to that. What came back in practice is one of
+// three shapes: a NUMBER (0/1/2), that STRING, or an OBJECT with `IsError`. The J5
+// modules (authorize.ts and capture.ts, deleted 2026-10-11 with the pay-per-result
+// model) each carried their own copy of this three-way test; this module is now the
+// only one. charge.ts, health.ts, probe.ts and mutator.ts read `Status` through it.
 
 export type SumitStatus = 'success' | 'business_error' | 'technical_error' | 'unknown';
 
